@@ -5,7 +5,7 @@ import (
 	"sort"
 	"sync"
 
-	"github.com/ygzztrk/tuisense/internal/logging"
+	"github.com/Phobby/TuiSense/internal/logging"
 )
 
 // Candidate is a physical device found by a driver's discovery scan.

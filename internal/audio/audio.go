@@ -9,7 +9,7 @@ import (
 	"errors"
 	"math"
 
-	"github.com/ygzztrk/tuisense/internal/device"
+	"github.com/Phobby/TuiSense/internal/device"
 )
 
 // Endpoint is a sound card that may offer capture and/or playback.

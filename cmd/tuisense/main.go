@@ -9,8 +9,8 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/ygzztrk/tuisense/internal/app"
-	"github.com/ygzztrk/tuisense/internal/system"
+	"github.com/Phobby/TuiSense/internal/app"
+	"github.com/Phobby/TuiSense/internal/system"
 )
 
 var version = "0.6.0"

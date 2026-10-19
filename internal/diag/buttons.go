@@ -5,7 +5,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/ygzztrk/tuisense/internal/device"
+	"github.com/Phobby/TuiSense/internal/device"
 )
 
 // GuidedOutcome records how a guided button prompt ended.

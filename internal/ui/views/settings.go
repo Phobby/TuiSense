@@ -1,13 +1,13 @@
 package views
 
 import (
+	"github.com/Phobby/TuiSense/internal/state"
+	"github.com/Phobby/TuiSense/internal/theme"
+	uiwidgets "github.com/Phobby/TuiSense/internal/ui/widgets"
 	"github.com/thebanri/limoni/core/cell"
 	"github.com/thebanri/limoni/core/driver"
 	"github.com/thebanri/limoni/core/terminal"
 	"github.com/thebanri/limoni/widgets"
-	"github.com/ygzztrk/tuisense/internal/state"
-	"github.com/ygzztrk/tuisense/internal/theme"
-	uiwidgets "github.com/ygzztrk/tuisense/internal/ui/widgets"
 )
 
 // RenderSettingsPanel renders application preferences, 3D rendering options,

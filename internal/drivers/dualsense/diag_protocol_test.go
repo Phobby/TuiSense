@@ -6,7 +6,7 @@ import (
 	"syscall"
 	"testing"
 
-	"github.com/ygzztrk/tuisense/internal/device"
+	"github.com/Phobby/TuiSense/internal/device"
 )
 
 func usbReport(seq byte, b7, b8, b9 byte, lx byte) []byte {

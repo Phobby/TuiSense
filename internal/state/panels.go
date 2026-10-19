@@ -1,6 +1,6 @@
 package state
 
-import "github.com/ygzztrk/tuisense/internal/device"
+import "github.com/Phobby/TuiSense/internal/device"
 
 // UXMode selects how much of the interface is exposed.
 type UXMode string

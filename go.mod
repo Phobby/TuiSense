@@ -1,4 +1,4 @@
-module github.com/ygzztrk/tuisense
+module github.com/Phobby/TuiSense
 
 go 1.25.0
 

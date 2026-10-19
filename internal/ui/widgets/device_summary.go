@@ -4,12 +4,12 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/Phobby/TuiSense/internal/device"
+	"github.com/Phobby/TuiSense/internal/state"
 	"github.com/thebanri/limoni/core/accessibility"
 	"github.com/thebanri/limoni/core/cell"
 	"github.com/thebanri/limoni/core/terminal"
 	"github.com/thebanri/limoni/widgets"
-	"github.com/ygzztrk/tuisense/internal/device"
-	"github.com/ygzztrk/tuisense/internal/state"
 )
 
 // RenderDeviceSummaryWidget renders the compact controller hardware & protocol

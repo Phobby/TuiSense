@@ -4,10 +4,10 @@ import (
 	"fmt"
 	"math"
 
+	"github.com/Phobby/TuiSense/internal/state"
 	"github.com/thebanri/limoni/core/cell"
 	"github.com/thebanri/limoni/core/terminal"
 	"github.com/thebanri/limoni/widgets"
-	"github.com/ygzztrk/tuisense/internal/state"
 )
 
 // RenderMotionPanel renders the 6-Axis IMU Gyroscope and Accelerometer settings and live telemetry gauges.

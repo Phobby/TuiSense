@@ -4,12 +4,12 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/Phobby/TuiSense/internal/device"
+	"github.com/Phobby/TuiSense/internal/state"
+	uiwidgets "github.com/Phobby/TuiSense/internal/ui/widgets"
 	"github.com/thebanri/limoni/core/cell"
 	"github.com/thebanri/limoni/core/terminal"
 	"github.com/thebanri/limoni/widgets"
-	"github.com/ygzztrk/tuisense/internal/device"
-	"github.com/ygzztrk/tuisense/internal/state"
-	uiwidgets "github.com/ygzztrk/tuisense/internal/ui/widgets"
 )
 
 // RenderHapticsPanel renders the Dual-Actuator Vibration, Test Pulse, and Speaker/Mic Audio controls.

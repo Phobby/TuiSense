@@ -3,10 +3,10 @@ package views
 import (
 	"fmt"
 
+	"github.com/Phobby/TuiSense/internal/device"
 	"github.com/thebanri/limoni/core/cell"
 	"github.com/thebanri/limoni/core/terminal"
 	"github.com/thebanri/limoni/widgets"
-	"github.com/ygzztrk/tuisense/internal/device"
 )
 
 // renderAudioPanel renders speaker, headset, microphone gain, and mute LED controls,

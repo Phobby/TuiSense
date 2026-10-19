@@ -3,9 +3,9 @@ package dualsense
 import (
 	"fmt"
 
-	"github.com/ygzztrk/tuisense/internal/device"
-	"github.com/ygzztrk/tuisense/internal/logging"
-	"github.com/ygzztrk/tuisense/internal/system"
+	"github.com/Phobby/TuiSense/internal/device"
+	"github.com/Phobby/TuiSense/internal/logging"
+	"github.com/Phobby/TuiSense/internal/system"
 )
 
 // MockKey is the registry key of the simulated DualSense.

@@ -3,9 +3,9 @@ package drivers
 import (
 	"testing"
 
-	"github.com/ygzztrk/tuisense/internal/device"
-	"github.com/ygzztrk/tuisense/internal/state"
-	"github.com/ygzztrk/tuisense/internal/ui/visual"
+	"github.com/Phobby/TuiSense/internal/device"
+	"github.com/Phobby/TuiSense/internal/state"
+	"github.com/Phobby/TuiSense/internal/ui/visual"
 )
 
 func TestBuiltinRegistryContents(t *testing.T) {

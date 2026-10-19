@@ -4,13 +4,13 @@ import (
 	"math"
 	"time"
 
+	"github.com/Phobby/TuiSense/internal/device"
+	"github.com/Phobby/TuiSense/internal/diag"
+	"github.com/Phobby/TuiSense/internal/state"
+	"github.com/Phobby/TuiSense/internal/theme"
+	"github.com/Phobby/TuiSense/internal/ui/views"
 	"github.com/thebanri/limoni/core/driver"
 	"github.com/thebanri/limoni/core/terminal"
-	"github.com/ygzztrk/tuisense/internal/device"
-	"github.com/ygzztrk/tuisense/internal/diag"
-	"github.com/ygzztrk/tuisense/internal/state"
-	"github.com/ygzztrk/tuisense/internal/theme"
-	"github.com/ygzztrk/tuisense/internal/ui/views"
 )
 
 // HandleKeyEvent processes keyboard navigation, widget focus interactions,

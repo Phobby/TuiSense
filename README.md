@@ -65,8 +65,8 @@ TuiSense/
 Compile and install `tuisense` into `~/.local/bin` (rootless) so it can be launched from any directory in any terminal:
 
 ```bash
-git clone https://github.com/ygzztrk/tuisense.git
-cd tuisense
+git clone https://github.com/Phobby/TuiSense.git
+cd TuiSense
 make install
 ```
 

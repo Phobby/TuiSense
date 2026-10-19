@@ -3,14 +3,14 @@ package views
 import (
 	"strings"
 
+	"github.com/Phobby/TuiSense/internal/device"
+	"github.com/Phobby/TuiSense/internal/state"
+	uiwidgets "github.com/Phobby/TuiSense/internal/ui/widgets"
 	"github.com/thebanri/limoni/core/accessibility"
 	"github.com/thebanri/limoni/core/cell"
 	"github.com/thebanri/limoni/core/driver"
 	"github.com/thebanri/limoni/core/terminal"
 	"github.com/thebanri/limoni/widgets"
-	"github.com/ygzztrk/tuisense/internal/device"
-	"github.com/ygzztrk/tuisense/internal/state"
-	uiwidgets "github.com/ygzztrk/tuisense/internal/ui/widgets"
 )
 
 // panelFrame draws a calm inspector card and returns its padded inner area.

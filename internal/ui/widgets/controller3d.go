@@ -4,15 +4,15 @@ import (
 	"fmt"
 	"math"
 
+	"github.com/Phobby/TuiSense/internal/device"
+	"github.com/Phobby/TuiSense/internal/state"
+	"github.com/Phobby/TuiSense/internal/ui/visual"
 	"github.com/thebanri/limoni/core/accessibility"
 	"github.com/thebanri/limoni/core/cell"
 	"github.com/thebanri/limoni/core/driver"
 	"github.com/thebanri/limoni/core/terminal"
 	"github.com/thebanri/limoni/graphics"
 	"github.com/thebanri/limoni/widgets"
-	"github.com/ygzztrk/tuisense/internal/device"
-	"github.com/ygzztrk/tuisense/internal/state"
-	"github.com/ygzztrk/tuisense/internal/ui/visual"
 )
 
 // AccentColor converts a descriptor accent into a terminal color.

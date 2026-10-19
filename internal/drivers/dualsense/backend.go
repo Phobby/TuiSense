@@ -11,9 +11,9 @@ import (
 	"time"
 	"unsafe"
 
-	"github.com/ygzztrk/tuisense/internal/device"
-	"github.com/ygzztrk/tuisense/internal/logging"
-	"github.com/ygzztrk/tuisense/internal/system"
+	"github.com/Phobby/TuiSense/internal/device"
+	"github.com/Phobby/TuiSense/internal/logging"
+	"github.com/Phobby/TuiSense/internal/system"
 )
 
 // LinuxBackend implements device.Device for a physical Sony DualSense or

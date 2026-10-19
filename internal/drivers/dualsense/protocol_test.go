@@ -5,7 +5,7 @@ import (
 	"hash/crc32"
 	"testing"
 
-	"github.com/ygzztrk/tuisense/internal/device"
+	"github.com/Phobby/TuiSense/internal/device"
 )
 
 func TestBuildOutputReportUSB(t *testing.T) {

@@ -5,9 +5,9 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/ygzztrk/tuisense/internal/device"
-	"github.com/ygzztrk/tuisense/internal/drivers/dualsense"
-	"github.com/ygzztrk/tuisense/internal/drivers/xboxmock"
+	"github.com/Phobby/TuiSense/internal/device"
+	"github.com/Phobby/TuiSense/internal/drivers/dualsense"
+	"github.com/Phobby/TuiSense/internal/drivers/xboxmock"
 )
 
 func panelIDs(entries []PanelEntry) map[PanelID]PanelEntry {

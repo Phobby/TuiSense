@@ -11,10 +11,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ygzztrk/tuisense/internal/audio"
-	"github.com/ygzztrk/tuisense/internal/device"
-	"github.com/ygzztrk/tuisense/internal/drivers/dualsense"
-	"github.com/ygzztrk/tuisense/internal/drivers/xboxmock"
+	"github.com/Phobby/TuiSense/internal/audio"
+	"github.com/Phobby/TuiSense/internal/device"
+	"github.com/Phobby/TuiSense/internal/drivers/dualsense"
+	"github.com/Phobby/TuiSense/internal/drivers/xboxmock"
 )
 
 var t0 = time.Date(2026, 10, 20, 12, 0, 0, 0, time.UTC)

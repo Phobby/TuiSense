@@ -8,8 +8,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/ygzztrk/tuisense/internal/device"
-	"github.com/ygzztrk/tuisense/internal/logging"
+	"github.com/Phobby/TuiSense/internal/device"
+	"github.com/Phobby/TuiSense/internal/logging"
 )
 
 // EventKind identifies a device lifecycle notification emitted by Manager.

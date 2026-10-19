@@ -6,7 +6,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/ygzztrk/tuisense/internal/audio"
+	"github.com/Phobby/TuiSense/internal/audio"
 )
 
 // MicRate is the capture sample rate used for microphone diagnostics.

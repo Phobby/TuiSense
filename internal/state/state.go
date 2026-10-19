@@ -4,11 +4,11 @@ import (
 	"sync"
 	"time"
 
+	"github.com/Phobby/TuiSense/internal/device"
+	"github.com/Phobby/TuiSense/internal/diag"
+	"github.com/Phobby/TuiSense/internal/logging"
+	"github.com/Phobby/TuiSense/internal/theme"
 	"github.com/thebanri/limoni/widgets"
-	"github.com/ygzztrk/tuisense/internal/device"
-	"github.com/ygzztrk/tuisense/internal/diag"
-	"github.com/ygzztrk/tuisense/internal/logging"
-	"github.com/ygzztrk/tuisense/internal/theme"
 )
 
 // DeviceChoice is a selector entry for an attached device.

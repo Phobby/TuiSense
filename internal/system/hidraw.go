@@ -8,7 +8,7 @@ import (
 	"strings"
 	"syscall"
 
-	"github.com/ygzztrk/tuisense/internal/device"
+	"github.com/Phobby/TuiSense/internal/device"
 )
 
 const (

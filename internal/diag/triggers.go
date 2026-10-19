@@ -5,7 +5,7 @@ import (
 	"math"
 	"time"
 
-	"github.com/ygzztrk/tuisense/internal/device"
+	"github.com/Phobby/TuiSense/internal/device"
 )
 
 // TriggerPhase is a step of the guided trigger test.

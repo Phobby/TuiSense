@@ -10,8 +10,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/ygzztrk/tuisense/internal/device"
-	"github.com/ygzztrk/tuisense/internal/system"
+	"github.com/Phobby/TuiSense/internal/device"
+	"github.com/Phobby/TuiSense/internal/system"
 )
 
 // Profile represents a named controller configuration preset stored on disk or built-in.

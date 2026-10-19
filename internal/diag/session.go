@@ -3,8 +3,8 @@ package diag
 import (
 	"time"
 
-	"github.com/ygzztrk/tuisense/internal/audio"
-	"github.com/ygzztrk/tuisense/internal/device"
+	"github.com/Phobby/TuiSense/internal/audio"
+	"github.com/Phobby/TuiSense/internal/device"
 )
 
 // GuidedOrder is the order of the guided health check.

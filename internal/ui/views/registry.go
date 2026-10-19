@@ -1,10 +1,10 @@
 package views
 
 import (
+	"github.com/Phobby/TuiSense/internal/device"
+	"github.com/Phobby/TuiSense/internal/state"
 	"github.com/thebanri/limoni/core/cell"
 	"github.com/thebanri/limoni/core/terminal"
-	"github.com/ygzztrk/tuisense/internal/device"
-	"github.com/ygzztrk/tuisense/internal/state"
 )
 
 // Callbacks connects views to application-level actions without importing

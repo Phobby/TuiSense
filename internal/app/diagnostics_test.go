@@ -7,12 +7,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Phobby/TuiSense/internal/device"
+	"github.com/Phobby/TuiSense/internal/diag"
+	"github.com/Phobby/TuiSense/internal/drivers/dualsense"
+	"github.com/Phobby/TuiSense/internal/drivers/xboxmock"
+	"github.com/Phobby/TuiSense/internal/state"
 	"github.com/thebanri/limoni/uitest"
-	"github.com/ygzztrk/tuisense/internal/device"
-	"github.com/ygzztrk/tuisense/internal/diag"
-	"github.com/ygzztrk/tuisense/internal/drivers/dualsense"
-	"github.com/ygzztrk/tuisense/internal/drivers/xboxmock"
-	"github.com/ygzztrk/tuisense/internal/state"
 )
 
 func openDiagnostics(t *testing.T, mode state.UXMode) (*Application, *uitest.Page) {

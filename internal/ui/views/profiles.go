@@ -3,11 +3,11 @@ package views
 import (
 	"fmt"
 
+	"github.com/Phobby/TuiSense/internal/device"
+	uiwidgets "github.com/Phobby/TuiSense/internal/ui/widgets"
 	"github.com/thebanri/limoni/core/cell"
 	"github.com/thebanri/limoni/core/terminal"
 	"github.com/thebanri/limoni/widgets"
-	"github.com/ygzztrk/tuisense/internal/device"
-	uiwidgets "github.com/ygzztrk/tuisense/internal/ui/widgets"
 )
 
 // renderProfilesPanel renders the named profile manager with Save, Load, Delete,

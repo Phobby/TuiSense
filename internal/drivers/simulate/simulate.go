@@ -7,7 +7,7 @@ import (
 	"math"
 	"math/rand"
 
-	"github.com/ygzztrk/tuisense/internal/device"
+	"github.com/Phobby/TuiSense/internal/device"
 )
 
 // Profile tunes the synthetic imperfections of a simulated controller.

@@ -6,10 +6,10 @@ package visual
 import (
 	"math"
 
+	"github.com/Phobby/TuiSense/internal/device"
+	"github.com/Phobby/TuiSense/internal/theme"
 	"github.com/thebanri/limoni/core/cell"
 	"github.com/thebanri/limoni/graphics"
-	"github.com/ygzztrk/tuisense/internal/device"
-	"github.com/ygzztrk/tuisense/internal/theme"
 )
 
 // Context carries everything a visual needs to build a frame's mesh.

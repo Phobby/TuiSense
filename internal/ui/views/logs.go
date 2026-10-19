@@ -3,10 +3,10 @@ package views
 import (
 	"fmt"
 
+	"github.com/Phobby/TuiSense/internal/state"
 	"github.com/thebanri/limoni/core/cell"
 	"github.com/thebanri/limoni/core/terminal"
 	"github.com/thebanri/limoni/widgets"
-	"github.com/ygzztrk/tuisense/internal/state"
 )
 
 // RenderLogsPanel renders the live ring-buffer diagnostic log viewer (widgets.LogView)

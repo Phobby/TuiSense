@@ -4,10 +4,10 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/Phobby/TuiSense/internal/device"
+	"github.com/Phobby/TuiSense/internal/state"
 	"github.com/thebanri/limoni/core/cell"
 	"github.com/thebanri/limoni/core/terminal"
-	"github.com/ygzztrk/tuisense/internal/device"
-	"github.com/ygzztrk/tuisense/internal/state"
 )
 
 // RenderDeviceInfoPanel renders the full hardware, firmware, transport, and capability matrix view.

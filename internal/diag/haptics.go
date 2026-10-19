@@ -5,7 +5,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/ygzztrk/tuisense/internal/device"
+	"github.com/Phobby/TuiSense/internal/device"
 )
 
 // HapticIntensity is a bounded test strength.

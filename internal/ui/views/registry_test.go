@@ -3,7 +3,7 @@ package views
 import (
 	"testing"
 
-	"github.com/ygzztrk/tuisense/internal/state"
+	"github.com/Phobby/TuiSense/internal/state"
 )
 
 func TestEveryCatalogPanelHasAView(t *testing.T) {

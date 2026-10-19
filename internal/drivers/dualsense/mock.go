@@ -7,10 +7,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/ygzztrk/tuisense/internal/device"
-	"github.com/ygzztrk/tuisense/internal/drivers/simulate"
-	"github.com/ygzztrk/tuisense/internal/logging"
-	"github.com/ygzztrk/tuisense/internal/system"
+	"github.com/Phobby/TuiSense/internal/device"
+	"github.com/Phobby/TuiSense/internal/drivers/simulate"
+	"github.com/Phobby/TuiSense/internal/logging"
+	"github.com/Phobby/TuiSense/internal/system"
 )
 
 // MockBackend provides a high-fidelity simulated Sony DualSense controller

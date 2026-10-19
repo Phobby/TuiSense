@@ -3,8 +3,8 @@ package dualsense
 import (
 	"time"
 
-	"github.com/ygzztrk/tuisense/internal/device"
-	"github.com/ygzztrk/tuisense/internal/system"
+	"github.com/Phobby/TuiSense/internal/device"
+	"github.com/Phobby/TuiSense/internal/system"
 )
 
 const (

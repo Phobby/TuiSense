@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/ygzztrk/tuisense/internal/logging"
+	"github.com/Phobby/TuiSense/internal/logging"
 )
 
 func TestCapabilitySetLevelsAndFeatures(t *testing.T) {

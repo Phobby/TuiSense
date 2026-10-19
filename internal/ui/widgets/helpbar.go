@@ -1,10 +1,10 @@
 package widgets
 
 import (
+	"github.com/Phobby/TuiSense/internal/state"
 	"github.com/thebanri/limoni/core/cell"
 	"github.com/thebanri/limoni/core/driver"
 	"github.com/thebanri/limoni/core/terminal"
-	"github.com/ygzztrk/tuisense/internal/state"
 )
 
 // RenderHelpBar draws the bottom keybinding & mouse hint bar, plus an inline

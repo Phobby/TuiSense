@@ -1,8 +1,8 @@
 package diag
 
 import (
-	"github.com/ygzztrk/tuisense/internal/audio"
-	"github.com/ygzztrk/tuisense/internal/device"
+	"github.com/Phobby/TuiSense/internal/audio"
+	"github.com/Phobby/TuiSense/internal/device"
 )
 
 // AudioProbe is the result of looking for the controller's own audio endpoint.

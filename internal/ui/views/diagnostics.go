@@ -5,14 +5,14 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Phobby/TuiSense/internal/diag"
+	"github.com/Phobby/TuiSense/internal/state"
+	"github.com/Phobby/TuiSense/internal/theme"
 	"github.com/thebanri/limoni/core/accessibility"
 	"github.com/thebanri/limoni/core/cell"
 	"github.com/thebanri/limoni/core/driver"
 	"github.com/thebanri/limoni/core/terminal"
 	"github.com/thebanri/limoni/widgets"
-	"github.com/ygzztrk/tuisense/internal/diag"
-	"github.com/ygzztrk/tuisense/internal/state"
-	"github.com/ygzztrk/tuisense/internal/theme"
 )
 
 // The diagnostics view is generic: every section is derived from the active

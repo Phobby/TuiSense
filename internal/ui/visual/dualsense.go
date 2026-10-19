@@ -1,9 +1,9 @@
 package visual
 
 import (
+	"github.com/Phobby/TuiSense/internal/device"
 	"github.com/thebanri/limoni/core/cell"
 	"github.com/thebanri/limoni/graphics"
-	"github.com/ygzztrk/tuisense/internal/device"
 )
 
 func init() {

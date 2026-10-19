@@ -4,14 +4,14 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/Phobby/TuiSense/internal/device"
+	"github.com/Phobby/TuiSense/internal/drivers"
+	"github.com/Phobby/TuiSense/internal/drivers/dualsense"
+	"github.com/Phobby/TuiSense/internal/drivers/xboxmock"
+	"github.com/Phobby/TuiSense/internal/state"
 	"github.com/thebanri/limoni/core/terminal"
 	"github.com/thebanri/limoni/testkit"
 	"github.com/thebanri/limoni/uitest"
-	"github.com/ygzztrk/tuisense/internal/device"
-	"github.com/ygzztrk/tuisense/internal/drivers"
-	"github.com/ygzztrk/tuisense/internal/drivers/dualsense"
-	"github.com/ygzztrk/tuisense/internal/drivers/xboxmock"
-	"github.com/ygzztrk/tuisense/internal/state"
 )
 
 type testDirs struct{ profiles, config string }
