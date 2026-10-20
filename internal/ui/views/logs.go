@@ -1,7 +1,7 @@
 package views
 
 import (
-	"fmt"
+	"github.com/Phobby/TuiSense/internal/i18n"
 
 	"github.com/Phobby/TuiSense/internal/state"
 	"github.com/thebanri/limoni/core/cell"
@@ -17,21 +17,21 @@ func RenderLogsPanel(f *terminal.Frame, area cell.Rect, s *state.AppState) {
 	}
 	p := s.Theme
 
-	inner := panelFrame(f, area, s, "Diagnostics & Logs")
+	inner := panelFrame(f, area, s, i18n.T("Diagnostics & Logs"))
 	y := inner.Y
 
 	// Live HID Report Hex Inspector Header
 	tel := s.Telemetry
-	f.Buffer.SetStringWithin(inner.X, y, fmt.Sprintf("HID Bus Inspector (Rx:%d  Tx:%d)", tel.PacketsRx, tel.PacketsTx), p.SectionHeaderStyle(), inner.Width)
+	f.Buffer.SetStringWithin(inner.X, y, i18n.Tf("HID Bus Inspector (Rx:%d  Tx:%d)", tel.PacketsRx, tel.PacketsTx), p.SectionHeaderStyle(), inner.Width)
 	y++
 
 	if y < inner.Y+inner.Height {
-		inLine := fmt.Sprintf("IN  [%s]: %s", s.DeviceInfo.InputMode, nonEmptyStr(tel.LastInputHex, "--"))
+		inLine := i18n.Tf("IN  [%s]: %s", s.DeviceInfo.InputMode, nonEmptyStr(tel.LastInputHex, "--"))
 		f.Buffer.SetStringWithin(inner.X, y, inLine, cell.Style{Fg: p.AccentCyan, Bg: p.BgElevated}, inner.Width)
 		y++
 	}
 	if y < inner.Y+inner.Height {
-		outLine := fmt.Sprintf("OUT [%s]: %s", s.DeviceInfo.OutputMode, nonEmptyStr(tel.LastOutputHex, "--"))
+		outLine := i18n.Tf("OUT [%s]: %s", s.DeviceInfo.OutputMode, nonEmptyStr(tel.LastOutputHex, "--"))
 		f.Buffer.SetStringWithin(inner.X, y, outLine, cell.Style{Fg: p.AccentPurple, Bg: p.BgElevated}, inner.Width)
 		y += 2
 	}
@@ -40,7 +40,7 @@ func RenderLogsPanel(f *terminal.Frame, area cell.Rect, s *state.AppState) {
 	if remainH >= 3 {
 		lv := &widgets.LogView{
 			ID:          "diagnostic_log_view",
-			Label:       "System Logs",
+			Label:       i18n.T("System Logs"),
 			Source:      s.Logger,
 			State:       s.LogViewState,
 			LineNumbers: true,

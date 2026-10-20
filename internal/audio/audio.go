@@ -7,6 +7,7 @@ package audio
 import (
 	"context"
 	"errors"
+	"github.com/Phobby/TuiSense/internal/i18n"
 	"math"
 
 	"github.com/Phobby/TuiSense/internal/device"
@@ -34,7 +35,7 @@ func (e Endpoint) CanPlay() bool { return e.PlaybackChannels > 0 }
 // Label describes the endpoint for the UI (always shows the exact target).
 func (e Endpoint) Label() string {
 	if e.Simulated {
-		return e.CardName + " (simulated)"
+		return e.CardName + i18n.T(" (simulated)")
 	}
 	if e.PCM != "" {
 		return e.CardName + " · " + e.PCM

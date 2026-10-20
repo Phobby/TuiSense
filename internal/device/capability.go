@@ -1,6 +1,7 @@
 package device
 
 import (
+	"github.com/Phobby/TuiSense/internal/i18n"
 	"sort"
 	"strings"
 )
@@ -50,33 +51,33 @@ var AllCapabilities = []Capability{
 func (c Capability) Label() string {
 	switch c {
 	case CapBattery:
-		return "Battery Status"
+		return i18n.T("Battery Status")
 	case CapConnection:
-		return "Connection Status"
+		return i18n.T("Connection Status")
 	case CapFirmwareInfo:
-		return "Firmware Info"
+		return i18n.T("Firmware Info")
 	case CapHaptics:
-		return "Haptics"
+		return i18n.T("Haptics")
 	case CapAdaptiveTriggers:
-		return "Adaptive Triggers"
+		return i18n.T("Adaptive Triggers")
 	case CapLighting:
-		return "Lighting"
+		return i18n.T("Lighting")
 	case CapSticks:
-		return "Sticks"
+		return i18n.T("Sticks")
 	case CapMotion:
-		return "Motion Sensors"
+		return i18n.T("Motion Sensors")
 	case CapAudio:
-		return "Audio"
+		return i18n.T("Audio")
 	case CapProfiles:
-		return "Profiles"
+		return i18n.T("Profiles")
 	case CapDiagnostics:
-		return "Diagnostics"
+		return i18n.T("Diagnostics")
 	case CapFirmwareUpdate:
-		return "Firmware Update"
+		return i18n.T("Firmware Update")
 	case CapRemapping:
-		return "Remapping"
+		return i18n.T("Remapping")
 	case CapCalibration:
-		return "Calibration"
+		return i18n.T("Calibration")
 	default:
 		return string(c)
 	}
@@ -98,6 +99,7 @@ const (
 	FeatDualMotors    Feature = "dual_motors"
 	FeatTriggerMotors Feature = "trigger_motors" // e.g. Xbox impulse triggers
 	FeatTestPulse     Feature = "test_pulse"
+	FeatMotorConfig   Feature = "motor_config" // persistent motor intensities configurable from the Haptics panel
 
 	// Audio
 	FeatSpeaker    Feature = "speaker"

@@ -1,7 +1,7 @@
 package views
 
 import (
-	"fmt"
+	"github.com/Phobby/TuiSense/internal/i18n"
 	"math"
 
 	"github.com/Phobby/TuiSense/internal/device"
@@ -21,13 +21,17 @@ func RenderSticksPanel(f *terminal.Frame, area cell.Rect, s *state.AppState) {
 	}
 	p := s.Theme
 
-	inner := panelFrame(f, area, s, "Sticks & Drift")
+	inner := panelFrame(f, area, s, i18n.T("Sticks & Drift"))
 	y := inner.Y
+	// TuiSense has no input-processing backend: these values are stored in
+	// the profile and visualized, but games never receive them.
+	f.Buffer.SetStringWithin(inner.X, y, i18n.T("Preview only — does not change game input."), cell.Style{Fg: p.Warning, Bg: p.BgPanel}, inner.Width)
+	y += 2
 
 	// Row 0: Left vs Right Stick buttons + Link Sticks checkbox
 	btnL := widgets.Button{
 		ID:           "btn_stick_left",
-		Label:        "Left Stick (L3)",
+		Label:        i18n.T("Left Stick (L3)"),
 		Style:        p.ButtonStyle(!s.EditingRightStick),
 		FocusedStyle: p.ButtonFocusedStyle(),
 		OnPress: func() {
@@ -37,7 +41,7 @@ func RenderSticksPanel(f *terminal.Frame, area cell.Rect, s *state.AppState) {
 	}
 	btnR := widgets.Button{
 		ID:           "btn_stick_right",
-		Label:        "Right Stick (R3)",
+		Label:        i18n.T("Right Stick (R3)"),
 		Style:        p.ButtonStyle(s.EditingRightStick),
 		FocusedStyle: p.ButtonFocusedStyle(),
 		OnPress: func() {
@@ -54,7 +58,7 @@ func RenderSticksPanel(f *terminal.Frame, area cell.Rect, s *state.AppState) {
 		cb := widgets.Checkbox{
 			ID:           "cb_link_sticks",
 			Checked:      &s.Config.Sticks.LinkSticks,
-			Label:        "Link L3=R3",
+			Label:        i18n.T("Link L3=R3"),
 			Style:        p.LabelStyle(),
 			FocusedStyle: p.ButtonFocusedStyle(),
 		}
@@ -89,10 +93,10 @@ func RenderSticksPanel(f *terminal.Frame, area cell.Rect, s *state.AppState) {
 	}
 
 	// Response Curve Selector
-	f.Buffer.SetStringWithin(inner.X, y, "Curve:", p.MutedStyle(), 7)
+	f.Buffer.SetStringWithin(inner.X, y, i18n.T("Curve:"), p.MutedStyle(), 7)
 	cx := inner.X + 7
 	for _, curve := range device.AllStickCurves {
-		lbl := " " + string(curve) + " "
+		lbl := " " + i18n.T(string(curve)) + " "
 		cw := uint16(cell.StringWidth(lbl))
 		if cx+cw > inner.X+inner.Width {
 			break
@@ -116,7 +120,7 @@ func RenderSticksPanel(f *terminal.Frame, area cell.Rect, s *state.AppState) {
 
 	// Inner Deadzone (0..40%)
 	if y < inner.Y+inner.Height {
-		f.Buffer.SetStringWithin(inner.X, y, fmt.Sprintf("Inner Deadzone: %2d%%", activeStick.InnerDeadzone), p.LabelStyle(), labelW)
+		f.Buffer.SetStringWithin(inner.X, y, i18n.Tf("Inner Deadzone: %2d%%", activeStick.InnerDeadzone), p.LabelStyle(), labelW)
 		f.RenderWidget(widgets.Slider{
 			ID:           "slider_" + prefix + "_inner_dz",
 			State:        inSlider,
@@ -136,7 +140,7 @@ func RenderSticksPanel(f *terminal.Frame, area cell.Rect, s *state.AppState) {
 
 	// Outer Threshold (70..100%)
 	if y < inner.Y+inner.Height {
-		f.Buffer.SetStringWithin(inner.X, y, fmt.Sprintf("Outer Max Zone:%3d%%", activeStick.OuterDeadzone), p.LabelStyle(), labelW)
+		f.Buffer.SetStringWithin(inner.X, y, i18n.Tf("Outer Max Zone:%3d%%", activeStick.OuterDeadzone), p.LabelStyle(), labelW)
 		f.RenderWidget(widgets.Slider{
 			ID:           "slider_" + prefix + "_outer_dz",
 			State:        outSlider,
@@ -156,7 +160,7 @@ func RenderSticksPanel(f *terminal.Frame, area cell.Rect, s *state.AppState) {
 
 	// Sensitivity (50..150%)
 	if y < inner.Y+inner.Height {
-		f.Buffer.SetStringWithin(inner.X, y, fmt.Sprintf("Sensitivity:   %3d%%", activeStick.Sensitivity), p.LabelStyle(), labelW)
+		f.Buffer.SetStringWithin(inner.X, y, i18n.Tf("Sensitivity:   %3d%%", activeStick.Sensitivity), p.LabelStyle(), labelW)
 		f.RenderWidget(widgets.Slider{
 			ID:           "slider_" + prefix + "_sens",
 			State:        sensSlider,
@@ -181,7 +185,7 @@ func RenderSticksPanel(f *terminal.Frame, area cell.Rect, s *state.AppState) {
 		mappedY := device.ApplyStickCurve(rawY, *activeStick)
 		driftMag := math.Hypot(rawX, rawY) * 100.0
 
-		f.Buffer.SetStringWithin(inner.X, y, fmt.Sprintf("2D Stick Scope │ Raw:(%+.2f,%+.2f) → Out:(%+.2f,%+.2f) │ Deflection:%4.1f%%",
+		f.Buffer.SetStringWithin(inner.X, y, i18n.Tf("2D Stick Scope │ Raw:(%+.2f,%+.2f) → Out:(%+.2f,%+.2f) │ Deflection:%4.1f%%",
 			rawX, rawY, mappedX, mappedY, driftMag), p.SectionHeaderStyle(), inner.Width)
 		y++
 		remainH--

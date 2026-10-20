@@ -21,6 +21,7 @@ const (
 	EventTelemetry    EventKind = "telemetry"
 	EventSelected     EventKind = "selected"
 	EventError        EventKind = "error"
+	EventListChanged  EventKind = "list_changed" // a device was attached without becoming active
 )
 
 // DeviceEvent carries a controller lifecycle or telemetry update.
@@ -65,11 +66,12 @@ type Manager struct {
 	autoMock  bool // the simulated DualSense was attached only as a fallback
 	logger    *logging.Logger
 	onEvent   func(DeviceEvent)
+	rescan    chan struct{}
 }
 
 // NewManager creates a manager and performs initial discovery synchronously.
 func NewManager(reg *device.Registry, opts Options, logger *logging.Logger, onEvent func(DeviceEvent)) *Manager {
-	m := &Manager{registry: reg, opts: opts, logger: logger, onEvent: onEvent}
+	m := &Manager{registry: reg, opts: opts, logger: logger, onEvent: onEvent, rescan: make(chan struct{}, 1)}
 	m.discoverInitial()
 	return m
 }
@@ -300,6 +302,11 @@ func (m *Manager) Start(ctx context.Context) {
 			if !m.opts.ForceMock {
 				m.checkHotplug()
 			}
+
+		case <-m.rescan:
+			if !m.opts.ForceMock {
+				m.checkHotplug()
+			}
 		}
 	}
 }
@@ -347,6 +354,8 @@ func (m *Manager) detach(key string, cause error) {
 	m.logWarn("HOTPLUG", "%s removed", removed.dev.Descriptor().DisplayName)
 	if wasActive {
 		m.emit(DeviceEvent{Kind: EventDisconnected, Key: key, Info: info, Err: cause})
+	} else {
+		m.emit(DeviceEvent{Kind: EventListChanged, Key: key})
 	}
 }
 
@@ -359,6 +368,25 @@ func (m *Manager) checkHotplug() {
 		present := map[string]bool{}
 		for _, c := range cands {
 			present[c.Key] = true
+		}
+
+		// Removals first: a device whose key changed (re-enumerated after an
+		// input-mode switch, or re-identified as another model) is detached
+		// before its replacement attaches, so the replacement can take over
+		// the active selection.
+		m.mu.RLock()
+		var gone []string
+		for _, e := range m.entries {
+			if e.driver == drv && !present[e.key] {
+				gone = append(gone, e.key)
+			}
+		}
+		m.mu.RUnlock()
+		for _, k := range gone {
+			m.detach(k, nil)
+		}
+
+		for _, c := range cands {
 			if m.Device(c.Key) != nil {
 				continue
 			}
@@ -378,20 +406,19 @@ func (m *Manager) checkHotplug() {
 			m.logInfo("HOTPLUG", "Attached %s", c.Label)
 			if takeOver {
 				m.emit(DeviceEvent{Kind: EventConnected, Key: c.Key, Info: dev.Info(), Telemetry: dev.Telemetry()})
+			} else {
+				m.emit(DeviceEvent{Kind: EventListChanged, Key: c.Key})
 			}
 		}
+	}
+}
 
-		m.mu.RLock()
-		var gone []string
-		for _, e := range m.entries {
-			if e.driver == drv && !present[e.key] {
-				gone = append(gone, e.key)
-			}
-		}
-		m.mu.RUnlock()
-		for _, k := range gone {
-			m.detach(k, nil)
-		}
+// Rescan asks the polling goroutine for an immediate hot-plug scan (e.g.
+// after the user confirmed a device's model, which changes its registry key).
+func (m *Manager) Rescan() {
+	select {
+	case m.rescan <- struct{}{}:
+	default:
 	}
 }
 

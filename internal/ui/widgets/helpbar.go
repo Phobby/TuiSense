@@ -1,6 +1,7 @@
 package widgets
 
 import (
+	"github.com/Phobby/TuiSense/internal/i18n"
 	"github.com/Phobby/TuiSense/internal/state"
 	"github.com/thebanri/limoni/core/cell"
 	"github.com/thebanri/limoni/core/driver"
@@ -33,7 +34,7 @@ func RenderHelpBar(f *terminal.Frame, area cell.Rect, s *state.AppState) {
 			for x := area.X; x < area.X+area.Width; x++ {
 				f.Buffer.SetCell(x, errY, cell.Cell{Content: ' ', Style: errStyle})
 			}
-			f.Buffer.SetStringWithin(area.X+1, errY, " ⚠ "+s.LastError+"  [Click or Esc to dismiss]", errStyle, area.Width-2)
+			f.Buffer.SetStringWithin(area.X+1, errY, " ⚠ "+s.LastError+i18n.T("  [Click or Esc to dismiss]"), errStyle, area.Width-2)
 			f.RegisterClickHandler(cell.NewRect(area.X, errY, area.Width, 1), func(_ driver.MouseEvent) {
 				s.ClearError()
 			})
@@ -56,28 +57,28 @@ func RenderHelpBar(f *terminal.Frame, area cell.Rect, s *state.AppState) {
 		desc string
 	}
 	hints := []hintItem{
-		{"Click", "Select Region"},
-		{"1-9", "Panels"},
-		{"C", "Controller"},
-		{"E", "Advanced Mode"},
-		{"Tab", "Focus"},
-		{"←/→", "Adjust"},
-		{"?", "Help"},
-		{"Q", "Quit"},
+		{i18n.T("Click"), i18n.T("Select Region")},
+		{"1-9", i18n.T("Panels")},
+		{"C", i18n.T("Controller")},
+		{"E", i18n.T("Advanced Mode")},
+		{i18n.T("Tab"), i18n.T("Focus")},
+		{"←/→", i18n.T("Adjust")},
+		{"?", i18n.T("Help")},
+		{"Q", i18n.T("Quit")},
 	}
 	if s.Mode == state.ModeAdvanced {
 		hints = []hintItem{
-			{"Click", "Select Region"},
-			{"1-9/0", "Panels"},
-			{"C / ,.", "Controller"},
-			{"E", "EZ Mode"},
-			{"Tab", "Focus"},
-			{"←/→", "Adjust"},
-			{"WASD", "Orbit"},
-			{"T", "Test Rumble"},
-			{"D/B/U", "Simulate"},
-			{"?", "Help"},
-			{"Q", "Quit"},
+			{i18n.T("Click"), i18n.T("Select Region")},
+			{"1-9/0", i18n.T("Panels")},
+			{"C / ,.", i18n.T("Controller")},
+			{"E", i18n.T("EZ Mode")},
+			{i18n.T("Tab"), i18n.T("Focus")},
+			{"←/→", i18n.T("Adjust")},
+			{i18n.T("WASD"), i18n.T("Orbit")},
+			{"T", i18n.T("Test Rumble")},
+			{"D/B/U", i18n.T("Simulate")},
+			{"?", i18n.T("Help")},
+			{"Q", i18n.T("Quit")},
 		}
 	}
 

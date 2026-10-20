@@ -38,7 +38,7 @@ func baseCapabilities() device.CapabilitySet {
 		device.CapabilitySpec{ID: device.CapConnection, Support: device.Full},
 		device.CapabilitySpec{ID: device.CapFirmwareInfo, Support: device.Full},
 		device.CapabilitySpec{ID: device.CapHaptics, Support: device.Full,
-			Features: []device.Feature{device.FeatDualMotors, device.FeatTestPulse}},
+			Features: []device.Feature{device.FeatDualMotors, device.FeatTestPulse, device.FeatMotorConfig}},
 		device.CapabilitySpec{ID: device.CapAdaptiveTriggers, Support: device.Full},
 		device.CapabilitySpec{ID: device.CapLighting, Support: device.Full,
 			Features: []device.Feature{device.FeatLightbarRGB, device.FeatPlayerLEDs, device.FeatMicLED, device.FeatLEDBrightness, device.FeatLEDAnimation}},

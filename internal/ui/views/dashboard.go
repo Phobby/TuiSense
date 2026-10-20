@@ -2,6 +2,7 @@ package views
 
 import (
 	"fmt"
+	"github.com/Phobby/TuiSense/internal/i18n"
 	"time"
 
 	"github.com/Phobby/TuiSense/internal/device"
@@ -94,7 +95,7 @@ func renderHeader(f *terminal.Frame, area cell.Rect, s *state.AppState, cb Callb
 		f.Buffer.SetCell(x, area.Y, cell.Cell{Content: ' ', Style: bar})
 	}
 	x := area.X + 1
-	x += f.Buffer.SetStringWithin(x, area.Y, " TUISENSE ", cell.Style{Fg: p.FgPrimary, Bg: p.BgElevated, Modifier: cell.ModifierBold}, area.Width-2)
+	x += f.Buffer.SetStringWithin(x, area.Y, i18n.T(" TUISENSE "), cell.Style{Fg: p.FgPrimary, Bg: p.BgElevated, Modifier: cell.ModifierBold}, area.Width-2)
 	x++
 
 	// Device selector pill
@@ -106,11 +107,11 @@ func renderHeader(f *terminal.Frame, area cell.Rect, s *state.AppState, cb Callb
 		f.Buffer.SetStringWithin(x, area.Y, pill, cell.Style{Fg: p.BgCanvas, Bg: accent, Modifier: cell.ModifierBold}, pw)
 		f.RegisterClickHandler(rect, func(_ driver.MouseEvent) { openSelector(s) })
 		f.RegisterAccessibility(accessibility.AccessibilityNode{
-			ID: "device_selector", Role: accessibility.RoleButton, Label: "Select controller",
+			ID: "device_selector", Role: accessibility.RoleButton, Label: i18n.T("Select controller"),
 			Value: s.Descriptor.DisplayName, Bounds: rect,
 		})
 		x += pw + 1
-		hint := fmt.Sprintf("%d device(s) · [C]", len(s.Devices))
+		hint := i18n.Tf("%d device(s) · [C]", len(s.Devices))
 		f.Buffer.SetStringWithin(x, area.Y, hint, cell.Style{Fg: p.FgMuted, Bg: p.BgElevated}, area.X+area.Width-x)
 	}
 
@@ -120,8 +121,8 @@ func renderHeader(f *terminal.Frame, area cell.Rect, s *state.AppState, cb Callb
 		label string
 		mode  state.UXMode
 	}{
-		{"mode_ez", " EZ ", state.ModeEZ},
-		{"mode_advanced", " ADVANCED ", state.ModeAdvanced},
+		{"mode_ez", i18n.T(" EZ "), state.ModeEZ},
+		{"mode_advanced", i18n.T(" ADVANCED "), state.ModeAdvanced},
 	}
 	width := uint16(0)
 	for _, sg := range segs {
@@ -153,7 +154,7 @@ func renderHeader(f *terminal.Frame, area cell.Rect, s *state.AppState, cb Callb
 			nodeState |= accessibility.StateSelected
 		}
 		f.RegisterAccessibility(accessibility.AccessibilityNode{
-			ID: sg.id, Role: accessibility.RoleButton, Label: mode.Label() + " Mode", State: nodeState, Bounds: rect,
+			ID: sg.id, Role: accessibility.RoleButton, Label: mode.Label() + i18n.T(" Mode"), State: nodeState, Bounds: rect,
 		})
 		mx += w
 	}
@@ -216,9 +217,9 @@ func renderSideCard(f *terminal.Frame, area cell.Rect, s *state.AppState) {
 		return
 	}
 	p := s.Theme
-	title := "Live Input"
+	title := i18n.T("Live Input")
 	if s.Mode == state.ModeEZ {
-		title = "Getting Started"
+		title = i18n.T("Getting Started")
 	}
 	f.RenderWidget(widgets.Block{
 		Title: " " + title + " ", TitleStyle: p.CardTitle(),
@@ -230,12 +231,12 @@ func renderSideCard(f *terminal.Frame, area cell.Rect, s *state.AppState) {
 
 	if s.Mode == state.ModeEZ {
 		tips := []string{
-			"Click a part of the",
-			"controller to adjust it.",
+			i18n.T("Click a part of the"),
+			i18n.T("controller to adjust it."),
 			"",
-			"C  switch controller",
-			"E  all settings",
-			"?  keyboard help",
+			i18n.T("C  switch controller"),
+			i18n.T("E  all settings"),
+			i18n.T("?  keyboard help"),
 		}
 		for _, t := range tips {
 			if y >= inner.Y+inner.Height {
@@ -264,18 +265,18 @@ func renderSideCard(f *terminal.Frame, area cell.Rect, s *state.AppState) {
 	}
 	axis := func(v float64) float64 { return (v + 1) / 2 }
 	accent := uiwidgets.AccentColor(s.Descriptor)
-	gauge("live_lt", "L Trig", tel.L2Pressure, accent)
-	gauge("live_rt", "R Trig", tel.R2Pressure, accent)
+	gauge("live_lt", i18n.T("L Trig"), tel.L2Pressure, accent)
+	gauge("live_rt", i18n.T("R Trig"), tel.R2Pressure, accent)
 	if s.Caps.Supports(device.CapSticks) {
-		gauge("live_lx", "L Stick", axis(tel.LeftStickX), p.AccentBlue)
-		gauge("live_rx", "R Stick", axis(tel.RightStickX), p.AccentBlue)
+		gauge("live_lx", i18n.T("L Stick"), axis(tel.LeftStickX), p.AccentBlue)
+		gauge("live_rx", i18n.T("R Stick"), axis(tel.RightStickX), p.AccentBlue)
 	}
 	if s.Caps.Supports(device.CapMotion) && y < inner.Y+inner.Height {
-		f.Buffer.SetStringWithin(inner.X, y, fmt.Sprintf("Gyro  %+5.1f° %+5.1f° %+5.1f°", tel.GyroPitch, tel.GyroYaw, tel.GyroRoll), p.MutedStyle(), inner.Width)
+		f.Buffer.SetStringWithin(inner.X, y, i18n.Tf("Gyro  %+5.1f° %+5.1f° %+5.1f°", tel.GyroPitch, tel.GyroYaw, tel.GyroRoll), p.MutedStyle(), inner.Width)
 		y++
 	}
 	if y < inner.Y+inner.Height {
-		f.Buffer.SetStringWithin(inner.X, y, fmt.Sprintf("Packets  Rx %d · Tx %d", tel.PacketsRx, tel.PacketsTx), p.MutedStyle(), inner.Width)
+		f.Buffer.SetStringWithin(inner.X, y, i18n.Tf("Packets  Rx %d · Tx %d", tel.PacketsRx, tel.PacketsTx), p.MutedStyle(), inner.Width)
 	}
 }
 
@@ -284,14 +285,14 @@ func renderSideCard(f *terminal.Frame, area cell.Rect, s *state.AppState) {
 func renderOverviewInspector(f *terminal.Frame, area cell.Rect, pc PanelContext) {
 	s := pc.S
 	p := s.Theme
-	inner := panelFrame(f, area, s, "Overview")
+	inner := panelFrame(f, area, s, i18n.T("Overview"))
 	y := inner.Y
 
 	if !s.DeviceInfo.Connected {
-		f.Buffer.SetStringWithin(inner.X, y, "⚠ No controller connected", cell.Style{Fg: p.Warning, Bg: p.BgPanel, Modifier: cell.ModifierBold}, inner.Width)
+		f.Buffer.SetStringWithin(inner.X, y, i18n.T("⚠ No controller connected"), cell.Style{Fg: p.Warning, Bg: p.BgPanel, Modifier: cell.ModifierBold}, inner.Width)
 		y += 2
 		pillRow(f, inner.X, y, inner.X+inner.Width, s, "", 0, []choice{
-			{ID: "btn_overview_reconnect", Label: "Use simulated controller [D]", OnSelect: pc.CB.OnToggleConnect},
+			{ID: "btn_overview_reconnect", Label: i18n.T("Use simulated controller [D]"), OnSelect: pc.CB.OnToggleConnect},
 		})
 		return
 	}
@@ -308,11 +309,11 @@ func renderOverviewInspector(f *terminal.Frame, area cell.Rect, pc PanelContext)
 	cards := []card{
 		{device.CapAdaptiveTriggers, fmt.Sprintf("L: %s (%d) · R: %s (%d)", shortTriggerModeName(cfg.LeftTrigger.Mode), cfg.LeftTrigger.Strength, shortTriggerModeName(cfg.RightTrigger.Mode), cfg.RightTrigger.Strength)},
 		{device.CapLighting, lightingSummary(s)},
-		{device.CapHaptics, fmt.Sprintf("Master %d%% · L/R %d/%d", cfg.Haptics.MasterIntensity, cfg.Haptics.LeftMotor, cfg.Haptics.RightMotor)},
-		{device.CapSticks, fmt.Sprintf("L DZ %d%% (%s) · R DZ %d%%", cfg.Sticks.Left.InnerDeadzone, cfg.Sticks.Left.Curve, cfg.Sticks.Right.InnerDeadzone)},
-		{device.CapMotion, fmt.Sprintf("Gyro %s · %d%%", onOffStr(cfg.Motion.GyroEnabled), cfg.Motion.GyroSensitivity)},
-		{device.CapAudio, fmt.Sprintf("Speaker %d%% · Headset %d%% · Mic %d%%", cfg.Audio.SpeakerVolume, cfg.Audio.HeadphoneVolume, cfg.Audio.MicGain)},
-		{device.CapProfiles, "Active: " + s.ActiveProfile},
+		{device.CapHaptics, i18n.Tf("Master %d%% · L/R %d/%d", cfg.Haptics.MasterIntensity, cfg.Haptics.LeftMotor, cfg.Haptics.RightMotor)},
+		{device.CapSticks, i18n.Tf("L DZ %d%% (%s) · R DZ %d%%", cfg.Sticks.Left.InnerDeadzone, i18n.T(string(cfg.Sticks.Left.Curve)), cfg.Sticks.Right.InnerDeadzone)},
+		{device.CapMotion, i18n.Tf("Gyro %s · %d%%", onOffStr(cfg.Motion.GyroEnabled), cfg.Motion.GyroSensitivity)},
+		{device.CapAudio, i18n.Tf("Speaker %d%% · Headset %d%% · Mic %d%%", cfg.Audio.SpeakerVolume, cfg.Audio.HeadphoneVolume, cfg.Audio.MicGain)},
+		{device.CapProfiles, i18n.Tf("Active: %s", s.ActiveProfile)},
 	}
 	titleW := uint16(20)
 	visible := s.VisiblePanels()
@@ -348,30 +349,30 @@ func renderOverviewInspector(f *terminal.Frame, area cell.Rect, pc PanelContext)
 				continue
 			}
 			cmd, label := a.Command, a.Label
-			items = append(items, choice{ID: "action_" + a.ID, Label: "⚡ " + label, OnSelect: func() {
+			items = append(items, choice{ID: "action_" + a.ID, Label: "⚡ " + i18n.T(label), OnSelect: func() {
 				pc.dispatch(cmd)
 				if s.Toasts != nil {
 					s.Toasts.Info(label, s.Descriptor.ShortName)
 				}
 			}})
 		}
-		pillRow(f, inner.X, y, inner.X+inner.Width, s, "Actions:", 10, items)
+		pillRow(f, inner.X, y, inner.X+inner.Width, s, i18n.T("Actions:"), 10, items)
 	}
 }
 
 func lightingSummary(s *state.AppState) string {
 	l := s.Config.Lighting
 	if !s.Caps.HasFeature(device.CapLighting, device.FeatLightbarRGB) {
-		return fmt.Sprintf("LED %s · %s", onOffStr(l.Enabled), l.Brightness)
+		return i18n.Tf("LED %s · %s", onOffStr(l.Enabled), i18n.T(l.Brightness.String()))
 	}
-	return fmt.Sprintf("#%02X%02X%02X · %s · %s", l.Red, l.Green, l.Blue, l.Brightness, l.Animation)
+	return fmt.Sprintf("#%02X%02X%02X · %s · %s", l.Red, l.Green, l.Blue, i18n.T(l.Brightness.String()), i18n.T(string(l.Animation)))
 }
 
 func onOffStr(b bool) string {
 	if b {
-		return "on"
+		return i18n.T("on")
 	}
-	return "off"
+	return i18n.T("off")
 }
 
 // renderDeviceSelector is the modal listing every attached device.
@@ -392,7 +393,7 @@ func renderDeviceSelector(f *terminal.Frame, total cell.Rect, s *state.AppState,
 
 	widgets.DrawShadow(f.Buffer, area, 2, 1)
 	f.RenderWidget(widgets.Block{
-		Title: " Choose a controller ", TitleStyle: cell.Style{Fg: p.FgPrimary, Bg: p.BgElevated, Modifier: cell.ModifierBold},
+		Title: i18n.T(" Choose a controller "), TitleStyle: cell.Style{Fg: p.FgPrimary, Bg: p.BgElevated, Modifier: cell.ModifierBold},
 		Borders: widgets.BorderAll, BorderSymbols: widgets.SymbolsRounded,
 		BorderStyle: cell.Style{Fg: p.FgSecondary, Bg: p.BgElevated},
 		Style:       cell.Style{Fg: p.FgPrimary, Bg: p.BgElevated},
@@ -415,11 +416,11 @@ func renderDeviceSelector(f *terminal.Frame, total cell.Rect, s *state.AppState,
 		if d.Key == s.ActiveDeviceKey {
 			mark = "◆ "
 		}
-		status := "connected"
+		status := i18n.T("connected")
 		if !d.Connected {
-			status = "offline"
+			status = i18n.T("offline")
 		}
-		line := fmt.Sprintf(" %s%-34s %-9s %s", mark, d.Descriptor.DisplayName, d.Source, status)
+		line := fmt.Sprintf(" %s%-34s %-9s %s", mark, i18n.T(d.Descriptor.DisplayName), i18n.T(string(d.Source)), status)
 		f.Buffer.SetStringWithin(rect.X, y, line, st, rect.Width)
 		key := d.Key
 		f.RegisterClickHandler(rect, func(_ driver.MouseEvent) {
@@ -434,7 +435,7 @@ func renderDeviceSelector(f *terminal.Frame, total cell.Rect, s *state.AppState,
 		})
 		y += 2
 	}
-	f.Buffer.SetStringWithin(mx+3, my+mh-2, "↑/↓ choose · Enter select · Esc close", cell.Style{Fg: p.FgMuted, Bg: p.BgElevated}, mw-6)
+	f.Buffer.SetStringWithin(mx+3, my+mh-2, i18n.T("↑/↓ choose · Enter select · Esc close"), cell.Style{Fg: p.FgMuted, Bg: p.BgElevated}, mw-6)
 }
 
 func renderHelpModal(f *terminal.Frame, total cell.Rect, s *state.AppState) {
@@ -454,29 +455,29 @@ func renderHelpModal(f *terminal.Frame, total cell.Rect, s *state.AppState) {
 
 	widgets.DrawShadow(f.Buffer, modalArea, 2, 1)
 	f.RenderWidget(widgets.Block{
-		Title: " Keyboard & Mouse ", TitleStyle: cell.Style{Fg: p.FgPrimary, Bg: p.BgElevated, Modifier: cell.ModifierBold},
+		Title: i18n.T(" Keyboard & Mouse "), TitleStyle: cell.Style{Fg: p.FgPrimary, Bg: p.BgElevated, Modifier: cell.ModifierBold},
 		Borders: widgets.BorderAll, BorderSymbols: widgets.SymbolsRounded,
 		BorderStyle: cell.Style{Fg: p.FgSecondary, Bg: p.BgElevated},
 		Style:       cell.Style{Fg: p.FgPrimary, Bg: p.BgElevated},
 	}, modalArea)
 
 	lines := []struct{ k, v string }{
-		{"Click region / badge", "Select a controller part & open its settings"},
-		{"Drag / Scroll on stage", "Orbit / zoom the controller"},
-		{"C", "Open the controller selector"},
-		{", / .", "Previous / next controller"},
-		{"E", "Toggle EZ ↔ Advanced mode"},
-		{"1..9, 0", "Jump to a panel (numbers follow the tabs)"},
-		{"[ / ]", "Cycle controller regions"},
-		{"Tab / Shift+Tab", "Move focus between controls"},
-		{"Arrows / Enter", "Adjust sliders, lists, color picker"},
-		{"W A S D", "Orbit with the keyboard"},
-		{"Space / M / R", "Auto-orbit / shading / reset view"},
-		{"T", "Test vibration"},
-		{"Diagnostics: h / l", "Previous / next test category"},
-		{"Diagnostics: o / g / n / x", "Start test / guided check / next step / stop all"},
-		{"D / B / U", "Simulate hot-plug / transport / permission"},
-		{"Esc / ? / Q", "Close · Help · Quit"},
+		{i18n.T("Click region / badge"), i18n.T("Select a controller part & open its settings")},
+		{i18n.T("Drag / Scroll on stage"), i18n.T("Orbit / zoom the controller")},
+		{"C", i18n.T("Open the controller selector")},
+		{", / .", i18n.T("Previous / next controller")},
+		{"E", i18n.T("Toggle EZ ↔ Advanced mode")},
+		{"1..9, 0", i18n.T("Jump to a panel (numbers follow the tabs)")},
+		{"[ / ]", i18n.T("Cycle controller regions")},
+		{i18n.T("Tab / Shift+Tab"), i18n.T("Move focus between controls")},
+		{i18n.T("Arrows / Enter"), i18n.T("Adjust sliders, lists, color picker")},
+		{"W A S D", i18n.T("Orbit with the keyboard")},
+		{i18n.T("Space / M / R"), i18n.T("Auto-orbit / shading / reset view")},
+		{"T", i18n.T("Test vibration")},
+		{i18n.T("Diagnostics: h / l"), i18n.T("Previous / next test category")},
+		{i18n.T("Diagnostics: o / g / n / x"), i18n.T("Start test / guided check / next step / stop all")},
+		{"D / B / U", i18n.T("Simulate hot-plug / transport / permission")},
+		{i18n.T("Esc / ? / Q"), i18n.T("Close · Help · Quit")},
 	}
 	y := my + 2
 	for _, ln := range lines {

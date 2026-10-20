@@ -10,12 +10,19 @@ import (
 	"syscall"
 
 	"github.com/Phobby/TuiSense/internal/app"
+	"github.com/Phobby/TuiSense/internal/debugcmd"
+	"github.com/Phobby/TuiSense/internal/state"
 	"github.com/Phobby/TuiSense/internal/system"
 )
 
-var version = "0.6.0"
+var version = "0.7.0"
 
 func main() {
+	if len(os.Args) > 1 && os.Args[1] == "debug" {
+		prefs, _ := state.NewPrefsStore(system.ConfigDir()).Load()
+		debugcmd.ExitWith(os.Args[2:], prefs.ConfirmedModels)
+	}
+
 	mockFlag := flag.Bool("mock", false, "Launch TuiSense using the interactive mock DualSense controller")
 	noTestDevicesFlag := flag.Bool("no-test-devices", false, "Hide UI/architecture test devices (mock Xbox controller)")
 	configDirFlag := flag.String("config-dir", "", "Custom directory for settings.json (default: $XDG_CONFIG_HOME/tuisense)")
@@ -30,7 +37,8 @@ func main() {
 		out := flag.CommandLine.Output()
 		fmt.Fprintf(out, "TuiSense v%s — Terminal-native, capability-driven controller management\n\n", version)
 		fmt.Fprintf(out, "Usage:\n")
-		fmt.Fprintf(out, "  tuisense [options]\n\n")
+		fmt.Fprintf(out, "  tuisense [options]\n")
+		fmt.Fprintf(out, "  tuisense debug devices|inputs   Controller identification reports (see `tuisense debug`)\n\n")
 		fmt.Fprintf(out, "Options:\n")
 		fmt.Fprintf(out, "  --mock             Launch using the interactive mock DualSense controller\n")
 		fmt.Fprintf(out, "  --no-mock          Launch with real hardware detection only (no mock fallback)\n")
@@ -50,7 +58,7 @@ func main() {
 	flag.Parse()
 
 	if *versionFlag {
-		fmt.Printf("TuiSense v%s (universal controller TUI · DualSense backend)\n", version)
+		fmt.Printf("TuiSense v%s (universal controller TUI · DualSense + evdev gamepad backends)\n", version)
 		return
 	}
 

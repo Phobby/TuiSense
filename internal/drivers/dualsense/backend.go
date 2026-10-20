@@ -1,3 +1,5 @@
+//go:build linux
+
 package dualsense
 
 import (
@@ -137,7 +139,7 @@ func (b *LinuxBackend) queryFeatureReports() {
 		hwVer := binary.LittleEndian.Uint32(fwBuf[24:28])
 		fwVer := binary.LittleEndian.Uint32(fwBuf[28:32])
 		if fwVer > 0 {
-			b.info.FirmwareVersion = fmt.Sprintf("%04X", fwVer&0xFFFF)
+			b.info.FirmwareVersion = fmt.Sprintf("%08X", fwVer)
 		}
 		if hwVer > 0 {
 			b.info.HardwareVersion = fmt.Sprintf("%04X", hwVer&0xFFFF)
@@ -205,8 +207,9 @@ func (b *LinuxBackend) Poll(_ context.Context) (device.Telemetry, error) {
 	// reports are OR-ed into ButtonsLatched. DualSense sends ~250 Hz over USB
 	// while the session polls at 25 Hz.
 	var latched device.ButtonSet
+	var samples []device.RawSample
 	got := false
-	for i := 0; i < 128; i++ {
+	for i := 0; i < maxDrain; i++ {
 		n, err := b.readNonBlocking(b.readBuf[:])
 		if err != nil {
 			if errors.Is(err, syscall.EAGAIN) || errors.Is(err, syscall.EWOULDBLOCK) {
@@ -235,6 +238,7 @@ func (b *LinuxBackend) Poll(_ context.Context) (device.Telemetry, error) {
 			b.lastSeq, b.haveSeq = seq, true
 		}
 		latched |= parsed.Buttons
+		samples = append(samples, device.RawSample{At: parsed.UpdatedAt, Sticks: parsed.Raw.Sticks, Triggers: parsed.Raw.Triggers, Buttons: parsed.Buttons})
 		parsed.LastOutputHex = b.tel.LastOutputHex
 		parsed.PacketsRx = b.tel.PacketsRx + 1
 		parsed.PacketsTx = b.tel.PacketsTx
@@ -247,10 +251,19 @@ func (b *LinuxBackend) Poll(_ context.Context) (device.Telemetry, error) {
 	} else {
 		b.tel.ButtonsLatched = b.tel.Buttons
 	}
+	// Every report since the last poll, so diagnostics see the full ~250 Hz
+	// stream (an empty, non-nil slice means "no new report").
+	if samples == nil {
+		samples = []device.RawSample{}
+	}
+	b.tel.Samples = samples
 	b.tel.ReportsDropped = b.droppedReports
 	b.tel.ReadErrors = b.readErrors
 	return b.tel, nil
 }
+
+// maxDrain bounds the reports read per poll (≈0.5 s of USB input at 250 Hz).
+const maxDrain = 128
 
 // readNonBlocking performs one raw read that returns EAGAIN immediately when
 // no report is queued. (File.Read on a pollable fd would park in Go's poller
@@ -413,3 +426,8 @@ func (b *LinuxBackend) Close() error {
 	}
 	return nil
 }
+
+var (
+	_ device.Device                 = (*LinuxBackend)(nil)
+	_ device.BatteryDetailsProvider = (*LinuxBackend)(nil)
+)

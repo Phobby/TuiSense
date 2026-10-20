@@ -2,6 +2,7 @@ package views
 
 import (
 	"github.com/Phobby/TuiSense/internal/device"
+	"github.com/Phobby/TuiSense/internal/i18n"
 	"github.com/Phobby/TuiSense/internal/state"
 	"github.com/thebanri/limoni/core/cell"
 	"github.com/thebanri/limoni/core/terminal"
@@ -25,6 +26,13 @@ type Callbacks struct {
 
 	// OnExportReport writes a diagnostics report (JSON + text).
 	OnExportReport func()
+
+	// OnSetLanguage switches and persists the UI language.
+	OnSetLanguage func(i18n.Lang)
+
+	// OnConfirmIdentity remembers the user's model choice for a hardware key
+	// (modelID "" forgets it) and re-opens the device with that model.
+	OnConfirmIdentity func(hwKey, modelID string)
 }
 
 // PanelContext is passed to every panel renderer.
@@ -81,9 +89,7 @@ var panelViews = map[state.PanelID]PanelView{
 	}},
 	state.PanelAudio:    {Advanced: renderAudioPanel},
 	state.PanelProfiles: {EZ: renderEZProfiles, Advanced: renderProfilesPanel},
-	state.PanelDevice: {Advanced: func(f *terminal.Frame, a cell.Rect, pc PanelContext) {
-		RenderDeviceInfoPanel(f, a, pc.S)
-	}},
+	state.PanelDevice:   {Advanced: RenderDeviceInfoPanel},
 	state.PanelFirmware: {Advanced: renderFirmwarePanel},
 	state.PanelSettings: {EZ: renderEZSettings, Advanced: func(f *terminal.Frame, a cell.Rect, pc PanelContext) {
 		RenderSettingsPanel(f, a, pc.S, pc.CB)

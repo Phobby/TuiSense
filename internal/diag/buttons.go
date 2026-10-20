@@ -1,7 +1,7 @@
 package diag
 
 import (
-	"fmt"
+	"github.com/Phobby/TuiSense/internal/i18n"
 	"strings"
 	"time"
 
@@ -140,34 +140,34 @@ func (t *ButtonTest) Result(now time.Time, simulated bool) *Result {
 	var missing []string
 	for _, b := range t.Layout.Buttons {
 		if !t.Seen.Has(b.ID) {
-			missing = append(missing, b.Label)
+			missing = append(missing, i18n.T(b.Label))
 		}
 	}
 	var stuck []string
 	for id, d := range t.Stuck {
 		if b, ok := t.Layout.Button(id); ok {
-			stuck = append(stuck, fmt.Sprintf("%s (held %.0fs)", b.Label, d.Seconds()))
+			stuck = append(stuck, i18n.Tf("%s (held %.0fs)", i18n.T(b.Label), d.Seconds()))
 		}
 	}
-	res.Measurements = []Measurement{{"Buttons registered", float64(seen), fmt.Sprintf("of %d", total)}}
+	res.Measurements = []Measurement{{i18n.T("Buttons registered"), float64(seen), i18n.Tf("of %d", total)}}
 	switch {
 	case len(missing) > 0:
 		res.Status = Warning
-		res.Summary = fmt.Sprintf("%d of %d buttons were not detected.", len(missing), total)
-		res.Details = append(res.Details, "Not detected (skipped — may be unresponsive): "+strings.Join(missing, ", "))
+		res.Summary = i18n.Tf("%d of %d buttons were not detected.", len(missing), total)
+		res.Details = append(res.Details, i18n.T("Not detected (skipped — may be unresponsive): ")+strings.Join(missing, ", "))
 	case len(stuck) > 0:
 		res.Status = Warning
-		res.Summary = "All buttons registered, but some stayed pressed for a long time."
+		res.Summary = i18n.T("All buttons registered, but some stayed pressed for a long time.")
 	default:
 		res.Status = Passed
-		res.Summary = fmt.Sprintf("All %d buttons registered presses.", total)
+		res.Summary = i18n.Tf("All %d buttons registered presses.", total)
 	}
 	if len(stuck) > 0 {
-		res.Details = append(res.Details, "Long continuous presses (stuck, or simply held): "+strings.Join(stuck, ", "))
+		res.Details = append(res.Details, i18n.T("Long continuous presses (stuck, or simply held): ")+strings.Join(stuck, ", "))
 	}
 	res.Limitations = []string{
-		"Two presses of the same button within one poll interval (~40 ms) count as one.",
-		"Analog travel of L2/R2 is tested separately in the trigger test.",
+		i18n.T("Two presses of the same button within one poll interval (~40 ms) count as one."),
+		i18n.T("Analog travel of L2/R2 is tested separately in the trigger test."),
 	}
 	return res
 }

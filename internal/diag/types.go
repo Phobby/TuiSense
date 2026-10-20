@@ -7,6 +7,7 @@ package diag
 
 import (
 	"fmt"
+	"github.com/Phobby/TuiSense/internal/i18n"
 	"time"
 )
 
@@ -24,9 +25,13 @@ const (
 	Inconclusive
 )
 
+// String returns the stable English status code (used in JSON reports).
 func (s Status) String() string {
 	return [...]string{"Not tested", "Testing", "Passed", "Warning", "Failed", "Unsupported", "Unavailable", "Inconclusive"}[s]
 }
+
+// Label returns the status in the active UI language.
+func (s Status) Label() string { return i18n.T(s.String()) }
 
 // Icon returns a compact glyph for the status.
 func (s Status) Icon() string {
@@ -62,25 +67,25 @@ var AllCategories = []Category{
 func (c Category) Label() string {
 	switch c {
 	case CatSticks:
-		return "Analog sticks"
+		return i18n.T("Analog sticks")
 	case CatButtons:
-		return "Buttons"
+		return i18n.T("Buttons")
 	case CatTriggers:
-		return "Triggers"
+		return i18n.T("Triggers")
 	case CatAudioIn:
-		return "Microphone"
+		return i18n.T("Microphone")
 	case CatAudioOut:
-		return "Speaker / audio out"
+		return i18n.T("Speaker / audio out")
 	case CatMotion:
-		return "Motion sensors"
+		return i18n.T("Motion sensors")
 	case CatTouchpad:
-		return "Touchpad"
+		return i18n.T("Touchpad")
 	case CatHaptics:
-		return "Vibration"
+		return i18n.T("Vibration")
 	case CatBattery:
-		return "Battery"
+		return i18n.T("Battery")
 	case CatConnection:
-		return "Connection"
+		return i18n.T("Connection")
 	}
 	return string(c)
 }

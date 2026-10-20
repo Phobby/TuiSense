@@ -313,6 +313,8 @@ Windows HID/SetupAPI, or hidapi) only needs to produce `Candidate`s and an
 | Button decoding, raw values, 2 touch points, queue drain / latching / gap counting (SOCK_SEQPACKET as fake hidraw) | `internal/drivers/dualsense/diag_protocol_test.go` |
 | Diagnostics UI: device adaptation, region → test, simulated drift, cleanup on leaving, disconnect, export, EZ guided | `internal/app/diagnostics_test.go` |
 | Every declared button lights up on its visual | `internal/ui/visual/visual_test.go` |
+| Turkish catalog coverage, valid format strings, fallback, locale detection | `internal/i18n/i18n_test.go` |
+| Language switch from Settings (EZ + Advanced), live UI update, persistence | `internal/app/language_test.go` |
 | Centered layout, compact fit | `internal/ui/layout_test.go` |
 | End-to-end headless UI (device switching, selector modal, modes, persistence, no-controller fallback, 3D render) | `internal/app/app_test.go` |
 | DualSense HID protocol | `internal/drivers/dualsense/protocol_test.go` |
@@ -327,9 +329,11 @@ config/profile directories, so they never touch real devices or user files.
 ```text
 internal/diag/      pure diagnostics engine (no UI, no driver code)
   plan.go           Plan(DeviceContext) → per-category Available / Unsupported / Unavailable
-  sticks.go         drift test: stationary → movement → recenter; raw-count statistics
+  samples.go        per-report raw samples (no fabricated data), fresh-sample rate
+  deadzone.go       radial deadzone preview (never applied to input)
+  sticks.go         guided 4-step stick test, verdicts, travel/circularity
   buttons.go        live state, press counts (latched between polls), guided press-each-button
-  triggers.go       rest / full-travel sweep, digital activation point, bounded adaptive resistance
+  triggers.go       guided A–D trigger test (analog / digital / shared axis), bounded adaptive resistance
   touch_motion.go   touch coverage, contacts & click; gyro/accel stillness noise + axis response
   haptics.go        bounded patterns (≤0.35 s, ≤90%), user-confirmed results, Stop restores config
   battery_conn.go   reported battery + attributes + change log; report rate, sequence gaps, interruptions
@@ -357,9 +361,73 @@ from the test tabs and listed (with the reason) in the summary/report.
 
 **Statuses.** Not tested · Testing · Passed · Warning · Failed · Unsupported ·
 Unavailable · Inconclusive. `Passed` requires a measurement or an explicit user
-confirmation (marked `user_confirmed`). Stick drift is `Failed` only when two
-separate resting measurements both exceed the declared tolerance and the
-configured deadzone; a single run can at most warn ("possible drift").
+confirmation (marked `user_confirmed`). Sticks and triggers additionally carry
+a plain-language **verdict** (`diag.Verdict`): *Normal — within tolerance*,
+*Possible drift* / *Possible issue*, *Further testing recommended*,
+*Inconclusive*. Neither sticks nor triggers are ever `Failed`: a measurement
+cannot prove a hardware defect, and every result explains what was measured,
+what was expected, why it matters, how to repeat it, and whether an input mode
+could explain it.
+
+### Measurement pipeline (raw → normalized → measurement → conclusion → UI)
+
+1. **Raw input.** Backends attach every report received since the last poll
+   (`Telemetry.Samples`, ≈250 Hz on a wired DualSense; one sample per
+   `SYN_REPORT` on evdev, plus one *held* sample per quiet poll because evdev
+   only reports changes). An empty batch contributes nothing, so a controller
+   that has not reported yet can never yield fabricated "centered" samples.
+2. **Normalization.** `device.AxisRange.NormalizeBipolar/Unipolar` uses the
+   driver-declared range and center — for evdev the kernel's absinfo, per axis
+   (`InputLayout.StickAxes/TriggerAxes`). Each side of the center is scaled
+   separately (0..255 with center 128 reaches exactly ±1), `Invert` flips an
+   axis so all devices share one convention, and no deadzone is ever applied.
+3. **Measurements** (`diag/sticks.go`, `diag/triggers.go`) run on sample
+   timestamps, so a UI backlog is attributed to the step it was measured in.
+4. **Conclusions** compare measurements with driver heuristics (stated as
+   heuristics in the result and report).
+5. **Presentation** (`ui/views/diagnostics_analog.go`) only renders.
+
+### Guided stick test
+
+Step 1 *Release the sticks* (0.5 s settle + 3 s sampling) → step 2 *What the
+resting position means* (scope with center, live dot and deadzone ring, plus a
+preliminary verdict) → step 3 *Full movement* (up, down, left, right — each
+completes when both sticks reach 85% — then rotation until 14/16 rim sectors
+are covered, then a second release) → step 4 *Result*. Verdicts: an offset
+beyond tolerance in **both** resting measurements, at a consistent position, is
+*Possible drift*; one off-center measurement or a changing center is *Further
+testing recommended*; movement while "released" or too few samples is
+*Inconclusive*. Advanced mode adds raw/normalized values, center offset
+(% and counts), average/maximum resting deviation, noise σ, stability (mean
+shift between halves), sample count and rate, travel coverage, circularity
+(outer boundary per sector), and X/Y time series.
+
+**Previous false positives (fixed).** The old test treated TuiSense's own
+profile deadzone (which no game receives) as the threshold and declared
+"Drift confirmed" (`Failed`) when two runs exceeded max(4 counts, that
+deadzone) — about 3–6% on a DualSense, which many healthy sticks exceed. The
+old trigger test ran a single timed "press fully, then release slowly" window
+sampled at the 25 Hz UI poll rate: a press that did not land in the window was
+reported as reaching "only X%" (Warning), and fast presses skipped positions
+and produced "worn sensor" hints.
+
+### Deadzone preview
+
+`diag.PreviewDeadzone` applies a scaled radial deadzone (0/3/5/8/10/15/20%) to
+the live stick position: raw input → deadzone ring → effective game input.
+It is labeled *Preview only — does not change game input* everywhere; TuiSense
+has no input-processing backend, and the Sticks panel says the same about its
+stored deadzone/curve values.
+
+### Guided trigger test
+
+A *Resting position* → B *Full press* (L, then R; large live bar; completes at
+95%) → C *Smooth movement* (slow press and release; largest jump between
+reports, positions covered) → D *Return to rest* (compared with A). The flow
+adapts to `InputLayout.TriggerKind`: **digital** triggers get a press/release
+test and no analog range checks; a **shared axis** learns which direction each
+trigger moves it and explains that independent measurement is impossible. Not
+reaching full travel is *Test incomplete* (Inconclusive), never a fault.
 
 **Safety.** Tests that actuate hardware (vibration, trigger resistance, audio)
 start only from an explicit action, are time-bounded, and are stopped by
@@ -375,23 +443,82 @@ per poll with raw non-blocking reads (`SyscallConn`), OR-ing buttons into
 made reads block until the next report, and only 4 of ~10 queued reports were
 read per 40 ms poll, so state lagged and short presses could be missed.
 
-| Category | DualSense (USB / BT) | Xbox test device |
-|----------|----------------------|------------------|
-| Sticks, buttons, triggers, touchpad, motion | real input reports | simulated |
-| Adaptive resistance | real (feel-confirmed) | — (impulse triggers) |
-| Vibration | real rumble (feel-confirmed) | commands recorded only |
-| Microphone / speaker | USB audio class via ALSA; unavailable over BT | speaker/headset simulated; no mic |
-| Battery | input report + sysfs `power_supply`; health "Not available" | simulated level |
-| Connection | report rate, sequence gaps, read errors, interruptions | poll-rate based |
+| Category | DualSense (USB / BT) | MSI Force GC20 V2 (evdev) | Xbox test device |
+|----------|----------------------|---------------------------|------------------|
+| Sticks, buttons, triggers | real input reports | real evdev events; mapping inferred per input mode | simulated |
+| Touchpad, motion | real input reports | — (not on the hardware) | touch/motion unsupported |
+| Adaptive resistance | real (feel-confirmed) | — | — (impulse triggers) |
+| Vibration | real rumble (feel-confirmed) | Linux FF_RUMBLE when the kernel driver exposes it; otherwise unsupported | commands recorded only |
+| Microphone / speaker | USB audio class via ALSA; unavailable over BT | — | speaker/headset simulated; no mic |
+| Battery | input report + sysfs `power_supply`; health "Not available" | — (wired, no battery) | simulated level |
+| Connection | report rate, sequence gaps, read errors, interruptions | event rate (change-driven), read errors, USB details | poll-rate based |
 
-## 12. Roadmap
+## 11a. Generic evdev gamepads and the MSI Force GC20 V2
+
+```text
+internal/system/evdev/      sysfs scan (capability bitmaps, USB parent, kernel driver),
+                            EVIOCGABS / EVIOCGKEY, non-blocking event reads, FF upload/play/erase
+internal/drivers/gamepad/   generic driver: InferMapping (layout-agnostic), Backend, identity Resolve
+internal/drivers/msigc20/   MSI model: Identify, Describe, ModeHint, documented mode table
+internal/debugcmd/          `tuisense debug devices|inputs [--watch N]`
+```
+
+* **No hardcoded layout.** `gamepad.InferMapping` reads what Linux exposes:
+  X/Y + RX/RY sticks with Z/RZ analog triggers (xpad / XInput), Z/RZ as the
+  right stick (DirectInput), BRAKE/GAS triggers, a lone shared Z axis,
+  BTN_TL2/TR2 digital triggers, hat or button d-pads, and generic joystick
+  buttons (shown as *Button 1…N*, never guessed). Ranges come from absinfo.
+* **Identification** (`msigc20.Identify`): MSI vendor ID 0db0 or USB strings
+  naming MSI/GC20 → identified. 045e:028e version 0210 — the SDL community
+  database entry for the GC20 V2 in its default (XInput) mode, shared with
+  other Xbox 360-compatible pads → *probable*. Anything else → generic
+  gamepad, with a *“Is this your MSI Force GC20 V2?”* confirmation in
+  Diagnostics › Connection and the Device panel. Confirmations are stored per
+  non-unique hardware key `vid:pid:version` in `settings.json`
+  (`confirmed_models`); no serial number is read.
+* **Input modes.** MSI documents Default (LEDs 1+2), Analog DirectInput
+  (1+3), Digital DirectInput (1+4) and Android (3+4). TuiSense never sends a
+  mode command; it shows the observed layout as a mode hint and the manual's
+  table. A mode switch re-enumerates the USB device: the old node fails with
+  ENODEV, the manager removes it and attaches the replacement in the same scan
+  (removals run before additions, so the new mapping becomes active).
+* **Model identity is part of the registry key** (`evdev:<node>#<model>`), so
+  a confirmation re-opens the device with the new descriptor.
+* **Virtual pads** (`/devices/virtual/…`, e.g. Steam Input) are ignored unless
+  `TUISENSE_INCLUDE_VIRTUAL_INPUT=1`.
+* **Rumble** uses an FF_RUMBLE effect with a replay length (the kernel stops
+  it even if TuiSense crashes), at most 1.5 s, stopped and erased on close.
+* **Validation.** `TestUinputVirtualPadEndToEnd` (`TUISENSE_UINPUT=1`) creates
+  a real kernel input device through `/dev/uinput` with the documented ID and
+  drives discovery, absinfo, events, samples and FF upload/play/erase. It is a
+  kernel-interface test, not a test of the physical controller.
+
+## 12. Internationalization
+
+`internal/i18n` translates the UI at render time. English source strings are
+the catalog keys (`i18n.T("Start drift test")`, `i18n.Tf("%d of %d buttons", a, b)`;
+translations may reorder arguments with `%[2]d`). Missing entries fall back to
+English, so the UI never breaks. Descriptor text (region labels, button labels,
+capability notes) is translated where it is displayed, so drivers stay plain data.
+
+* Active language: `settings.json` → `language` (`en`/`tr`), else `$LC_ALL`/`$LC_MESSAGES`/`$LANG`.
+* Stays English on purpose: log messages, JSON report keys and status codes,
+  profile names (they are identifiers), protocol names, file paths.
+* Guard rails: `TestEveryUIStringHasATurkishTranslation` scans every `T`/`Tf`
+  literal in the sources; `TestTurkishFormatStringsAreValid` formats each
+  Turkish string with matching arguments; `TestDescriptorTextIsTranslated`
+  covers all built-in descriptors. Adding a language = one catalog file plus an
+  entry in `i18n.Languages`.
+
+## 13. Roadmap
 
 1. **Foundation (done)** — capability model, registry, multi-device session,
    centered layout, EZ/Advanced, mock Xbox test device, persistence, tests.
 2. **Contributor ergonomics** — descriptor validation CLI (`tuisense --list-models`),
    golden-snapshot tests per visual.
-3. **Second real backend** — Xbox (GIP over USB / BLE HID) behind the existing
-   descriptor; promote `xboxmock` regions/capabilities to the real driver.
+3. **More evdev models** — the generic gamepad driver accepts additional
+   `gamepad.Model` matchers; confirm the MSI GC20 V2 DirectInput/Android
+   layouts on hardware and add their observed IDs.
 4. **Cross-platform adapters** — hidapi-based transport for macOS/Windows.
 5. **Advanced capabilities** — remapping editor, stick calibration, firmware
    update flow (with explicit safety confirmations), DualSense Edge slots.

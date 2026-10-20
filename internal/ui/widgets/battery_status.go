@@ -2,6 +2,7 @@ package widgets
 
 import (
 	"fmt"
+	"github.com/Phobby/TuiSense/internal/i18n"
 
 	"github.com/Phobby/TuiSense/internal/device"
 	"github.com/Phobby/TuiSense/internal/state"
@@ -30,7 +31,7 @@ func RenderBatteryStatusWidget(f *terminal.Frame, area cell.Rect, s *state.AppSt
 	}
 
 	block := widgets.Block{
-		Title:         " Status ",
+		Title:         i18n.T(" Status "),
 		TitleStyle:    p.CardTitle(),
 		Borders:       widgets.BorderAll,
 		BorderSymbols: widgets.SymbolsRounded,
@@ -45,10 +46,10 @@ func RenderBatteryStatusWidget(f *terminal.Frame, area cell.Rect, s *state.AppSt
 	}
 
 	// Row 0: Connection Status Badge + Transport Badge
-	connText := " ● CONNECTED "
+	connText := i18n.T(" ● CONNECTED ")
 	connStyle := p.BadgeStyle(p.BgCanvas, p.Success)
 	if !info.Connected {
-		connText = " ○ DISCONNECTED "
+		connText = i18n.T(" ○ DISCONNECTED ")
 		connStyle = p.BadgeStyle(p.FgPrimary, p.Danger)
 	}
 	connW := uint16(cell.StringWidth(connText))
@@ -64,9 +65,9 @@ func RenderBatteryStatusWidget(f *terminal.Frame, area cell.Rect, s *state.AppSt
 	if info.Connection == device.ConnBluetooth {
 		transIcon = "ᛒ"
 	}
-	transText := fmt.Sprintf(" %s %s ", transIcon, info.Connection)
+	transText := fmt.Sprintf(" %s %s ", transIcon, i18n.T(string(info.Connection)))
 	if !info.Connected {
-		transText = " ── Offline ── "
+		transText = i18n.T(" ── Offline ── ")
 	}
 	transW := uint16(cell.StringWidth(transText))
 	if connRect.X+connRect.Width+1+transW <= inner.X+inner.Width {
@@ -98,16 +99,19 @@ func RenderBatteryStatusWidget(f *terminal.Frame, area cell.Rect, s *state.AppSt
 		batColor = p.Warning
 	}
 
-	chargeTag := "On battery"
+	chargeTag := i18n.T("On battery")
 	chargeColor := p.FgSecondary
-	if !info.Connected || !hasBattery {
-		chargeTag = "No battery telemetry"
+	if info.Connected && !hasBattery {
+		chargeTag = i18n.T("No battery data")
+		chargeColor = p.FgMuted
+	} else if !info.Connected {
+		chargeTag = i18n.T("No battery telemetry")
 		chargeColor = p.FgMuted
 	} else if tel.FullyCharged {
-		chargeTag = "↯ Full"
+		chargeTag = i18n.T("↯ Full")
 		chargeColor = p.Success
 	} else if tel.Charging {
-		chargeTag = "↯ Charging"
+		chargeTag = i18n.T("↯ Charging")
 		chargeColor = p.Warning
 	}
 
@@ -140,9 +144,11 @@ func RenderBatteryStatusWidget(f *terminal.Frame, area cell.Rect, s *state.AppSt
 	if inner.Height >= 3 {
 		row2Y := inner.Y + 2
 		if info.PermissionDenied {
-			f.Buffer.SetStringWithin(inner.X, row2Y, "⚠ Read-Only (udev rule needed)", cell.Style{Fg: p.Warning, Bg: p.BgPanel, Modifier: cell.ModifierBold}, inner.Width)
+			f.Buffer.SetStringWithin(inner.X, row2Y, i18n.T("⚠ Read-Only (udev rule needed)"), cell.Style{Fg: p.Warning, Bg: p.BgPanel, Modifier: cell.ModifierBold}, inner.Width)
+		} else if !s.Caps.Supports(device.CapProfiles) && info.InputMode != "" {
+			f.Buffer.SetStringWithin(inner.X, row2Y, i18n.T(info.InputMode), p.MutedStyle(), inner.Width)
 		} else {
-			profLine := fmt.Sprintf("Profile: %s", s.ActiveProfile)
+			profLine := i18n.Tf("Profile: %s", s.ActiveProfile)
 			f.Buffer.SetStringWithin(inner.X, row2Y, profLine, p.LabelStyle(), inner.Width)
 		}
 	}
@@ -150,8 +156,8 @@ func RenderBatteryStatusWidget(f *terminal.Frame, area cell.Rect, s *state.AppSt
 	f.RegisterAccessibility(accessibility.AccessibilityNode{
 		ID:     "status_widget",
 		Role:   accessibility.RoleGeneric,
-		Label:  "Controller Status",
-		Value:  fmt.Sprintf("Connected=%v Battery=%d%% Charging=%v Transport=%s", info.Connected, tel.BatteryPercent, tel.Charging, info.Connection),
+		Label:  i18n.T("Controller Status"),
+		Value:  i18n.Tf("Connected=%v Battery=%d%% Charging=%v Transport=%s", info.Connected, tel.BatteryPercent, tel.Charging, info.Connection),
 		Bounds: area,
 	})
 }

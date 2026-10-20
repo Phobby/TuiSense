@@ -1,7 +1,7 @@
 package diag
 
 import (
-	"fmt"
+	"github.com/Phobby/TuiSense/internal/i18n"
 	"strings"
 	"time"
 
@@ -52,17 +52,17 @@ func NewHapticTest(caps device.CapabilitySet, act Actuator) *HapticTest {
 	ms := time.Millisecond
 	if t.Separate {
 		t.Patterns = append(t.Patterns,
-			HapticPattern{ID: "left", Label: "Left motor", steps: []hapticStep{{left: 1, dur: 350 * ms}}},
-			HapticPattern{ID: "right", Label: "Right motor", steps: []hapticStep{{right: 1, dur: 350 * ms}}},
-			HapticPattern{ID: "both", Label: "Both", steps: []hapticStep{{left: 1, right: 1, dur: 350 * ms}}},
-			HapticPattern{ID: "pulse", Label: "Pulse ×3", steps: []hapticStep{
+			HapticPattern{ID: "left", Label: i18n.T("Left motor"), steps: []hapticStep{{left: 1, dur: 350 * ms}}},
+			HapticPattern{ID: "right", Label: i18n.T("Right motor"), steps: []hapticStep{{right: 1, dur: 350 * ms}}},
+			HapticPattern{ID: "both", Label: i18n.T("Both"), steps: []hapticStep{{left: 1, right: 1, dur: 350 * ms}}},
+			HapticPattern{ID: "pulse", Label: i18n.T("Pulse ×3"), steps: []hapticStep{
 				{at: 0, left: 1, right: 1, dur: 140 * ms}, {at: 300 * ms, left: 1, right: 1, dur: 140 * ms}, {at: 600 * ms, left: 1, right: 1, dur: 140 * ms}}},
 		)
 	} else {
-		t.Patterns = append(t.Patterns, HapticPattern{ID: "rumble", Label: "Rumble", steps: []hapticStep{{left: 1, right: 1, dur: 350 * ms}}})
+		t.Patterns = append(t.Patterns, HapticPattern{ID: "rumble", Label: i18n.T("Rumble"), steps: []hapticStep{{left: 1, right: 1, dur: 350 * ms}}})
 	}
 	if caps.HasFeature(device.CapHaptics, device.FeatTriggerMotors) {
-		t.Patterns = append(t.Patterns, HapticPattern{ID: "triggers", Label: "Trigger motors", steps: []hapticStep{
+		t.Patterns = append(t.Patterns, HapticPattern{ID: "triggers", Label: i18n.T("Trigger motors"), steps: []hapticStep{
 			{triggers: true, left: 1, right: 1, dur: 350 * ms}, {at: 350 * ms, restore: true}}})
 	}
 	for i := range t.Patterns {
@@ -137,25 +137,25 @@ func (t *HapticTest) Result(now time.Time, simulated bool) *Result {
 	for _, p := range t.Patterns {
 		if f, ok := t.Feedback[p.ID]; ok {
 			if f {
-				felt = append(felt, p.Label)
+				felt = append(felt, i18n.T(p.Label))
 			} else {
-				notFelt = append(notFelt, p.Label)
+				notFelt = append(notFelt, i18n.T(p.Label))
 			}
 		}
 	}
 	if len(notFelt) > 0 {
 		res.Status = Warning
-		res.Summary = "Some vibration patterns were not felt: " + strings.Join(notFelt, ", ")
-		res.Details = append(res.Details, "If a single side is never felt, that motor may be faulty. Also check that the controller is not muted/in power-saving mode.")
+		res.Summary = i18n.T("Some vibration patterns were not felt: ") + strings.Join(notFelt, ", ")
+		res.Details = append(res.Details, i18n.T("If a single side is never felt, that motor may be faulty. Also check that the controller is not muted/in power-saving mode."))
 	} else {
 		res.Status = Passed
-		res.Summary = fmt.Sprintf("Vibration felt for: %s.", strings.Join(felt, ", "))
+		res.Summary = i18n.Tf("Vibration felt for: %s.", strings.Join(felt, ", "))
 	}
-	res.Measurements = []Measurement{{"Patterns confirmed", float64(len(felt)), fmt.Sprintf("of %d tried", len(t.Feedback))}}
+	res.Measurements = []Measurement{{i18n.T("Patterns confirmed"), float64(len(felt)), i18n.Tf("of %d tried", len(t.Feedback))}}
 	res.Limitations = []string{
-		"Vibration can only be confirmed by feel; controllers report no motor feedback.",
-		"Uses the compatibility rumble mode. DualSense voice-coil 'advanced haptics' are driven through USB audio channels 3–4 and are not tested here.",
-		"Test pulses are bounded to ≤ 0.35 s at ≤ 90% strength.",
+		i18n.T("Vibration can only be confirmed by feel; controllers report no motor feedback."),
+		i18n.T("Uses the compatibility rumble mode. DualSense voice-coil 'advanced haptics' are driven through USB audio channels 3–4 and are not tested here."),
+		i18n.T("Test pulses are bounded to ≤ 0.35 s at ≤ 90% strength."),
 	}
 	return res
 }

@@ -1,6 +1,7 @@
 package views
 
 import (
+	"github.com/Phobby/TuiSense/internal/i18n"
 	"github.com/Phobby/TuiSense/internal/state"
 	"github.com/Phobby/TuiSense/internal/theme"
 	uiwidgets "github.com/Phobby/TuiSense/internal/ui/widgets"
@@ -18,20 +19,21 @@ func RenderSettingsPanel(f *terminal.Frame, area cell.Rect, s *state.AppState, s
 	}
 	p := s.Theme
 
-	inner := panelFrame(f, area, s, "Settings")
+	inner := panelFrame(f, area, s, i18n.T("Settings"))
 	y := inner.Y
 
 	y = renderModeChooser(f, inner, y, s, sim)
+	y = renderLanguageChooser(f, inner, y, s, sim)
 	y++
 
 	// 1. 3D Stage & Visual Preferences
-	f.Buffer.SetStringWithin(inner.X, y, "3D Viewport & Accessibility", p.SectionHeaderStyle(), inner.Width)
+	f.Buffer.SetStringWithin(inner.X, y, i18n.T("3D Viewport & Accessibility"), p.SectionHeaderStyle(), inner.Width)
 	y++
 
 	f.RenderWidget(widgets.Checkbox{
 		ID:           "cb_settings_autorot",
 		Checked:      &s.AutoRotate,
-		Label:        "Continuous 3D Auto-Orbit",
+		Label:        i18n.T("Continuous 3D Auto-Orbit"),
 		Style:        p.LabelStyle(),
 		FocusedStyle: p.ButtonFocusedStyle(),
 	}, cell.NewRect(inner.X, y, inner.Width, 1))
@@ -42,7 +44,7 @@ func RenderSettingsPanel(f *terminal.Frame, area cell.Rect, s *state.AppState, s
 	f.RenderWidget(widgets.Checkbox{
 		ID:           "cb_settings_high_contrast",
 		Checked:      &s.HighContrast,
-		Label:        "High-Contrast Accessibility Theme",
+		Label:        i18n.T("High-Contrast Accessibility Theme"),
 		Style:        p.LabelStyle(),
 		FocusedStyle: p.ButtonFocusedStyle(),
 	}, cell.NewRect(inner.X, y, inner.Width, 1))
@@ -57,7 +59,7 @@ func RenderSettingsPanel(f *terminal.Frame, area cell.Rect, s *state.AppState, s
 
 	// 3D Shading Mode Selector
 	if y < inner.Y+inner.Height {
-		f.Buffer.SetStringWithin(inner.X, y, "3D Shading:", p.MutedStyle(), 12)
+		f.Buffer.SetStringWithin(inner.X, y, i18n.T("3D Shading:"), p.MutedStyle(), 12)
 		sx := inner.X + 12
 		for _, mode := range []string{"Gouraud", "Lambert", "Flat", "Wireframe"} {
 			lbl := " " + mode + " "
@@ -78,15 +80,15 @@ func RenderSettingsPanel(f *terminal.Frame, area cell.Rect, s *state.AppState, s
 
 	// Sub-Cell Marker Resolution Selector
 	if y < inner.Y+inner.Height {
-		f.Buffer.SetStringWithin(inner.X, y, "3D Marker:", p.MutedStyle(), 12)
+		f.Buffer.SetStringWithin(inner.X, y, i18n.T("3D Marker:"), p.MutedStyle(), 12)
 		mx := inner.X + 12
 		markers := []struct {
 			idx  int
 			name string
 		}{
-			{0, "Braille (2x4 Sub-Cell)"},
-			{1, "Half-Block (1x2 Solid)"},
-			{2, "Quadrant (2x2 Block)"},
+			{0, i18n.T("Braille (2x4 Sub-Cell)")},
+			{1, i18n.T("Half-Block (1x2 Solid)")},
+			{2, i18n.T("Quadrant (2x2 Block)")},
 		}
 		for _, m := range markers {
 			lbl := " " + m.name + " "
@@ -107,14 +109,14 @@ func RenderSettingsPanel(f *terminal.Frame, area cell.Rect, s *state.AppState, s
 
 	// 2. Interactive Hardware Simulator (for testing hot-plug, transport, and udev permissions)
 	if y < inner.Y+inner.Height {
-		f.Buffer.SetStringWithin(inner.X, y, "Simulator (mock & test devices)", p.SectionHeaderStyle(), inner.Width)
+		f.Buffer.SetStringWithin(inner.X, y, i18n.T("Simulator (mock & test devices)"), p.SectionHeaderStyle(), inner.Width)
 		y++
 	}
 
 	if y < inner.Y+inner.Height {
 		btnHotplug := widgets.Button{
 			ID:           "btn_sim_hotplug",
-			Label:        "🔌 Toggle Connect / Disconnect [D]",
+			Label:        i18n.T("🔌 Toggle Connect / Disconnect [D]"),
 			Style:        p.ButtonStyle(s.DeviceInfo.Connected),
 			FocusedStyle: p.ButtonFocusedStyle(),
 			OnPress:      sim.OnToggleConnect,
@@ -127,7 +129,7 @@ func RenderSettingsPanel(f *terminal.Frame, area cell.Rect, s *state.AppState, s
 	if y < inner.Y+inner.Height {
 		btnTrans := widgets.Button{
 			ID:           "btn_sim_transport",
-			Label:        "ᛒ Switch USB-C ↔ Bluetooth [B]",
+			Label:        i18n.T("ᛒ Switch USB-C ↔ Bluetooth [B]"),
 			Style:        p.ButtonStyle(false),
 			FocusedStyle: p.ButtonFocusedStyle(),
 			OnPress:      sim.OnCycleTransport,
@@ -140,7 +142,7 @@ func RenderSettingsPanel(f *terminal.Frame, area cell.Rect, s *state.AppState, s
 	if y < inner.Y+inner.Height {
 		btnPerm := widgets.Button{
 			ID:           "btn_sim_permission",
-			Label:        "🔒 Simulate udev Permission Error [U]",
+			Label:        i18n.T("🔒 Simulate udev Permission Error [U]"),
 			Style:        p.ButtonStyle(s.DeviceInfo.PermissionDenied),
 			FocusedStyle: p.ButtonFocusedStyle(),
 			OnPress:      sim.OnTogglePermission,
@@ -164,9 +166,31 @@ func renderModeChooser(f *terminal.Frame, inner cell.Rect, y uint16, s *state.Ap
 			}
 		}
 	}
-	pillRow(f, inner.X, y, inner.X+inner.Width, s, "Mode:", 7, []choice{
-		{ID: "settings_mode_ez", Label: "EZ · simple", Selected: s.Mode == state.ModeEZ, OnSelect: set(state.ModeEZ)},
-		{ID: "settings_mode_advanced", Label: "Advanced · everything", Selected: s.Mode == state.ModeAdvanced, OnSelect: set(state.ModeAdvanced)},
+	pillRow(f, inner.X, y, inner.X+inner.Width, s, i18n.T("Mode:"), 7, []choice{
+		{ID: "settings_mode_ez", Label: i18n.T("EZ · simple"), Selected: s.Mode == state.ModeEZ, OnSelect: set(state.ModeEZ)},
+		{ID: "settings_mode_advanced", Label: i18n.T("Advanced · everything"), Selected: s.Mode == state.ModeAdvanced, OnSelect: set(state.ModeAdvanced)},
 	})
+	return y + 1
+}
+
+// renderLanguageChooser draws the clickable UI language switch (both modes).
+// Language names are always shown in their own language.
+func renderLanguageChooser(f *terminal.Frame, inner cell.Rect, y uint16, s *state.AppState, cb Callbacks) uint16 {
+	if y >= inner.Y+inner.Height {
+		return y
+	}
+	var items []choice
+	for _, l := range i18n.Languages {
+		l := l
+		items = append(items, choice{ID: "settings_lang_" + string(l), Label: l.Name(), Selected: s.Language == l, OnSelect: func() {
+			if cb.OnSetLanguage != nil {
+				cb.OnSetLanguage(l)
+			} else {
+				s.Language = l
+				i18n.Set(l)
+			}
+		}})
+	}
+	pillRow(f, inner.X, y, inner.X+inner.Width, s, i18n.T("Language:"), 11, items)
 	return y + 1
 }

@@ -1,6 +1,8 @@
 package drivers
 
 import (
+	"github.com/Phobby/TuiSense/internal/i18n"
+	"regexp"
 	"testing"
 
 	"github.com/Phobby/TuiSense/internal/device"
@@ -10,8 +12,8 @@ import (
 
 func TestBuiltinRegistryContents(t *testing.T) {
 	r := NewBuiltinRegistry(RegistryOptions{Hardware: true, TestDevices: true})
-	if len(r.Drivers()) != 1 || r.Drivers()[0].ID() != "dualsense" {
-		t.Fatalf("expected the DualSense hardware driver")
+	if len(r.Drivers()) != 2 || r.Drivers()[0].ID() != "dualsense" || r.Drivers()[1].ID() != "evdev_gamepad" {
+		t.Fatalf("expected the DualSense and evdev gamepad hardware drivers")
 	}
 	keys := map[string]device.Source{}
 	for _, v := range r.Virtuals() {
@@ -62,5 +64,63 @@ func TestDescriptorsAreConsistent(t *testing.T) {
 				t.Errorf("%s: unknown capability %q", d.ModelID, c)
 			}
 		}
+	}
+}
+
+var lowerWord = regexp.MustCompile(`[a-z]{2,}`) // codes like "L1", "X", "LB" need no translation
+
+// TestDescriptorTextIsTranslated keeps controller descriptors in sync with the
+// Turkish catalog: every user-visible descriptor string needs a translation.
+func TestDescriptorTextIsTranslated(t *testing.T) {
+	r := NewBuiltinRegistry(RegistryOptions{Hardware: true, TestDevices: true})
+	for _, d := range r.Models() {
+		texts := []string{d.DisplayName, d.ShortName}
+		for _, reg := range d.Regions {
+			texts = append(texts, reg.Label, reg.Badge, reg.Description)
+		}
+		for _, b := range d.Inputs.Buttons {
+			texts = append(texts, b.Label)
+		}
+		texts = append(texts, d.Inputs.StickLabels[0], d.Inputs.StickLabels[1])
+		for _, a := range d.Actions {
+			texts = append(texts, a.Label)
+		}
+		for _, c := range d.Capabilities {
+			texts = append(texts, c.Note)
+		}
+		for _, s := range texts {
+			if lowerWord.MatchString(s) && !i18n.Has(i18n.Turkish, s) {
+				t.Errorf("%s: no Turkish translation for %q", d.ModelID, s)
+			}
+		}
+	}
+}
+
+// TestMSIIsRealHardwareAndIsolatedFromXboxMock checks that the MSI Force GC20
+// V2 is registered through a hardware driver, never as a virtual device, and
+// that the mock Xbox stays a separate simulated test device.
+func TestMSIIsRealHardwareAndIsolatedFromXboxMock(t *testing.T) {
+	r := NewBuiltinRegistry(RegistryOptions{Hardware: true, TestDevices: true})
+	var msiDriver string
+	for _, d := range r.Drivers() {
+		for _, m := range d.Models() {
+			if m.ModelID == "msi.force_gc20_v2" {
+				msiDriver = d.ID()
+			}
+		}
+	}
+	if msiDriver != "evdev_gamepad" {
+		t.Fatalf("MSI GC20 V2 must come from the evdev hardware driver, got %q", msiDriver)
+	}
+	for _, v := range r.Virtuals() {
+		if v.Descriptor.ModelID == "msi.force_gc20_v2" || v.Descriptor.Family == "msi_gc20" {
+			t.Fatal("MSI must not be registered as a mock/test device")
+		}
+		if v.Key == "test:xbox" && (v.Source != device.SourceTest || v.Descriptor.Brand != "Microsoft") {
+			t.Fatal("the Xbox test device must stay a separate simulated device")
+		}
+	}
+	if len(NewBuiltinRegistry(RegistryOptions{TestDevices: true}).Drivers()) != 0 {
+		t.Fatal("hardware drivers must be optional (tests run without touching devices)")
 	}
 }

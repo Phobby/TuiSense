@@ -1,6 +1,7 @@
 package views
 
 import (
+	"github.com/Phobby/TuiSense/internal/i18n"
 	"strings"
 
 	"github.com/Phobby/TuiSense/internal/device"
@@ -39,7 +40,7 @@ func supportBanner(f *terminal.Frame, inner cell.Rect, y uint16, s *state.AppSta
 	case level == device.Full:
 		return y
 	case level == device.Limited:
-		msg := "◐ Limited support"
+		msg := i18n.T("◐ Limited support")
 		if reason != "" {
 			msg += " — " + reason
 		}
@@ -50,7 +51,7 @@ func supportBanner(f *terminal.Frame, inner cell.Rect, y uint16, s *state.AppSta
 	f.RegisterAccessibility(accessibility.AccessibilityNode{
 		ID:     "support_banner_" + string(c),
 		Role:   accessibility.RoleGeneric,
-		Label:  "Support notice",
+		Label:  i18n.T("Support notice"),
 		Value:  reason,
 		Bounds: cell.NewRect(inner.X, y, inner.Width, 1),
 	})
@@ -69,6 +70,9 @@ type choice struct {
 // label and returns the x after the last pill drawn.
 func pillRow(f *terminal.Frame, x, y, limit uint16, s *state.AppState, label string, labelW uint16, items []choice) uint16 {
 	p := s.Theme
+	if label != "" && uint16(cell.StringWidth(label)+1) > labelW {
+		labelW = uint16(cell.StringWidth(label) + 1) // translated labels may be longer
+	}
 	if labelW > 0 {
 		if label != "" {
 			f.Buffer.SetStringWithin(x, y, label, p.MutedStyle(), labelW)

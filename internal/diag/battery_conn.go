@@ -2,6 +2,7 @@ package diag
 
 import (
 	"fmt"
+	"github.com/Phobby/TuiSense/internal/i18n"
 	"strings"
 	"time"
 
@@ -66,16 +67,19 @@ func (b *BatteryMonitor) Health() (string, bool) {
 // ObservationSummary describes observed change (not a health measurement).
 func (b *BatteryMonitor) ObservationSummary(now time.Time) string {
 	if len(b.Observations) == 0 {
-		return "No observations yet."
+		return i18n.T("No observations yet.")
 	}
 	first := b.Observations[0]
 	d := now.Sub(first.At).Round(time.Second)
-	return fmt.Sprintf("%+d%% over %s (%d change(s) observed) — an observation, not a health measurement.",
+	return i18n.Tf("%+d%% over %s (%d change(s) observed) — an observation, not a health measurement.",
 		b.Percent-first.Percent, d, len(b.Observations)-1)
 }
 
 // HealthUnavailable is the exact wording required when no health value exists.
 const HealthUnavailable = "Battery health: Not available from this device"
+
+// HealthUnavailableText is HealthUnavailable in the active UI language.
+func HealthUnavailableText() string { return i18n.T(HealthUnavailable) }
 
 // Result reports what the device actually exposes.
 func (b *BatteryMonitor) Result(now time.Time, simulated bool) *Result {
@@ -83,28 +87,28 @@ func (b *BatteryMonitor) Result(now time.Time, simulated bool) *Result {
 		return nil
 	}
 	res := &Result{Category: CatBattery, Simulated: simulated, At: now, Status: Passed}
-	state := "discharging"
+	state := i18n.T("discharging")
 	switch {
 	case b.Full:
-		state = "full"
+		state = i18n.T("full")
 	case b.Charging:
-		state = "charging"
+		state = i18n.T("charging")
 	}
-	res.Summary = fmt.Sprintf("Battery telemetry is reported: %d%%, %s.", b.Percent, state)
-	res.Measurements = []Measurement{{"Reported level", float64(b.Percent), "%"}}
+	res.Summary = i18n.Tf("Battery telemetry is reported: %d%%, %s.", b.Percent, state)
+	res.Measurements = []Measurement{{i18n.T("Reported level"), float64(b.Percent), "%"}}
 	if h, ok := b.Health(); ok {
-		res.Details = append(res.Details, "Battery health (reported): "+h)
+		res.Details = append(res.Details, i18n.T("Battery health (reported): ")+h)
 	} else {
-		res.Details = append(res.Details, HealthUnavailable)
+		res.Details = append(res.Details, HealthUnavailableText())
 	}
 	for _, d := range b.Details {
 		res.Details = append(res.Details, fmt.Sprintf("%s = %s (%s)", d.Name, d.Value, d.Source))
 	}
-	res.Details = append(res.Details, "Observed change: "+b.ObservationSummary(now))
+	res.Details = append(res.Details, i18n.T("Observed change: ")+b.ObservationSummary(now))
 	if b.Step > 1 {
-		res.Limitations = append(res.Limitations, fmt.Sprintf("The controller reports battery level in %d%% steps.", b.Step))
+		res.Limitations = append(res.Limitations, i18n.Tf("The controller reports battery level in %d%% steps.", b.Step))
 	}
-	res.Limitations = append(res.Limitations, "Capacity, cycle count, voltage, current, and temperature are shown only when the device or OS actually reports them.")
+	res.Limitations = append(res.Limitations, i18n.T("Capacity, cycle count, voltage, current, and temperature are shown only when the device or OS actually reports them."))
 	return res
 }
 
@@ -147,7 +151,7 @@ func (c *ConnMonitor) Feed(tel device.Telemetry, info device.Info, now time.Time
 	if !info.Connected {
 		return
 	}
-	if !c.lastUpdate.IsZero() && !tel.UpdatedAt.IsZero() && tel.UpdatedAt.Sub(c.lastUpdate) > 500*time.Millisecond {
+	if !info.EventDriven && !c.lastUpdate.IsZero() && !tel.UpdatedAt.IsZero() && tel.UpdatedAt.Sub(c.lastUpdate) > 500*time.Millisecond {
 		c.Stalls++
 	}
 	if !tel.UpdatedAt.IsZero() {
@@ -184,38 +188,47 @@ func (c *ConnMonitor) Result(now time.Time, simulated bool) *Result {
 	}
 	res := &Result{Category: CatConnection, Simulated: simulated, At: now}
 	res.Measurements = []Measurement{
-		{"Input report rate", c.RateHz, "Hz"},
-		{"Reports missing in sequence", float64(c.Dropped), ""},
-		{"Read errors", float64(c.ReadErrors), ""},
-		{"Interruptions", float64(c.Interruptions), ""},
-		{"Reconnections", float64(c.Reconnections), ""},
-		{"Telemetry stalls > 0.5 s", float64(c.Stalls), ""},
+		{i18n.T("Input report rate"), c.RateHz, i18n.T("Hz")},
+		{i18n.T("Reports missing in sequence"), float64(c.Dropped), ""},
+		{i18n.T("Read errors"), float64(c.ReadErrors), ""},
+		{i18n.T("Interruptions"), float64(c.Interruptions), ""},
+		{i18n.T("Reconnections"), float64(c.Reconnections), ""},
+		{i18n.T("Telemetry stalls > 0.5 s"), float64(c.Stalls), ""},
 	}
 	var issues []string
 	if c.Dropped > 0 {
-		issues = append(issues, fmt.Sprintf("%d input reports missing (sequence gaps) — typical of Bluetooth interference or a loose cable", c.Dropped))
+		issues = append(issues, i18n.Tf("%d input reports missing (sequence gaps) — typical of Bluetooth interference or a loose cable", c.Dropped))
 	}
 	if c.ReadErrors > 0 {
-		issues = append(issues, fmt.Sprintf("%d read errors", c.ReadErrors))
+		issues = append(issues, i18n.Tf("%d read errors", c.ReadErrors))
 	}
 	if c.Interruptions > 0 {
-		issues = append(issues, fmt.Sprintf("%d interruption(s)", c.Interruptions))
+		issues = append(issues, i18n.Tf("%d interruption(s)", c.Interruptions))
 	}
 	switch {
 	case !c.connected:
-		res.Status, res.Summary = Failed, "Controller is currently disconnected."
+		res.Status, res.Summary = Failed, i18n.T("Controller is currently disconnected.")
+	case c.RateHz <= 0 && c.Info.EventDriven && len(issues) == 0:
+		res.Status = Passed
+		res.Summary = i18n.Tf("Connected via %s without read errors. This controller only reports changes, so no events arrive while it is untouched.", i18n.T(string(c.Info.Connection)))
 	case c.RateHz <= 0:
-		res.Status, res.Summary = Warning, "Connected, but no input reports were received during observation."
+		res.Status, res.Summary = Warning, i18n.T("Connected, but no input reports were received during observation.")
 	case len(issues) > 0:
-		res.Status, res.Summary = Warning, "Connection issues observed: "+strings.Join(issues, "; ")+"."
+		res.Status, res.Summary = Warning, i18n.T("Connection issues observed: ")+strings.Join(issues, "; ")+"."
+	case c.Info.EventDriven:
+		res.Status = Passed
+		res.Summary = i18n.Tf("Stable %s connection without read errors (%.0f input events/s while you used it).", i18n.T(string(c.Info.Connection)), c.RateHz)
 	default:
 		res.Status = Passed
-		res.Summary = fmt.Sprintf("Stable %s connection, receiving input reports at ~%.0f Hz.", c.Info.Connection, c.RateHz)
+		res.Summary = i18n.Tf("Stable %s connection, receiving input reports at ~%.0f Hz.", i18n.T(string(c.Info.Connection)), c.RateHz)
 	}
 	res.Limitations = []string{
-		"Latency is not measured: meaningful end-to-end latency needs external timing hardware.",
-		"Wireless signal strength and USB power draw are not reported by the controller and are not estimated.",
-		"Report rate is counted on the host; with simulated devices it reflects the poll rate.",
+		i18n.T("Latency is not measured: meaningful end-to-end latency needs external timing hardware."),
+		i18n.T("Wireless signal strength and USB power draw are not reported by the controller and are not estimated."),
+		i18n.T("Report rate is counted on the host; with simulated devices it reflects the poll rate."),
+	}
+	if c.Info.EventDriven {
+		res.Limitations = append(res.Limitations, i18n.T("Event-driven input: the rate counts change events, not a fixed report rate."))
 	}
 	return res
 }

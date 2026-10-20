@@ -1,6 +1,7 @@
 package state
 
 import (
+	"github.com/Phobby/TuiSense/internal/i18n"
 	"sync"
 	"time"
 
@@ -29,6 +30,7 @@ type AppState struct {
 	Theme        theme.Palette
 	HighContrast bool
 	Mode         UXMode
+	Language     i18n.Lang
 	ActivePanel  PanelID
 	ShowHelp     bool
 

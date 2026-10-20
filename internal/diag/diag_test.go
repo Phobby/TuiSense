@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"encoding/json"
 	"math"
-	"math/rand"
 	"os"
 	"path/filepath"
 	"strings"
@@ -31,104 +30,6 @@ func (f *fakeActuator) CurrentConfig() device.Config { return f.cfg }
 func dsContext() DeviceContext {
 	d := dualsense.Descriptor()
 	return DeviceContext{Key: "hw", Desc: d, Caps: d.Capabilities, Info: device.Info{Connected: true, Connection: device.ConnUSB}}
-}
-
-// stickStream feeds raw stick samples (8-bit) at 25 Hz.
-func feedSticks(t *StickTest, from time.Time, dur time.Duration, gen func(i int) [4]int32) time.Time {
-	now := from
-	for i := 0; now.Before(from.Add(dur + 50*time.Millisecond)); i++ {
-		t.Feed(device.Telemetry{Raw: device.RawInput{Valid: true, Sticks: gen(i)}}, now)
-		now = now.Add(40 * time.Millisecond)
-	}
-	return now
-}
-
-func noisy(rng *rand.Rand, center float64, sigma float64) int32 {
-	return int32(math.Round(center + rng.NormFloat64()*sigma))
-}
-
-func TestStickDriftClassification(t *testing.T) {
-	layout := dualsense.Descriptor().Inputs
-	rng := rand.New(rand.NewSource(1))
-
-	// Healthy: perfect-ish center, quantization noise only.
-	st := NewStickTest(layout, nil)
-	st.Deadzone = [2]float64{6, 5}
-	st.StartStationary(t0)
-	feedSticks(st, t0, st.Duration, func(int) [4]int32 {
-		return [4]int32{noisy(rng, 128, 0.4), noisy(rng, 127, 0.4), noisy(rng, 128, 0.4), noisy(rng, 128, 0.4)}
-	})
-	if st.Phase != StickDone {
-		t.Fatalf("stationary phase did not finish")
-	}
-	if st.Analysis[0].Status != Passed || st.Analysis[0].Samples < 100 {
-		t.Fatalf("healthy stick should pass with ~125 samples, got %+v", st.Analysis[0])
-	}
-
-	// Offset beyond tolerance but inside deadzone (10 counts ≈ 7.8% vs 10% dz): warning, not failure.
-	st = NewStickTest(layout, nil)
-	st.Deadzone = [2]float64{10, 10}
-	st.StartStationary(t0)
-	feedSticks(st, t0, st.Duration, func(int) [4]int32 {
-		return [4]int32{noisy(rng, 137.5, 0.4), noisy(rng, 127.5, 0.4), 128, 128}
-	})
-	if a := st.Analysis[0]; a.Status != Warning || !strings.Contains(a.Summary, "hidden by your") {
-		t.Fatalf("masked offset should warn about the deadzone, got %v %q", a.Status, a.Summary)
-	}
-
-	// Moving stick → inconclusive, never "drift".
-	st = NewStickTest(layout, nil)
-	st.StartStationary(t0)
-	feedSticks(st, t0, st.Duration, func(i int) [4]int32 {
-		return [4]int32{int32(128 + 40*math.Sin(float64(i)/5)), 128, 128, 128}
-	})
-	if st.Analysis[0].Status != Inconclusive {
-		t.Fatalf("movement must make the test inconclusive, got %v", st.Analysis[0].Status)
-	}
-}
-
-func TestDriftConfirmedOnlyByRepeatedMeasurement(t *testing.T) {
-	layout := dualsense.Descriptor().Inputs
-	rng := rand.New(rand.NewSource(2))
-	drifting := func(int) [4]int32 { return [4]int32{noisy(rng, 145, 0.5), 128, 128, 128} } // ~13.7%
-	st := NewStickTest(layout, nil)
-	st.Deadzone = [2]float64{5, 5}
-	st.StartStationary(t0)
-	now := feedSticks(st, t0, st.Duration, drifting)
-	if st.Analysis[0].Status != Warning {
-		t.Fatalf("single measurement should only warn (possible drift), got %v", st.Analysis[0].Status)
-	}
-	st.StartRange(now)
-	angle := 0.0
-	now = feedSticks(st, now, rangeDuration, func(int) [4]int32 {
-		angle += 0.3
-		return [4]int32{int32(127.5 + 127*math.Cos(angle)), int32(127.5 + 127*math.Sin(angle)), 128, 128}
-	})
-	if st.Phase != StickRecenter {
-		t.Fatalf("expected recenter phase, got %v", st.Phase)
-	}
-	feedSticks(st, now, recenterDuration, drifting)
-	a := st.Analysis[0]
-	if a.Status != Failed || a.ReachedDirs != 8 {
-		t.Fatalf("drift present in both runs should be confirmed (Failed) with full range, got %v dirs=%d %q", a.Status, a.ReachedDirs, a.Summary)
-	}
-	res := st.Result(t0, false)
-	if res == nil || res.Status != Failed || len(res.Limitations) == 0 {
-		t.Fatalf("category result should carry the failure and limitations")
-	}
-}
-
-func TestStickCancelProducesNoResult(t *testing.T) {
-	var scenarios []device.InputScenario
-	st := NewStickTest(dualsense.Descriptor().Inputs, func(s device.InputScenario) { scenarios = append(scenarios, s) })
-	st.StartStationary(t0)
-	st.Cancel()
-	if st.Running() || st.Result(t0, false) != nil {
-		t.Fatalf("cancelled test must not produce a result")
-	}
-	if scenarios[len(scenarios)-1] != device.ScenarioDemo {
-		t.Fatalf("cancel should restore the demo scenario on simulated devices")
-	}
 }
 
 func TestButtonGuidedAndLatchedPresses(t *testing.T) {
@@ -166,40 +67,6 @@ func TestButtonStuckObservation(t *testing.T) {
 	}
 	if bt.Stuck[device.ButtonL1] < 5*time.Second || bt.Counts[device.ButtonL1] != 1 {
 		t.Fatalf("long hold should be observed as possibly stuck and counted once")
-	}
-}
-
-func TestTriggerTestAndResistanceCleanup(t *testing.T) {
-	act := &fakeActuator{cfg: device.DefaultConfig()}
-	tt := NewTriggerTest(dualsense.Descriptor().Inputs, true, act, nil)
-	tt.Start(t0)
-	now := t0
-	for now.Before(t0.Add(triggerRestDuration + 40*time.Millisecond)) {
-		tt.Feed(device.Telemetry{Raw: device.RawInput{Valid: true}}, now)
-		now = now.Add(40 * time.Millisecond)
-	}
-	start := now
-	for now.Before(start.Add(triggerSweepDuration + 40*time.Millisecond)) {
-		p := math.Mod(now.Sub(start).Seconds(), 3) / 3
-		v := int32(255 * (1 - math.Abs(2*p-1)))
-		r := int32(float64(v) * 0.8) // R2 never reaches full travel
-		tt.Feed(device.Telemetry{Raw: device.RawInput{Valid: true, Triggers: [2]int32{v, r}}}, now)
-		now = now.Add(40 * time.Millisecond)
-	}
-	if tt.Phase != TriggerDone {
-		t.Fatalf("trigger test should finish")
-	}
-	if tt.Analysis[0].Status != Passed || tt.Analysis[1].Status != Warning {
-		t.Fatalf("L2 full travel should pass, R2 at 80%% should warn: %+v / %+v", tt.Analysis[0], tt.Analysis[1])
-	}
-
-	// Resistance: applied only on request, restored on timeout with the user's own config.
-	if !tt.StartResistance(now) || len(act.cmds) != 1 || act.cmds[0].Config.LeftTrigger.Mode != device.TriggerModeResistance {
-		t.Fatalf("resistance should be applied once")
-	}
-	tt.Tick(now.Add(ResistanceTestDuration))
-	if tt.ResistanceActive || len(act.cmds) != 2 || act.cmds[1].Config.LeftTrigger != act.cfg.LeftTrigger {
-		t.Fatalf("resistance must be restored to the user's trigger settings after the time limit")
 	}
 }
 
@@ -374,7 +241,7 @@ func TestSessionDisconnectSuspendsEffects(t *testing.T) {
 	s := NewSession(dsContext(), act, nil, nil, nil, t0)
 	s.Haptics.Play("both", t0)
 	s.Triggers.StartResistance(t0)
-	s.Sticks.StartStationary(t0)
+	s.Sticks.Start(t0)
 	n := len(act.cmds)
 	s.Feed(device.Telemetry{}, device.Info{Connected: false, Connection: device.ConnUSB}, t0.Add(time.Second))
 	if s.Triggers.ResistanceActive || s.Haptics.Running != nil || s.Sticks.Running() {

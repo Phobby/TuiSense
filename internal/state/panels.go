@@ -1,6 +1,9 @@
 package state
 
-import "github.com/Phobby/TuiSense/internal/device"
+import (
+	"github.com/Phobby/TuiSense/internal/device"
+	"github.com/Phobby/TuiSense/internal/i18n"
+)
 
 // UXMode selects how much of the interface is exposed.
 type UXMode string
@@ -13,7 +16,7 @@ const (
 // Label returns the display name of the mode.
 func (m UXMode) Label() string {
 	if m == ModeAdvanced {
-		return "Advanced"
+		return i18n.T("Advanced")
 	}
 	return "EZ"
 }
@@ -76,7 +79,9 @@ type PanelSpec struct {
 	Title      string
 	EZTitle    string
 	Capability device.Capability
-	Modes      ModeMask
+	// Feature, when set, is additionally required (e.g. configurable motors).
+	Feature device.Feature
+	Modes   ModeMask
 }
 
 // PanelCatalog is the single source of truth for panel availability. The UI
@@ -86,13 +91,13 @@ var PanelCatalog = []PanelSpec{
 	{ID: PanelOverview, Title: "Overview", EZTitle: "Home", Modes: InBoth},
 	{ID: PanelDiagnostics, Title: "Diagnostics", EZTitle: "Diagnostics", Capability: device.CapDiagnostics, Modes: InBoth},
 	{ID: PanelLighting, Title: "Lighting", EZTitle: "Lights", Capability: device.CapLighting, Modes: InBoth},
-	{ID: PanelHaptics, Title: "Haptics", EZTitle: "Vibration", Capability: device.CapHaptics, Modes: InBoth},
+	{ID: PanelHaptics, Title: "Haptics", EZTitle: "Vibration", Capability: device.CapHaptics, Feature: device.FeatMotorConfig, Modes: InBoth},
 	{ID: PanelTriggers, Title: "Triggers", EZTitle: "Triggers", Capability: device.CapAdaptiveTriggers, Modes: InBoth},
-	{ID: PanelSticks, Title: "Sticks", Capability: device.CapSticks, Modes: InAdvanced},
+	{ID: PanelSticks, Title: "Sticks", Capability: device.CapSticks, Feature: device.FeatDeadzones, Modes: InAdvanced},
 	{ID: PanelMotion, Title: "Motion", Capability: device.CapMotion, Modes: InAdvanced},
 	{ID: PanelAudio, Title: "Audio", Capability: device.CapAudio, Modes: InAdvanced},
 	{ID: PanelProfiles, Title: "Profiles", EZTitle: "Profiles", Capability: device.CapProfiles, Modes: InBoth},
-	{ID: PanelDevice, Title: "Device", Capability: device.CapFirmwareInfo, Modes: InAdvanced},
+	{ID: PanelDevice, Title: "Device", Capability: device.CapConnection, Modes: InAdvanced},
 	{ID: PanelFirmware, Title: "Firmware", Capability: device.CapFirmwareUpdate, Modes: InAdvanced},
 	{ID: PanelLogs, Title: "Logs", Capability: device.CapDiagnostics, Modes: InAdvanced},
 	{ID: PanelSettings, Title: "Settings", EZTitle: "Settings", Modes: InBoth},
@@ -108,9 +113,9 @@ type PanelEntry struct {
 // DisplayTitle returns the mode-appropriate title.
 func (e PanelEntry) DisplayTitle(m UXMode) string {
 	if m == ModeEZ && e.Spec.EZTitle != "" {
-		return e.Spec.EZTitle
+		return i18n.T(e.Spec.EZTitle)
 	}
-	return e.Spec.Title
+	return i18n.T(e.Spec.Title)
 }
 
 // VisiblePanels filters PanelCatalog by capabilities and mode, assigning
@@ -127,6 +132,9 @@ func VisiblePanels(caps device.CapabilitySet, mode UXMode) []PanelEntry {
 		if spec.Capability != "" {
 			support = caps.Level(spec.Capability)
 			if support == device.Unsupported {
+				continue
+			}
+			if spec.Feature != "" && !caps.HasFeature(spec.Capability, spec.Feature) {
 				continue
 			}
 		}

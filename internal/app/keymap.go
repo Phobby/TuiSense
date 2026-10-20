@@ -1,6 +1,7 @@
 package app
 
 import (
+	"github.com/Phobby/TuiSense/internal/i18n"
 	"math"
 	"time"
 
@@ -419,7 +420,7 @@ func (a *Application) handleFocusedWidgetKey(id string, key driver.KeyEvent) boo
 				a.Dispatcher.Dispatch(device.Command{Type: device.CmdApplyFullConfig, Config: s.Config})
 				a.savePrefs()
 				if s.Toasts != nil {
-					s.Toasts.Success("Profile Loaded", "Applied "+chosen.Name)
+					s.Toasts.Success(i18n.T("Profile Loaded"), i18n.Tf("Applied %s", chosen.Name))
 				}
 				return true
 			}

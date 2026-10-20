@@ -2,6 +2,7 @@ package device
 
 import (
 	"context"
+	"github.com/Phobby/TuiSense/internal/i18n"
 	"time"
 )
 
@@ -11,6 +12,7 @@ type ConnectionType string
 const (
 	ConnDisconnected ConnectionType = "Disconnected"
 	ConnUSB          ConnectionType = "USB-C Wired"
+	ConnUSBWired     ConnectionType = "USB Wired"
 	ConnBluetooth    ConnectionType = "Bluetooth"
 	ConnWireless     ConnectionType = "Wireless Dongle"
 	ConnMock         ConnectionType = "Simulated (Mock)"
@@ -37,6 +39,30 @@ type Info struct {
 	PermissionDenied bool
 	PermissionHint   string
 	LastSeen         time.Time
+	// KernelDriver is the OS driver bound to the device (e.g. "xpad", "hid-generic").
+	KernelDriver string
+	// EventDriven is true when the device only reports changes (Linux evdev),
+	// so a quiet input stream is normal and not a connection problem.
+	EventDriven bool
+	// Identification explains how the model was recognized (shown to the user).
+	Identification string
+	// IdentityKey is a non-unique hardware key (vid:pid:version) used to
+	// remember the user's model confirmation. Empty when not applicable.
+	IdentityKey string
+	// IdentityState is "identified", "probable", "confirmed" or "unidentified"
+	// for devices whose model is inferred; empty for fixed-ID devices.
+	IdentityState string
+	// IdentityCandidate names a model the user may confirm (ID and display name).
+	IdentityCandidateID   string
+	IdentityCandidateName string
+	// Details are extra, privacy-conscious connection facts for display.
+	Details []InfoField
+}
+
+// InfoField is one labeled fact about a device.
+type InfoField struct {
+	Label string
+	Value string
 }
 
 // Device is the hardware abstraction implemented by every controller backend:
@@ -72,17 +98,17 @@ func Availability(info Info, caps CapabilitySet, c Capability) (Support, string)
 	spec := caps.Spec(c)
 	if spec.Support == Unsupported {
 		if spec.Note != "" {
-			return Unsupported, spec.Note
+			return Unsupported, i18n.T(spec.Note)
 		}
-		return Unsupported, "Not supported by this controller."
+		return Unsupported, i18n.T("Not supported by this controller.")
 	}
 	if !info.Connected {
-		return Unsupported, "Controller is disconnected."
+		return Unsupported, i18n.T("Controller is disconnected.")
 	}
 	if info.PermissionDenied {
-		return Limited, "Write access to " + info.HIDRawPath + " denied. Install the udev rules in contrib/70-tuisense-dualsense.rules."
+		return Limited, i18n.Tf("Write access to %s denied. Install the udev rules in contrib/70-tuisense-dualsense.rules.", info.HIDRawPath)
 	}
-	return spec.Support, spec.Note
+	return spec.Support, i18n.T(spec.Note)
 }
 
 // BatteryAttribute is one battery-related value exposed by the device or the OS.

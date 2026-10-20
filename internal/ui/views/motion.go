@@ -2,6 +2,7 @@ package views
 
 import (
 	"fmt"
+	"github.com/Phobby/TuiSense/internal/i18n"
 	"math"
 
 	"github.com/Phobby/TuiSense/internal/state"
@@ -17,17 +18,17 @@ func RenderMotionPanel(f *terminal.Frame, area cell.Rect, s *state.AppState) {
 	}
 	p := s.Theme
 
-	inner := panelFrame(f, area, s, "Motion Sensors")
+	inner := panelFrame(f, area, s, i18n.T("Motion Sensors"))
 	y := inner.Y
 
-	f.Buffer.SetStringWithin(inner.X, y, "IMU Sensor Configuration", p.SectionHeaderStyle(), inner.Width)
+	f.Buffer.SetStringWithin(inner.X, y, i18n.T("IMU Sensor Configuration"), p.SectionHeaderStyle(), inner.Width)
 	y++
 
 	// Checkboxes
 	f.RenderWidget(widgets.Checkbox{
 		ID:           "cb_gyro_enabled",
 		Checked:      &s.Config.Motion.GyroEnabled,
-		Label:        "Enable 3-Axis Gyroscope Telemetry",
+		Label:        i18n.T("Enable 3-Axis Gyroscope Telemetry"),
 		Style:        p.LabelStyle(),
 		FocusedStyle: p.ButtonFocusedStyle(),
 	}, cell.NewRect(inner.X, y, inner.Width, 1))
@@ -36,7 +37,7 @@ func RenderMotionPanel(f *terminal.Frame, area cell.Rect, s *state.AppState) {
 	f.RenderWidget(widgets.Checkbox{
 		ID:           "cb_accel_enabled",
 		Checked:      &s.Config.Motion.AccelEnabled,
-		Label:        "Enable 3-Axis Linear Accelerometer",
+		Label:        i18n.T("Enable 3-Axis Linear Accelerometer"),
 		Style:        p.LabelStyle(),
 		FocusedStyle: p.ButtonFocusedStyle(),
 	}, cell.NewRect(inner.X, y, inner.Width, 1))
@@ -45,7 +46,7 @@ func RenderMotionPanel(f *terminal.Frame, area cell.Rect, s *state.AppState) {
 	f.RenderWidget(widgets.Checkbox{
 		ID:           "cb_sync_3d_tilt",
 		Checked:      &s.Config.Motion.Sync3DViewTilt,
-		Label:        "Link Live Gyro Tilt to the 3D Viewport",
+		Label:        i18n.T("Link Live Gyro Tilt to the 3D Viewport"),
 		Style:        p.LabelStyle(),
 		FocusedStyle: p.ButtonFocusedStyle(),
 	}, cell.NewRect(inner.X, y, inner.Width, 1))
@@ -54,7 +55,7 @@ func RenderMotionPanel(f *terminal.Frame, area cell.Rect, s *state.AppState) {
 	f.RenderWidget(widgets.Checkbox{
 		ID:           "cb_invert_pitch",
 		Checked:      &s.Config.Motion.InvertPitch,
-		Label:        "Invert Gyro Pitch Axis",
+		Label:        i18n.T("Invert Gyro Pitch Axis"),
 		Style:        p.LabelStyle(),
 		FocusedStyle: p.ButtonFocusedStyle(),
 	}, cell.NewRect(inner.X, y, inner.Width, 1))
@@ -67,7 +68,7 @@ func RenderMotionPanel(f *terminal.Frame, area cell.Rect, s *state.AppState) {
 	}
 
 	if y < inner.Y+inner.Height {
-		f.Buffer.SetStringWithin(inner.X, y, fmt.Sprintf("Gyro Sensitivity:%3d%%", s.Config.Motion.GyroSensitivity), p.LabelStyle(), labelW)
+		f.Buffer.SetStringWithin(inner.X, y, i18n.Tf("Gyro Sensitivity:%3d%%", s.Config.Motion.GyroSensitivity), p.LabelStyle(), labelW)
 		f.RenderWidget(widgets.Slider{
 			ID:           "slider_gyro_sens",
 			State:        s.GyroSensSlider,
@@ -86,7 +87,7 @@ func RenderMotionPanel(f *terminal.Frame, area cell.Rect, s *state.AppState) {
 
 	// Live IMU Telemetry Bars
 	if y < inner.Y+inner.Height {
-		f.Buffer.SetStringWithin(inner.X, y, "Live 6-Axis IMU Telemetry", p.SectionHeaderStyle(), inner.Width)
+		f.Buffer.SetStringWithin(inner.X, y, i18n.T("Live 6-Axis IMU Telemetry"), p.SectionHeaderStyle(), inner.Width)
 		y++
 	}
 
@@ -109,10 +110,10 @@ func RenderMotionPanel(f *terminal.Frame, area cell.Rect, s *state.AppState) {
 		y++
 	}
 
-	drawAxisBar("gauge_gyro_pitch", "Gyro Pitch:", tel.GyroPitch, 45.0, "°", p.AccentCyan)
-	drawAxisBar("gauge_gyro_yaw", "Gyro Yaw:", tel.GyroYaw, 45.0, "°", p.AccentBlue)
-	drawAxisBar("gauge_gyro_roll", "Gyro Roll:", tel.GyroRoll, 45.0, "°", p.AccentPurple)
-	drawAxisBar("gauge_accel_x", "Accel X:", tel.AccelX, 2.0, "g", p.Success)
-	drawAxisBar("gauge_accel_y", "Accel Y:", tel.AccelY, 2.0, "g", p.Warning)
-	drawAxisBar("gauge_accel_z", "Accel Z:", tel.AccelZ, 2.0, "g", p.AccentPink)
+	drawAxisBar("gauge_gyro_pitch", i18n.T("Gyro Pitch:"), tel.GyroPitch, 45.0, "°", p.AccentCyan)
+	drawAxisBar("gauge_gyro_yaw", i18n.T("Gyro Yaw:"), tel.GyroYaw, 45.0, "°", p.AccentBlue)
+	drawAxisBar("gauge_gyro_roll", i18n.T("Gyro Roll:"), tel.GyroRoll, 45.0, "°", p.AccentPurple)
+	drawAxisBar("gauge_accel_x", i18n.T("Accel X:"), tel.AccelX, 2.0, "g", p.Success)
+	drawAxisBar("gauge_accel_y", i18n.T("Accel Y:"), tel.AccelY, 2.0, "g", p.Warning)
+	drawAxisBar("gauge_accel_z", i18n.T("Accel Z:"), tel.AccelZ, 2.0, "g", p.AccentPink)
 }

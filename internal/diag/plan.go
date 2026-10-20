@@ -3,6 +3,7 @@ package diag
 import (
 	"github.com/Phobby/TuiSense/internal/audio"
 	"github.com/Phobby/TuiSense/internal/device"
+	"github.com/Phobby/TuiSense/internal/i18n"
 )
 
 // AudioProbe is the result of looking for the controller's own audio endpoint.
@@ -39,13 +40,13 @@ func Plan(dc DeviceContext) map[Category]Availability {
 		}
 	}
 
-	need(CatSticks, in.HasSticks() && caps.Supports(device.CapSticks), "This controller has no analog sticks.")
-	need(CatButtons, len(in.Buttons) > 0, "No buttons are declared for this controller.")
-	need(CatTriggers, in.HasTriggers(), "This controller has no analog triggers.")
-	need(CatTouchpad, in.TouchpadContacts > 0, "This controller has no touchpad.")
-	need(CatMotion, caps.Supports(device.CapMotion), noteOr(caps, device.CapMotion, "This controller has no motion sensors."))
-	need(CatHaptics, caps.Supports(device.CapHaptics), noteOr(caps, device.CapHaptics, "This controller has no vibration motors."))
-	need(CatBattery, caps.Supports(device.CapBattery), "This controller reports no battery telemetry (wired-only or unsupported).")
+	need(CatSticks, in.HasSticks() && caps.Supports(device.CapSticks), i18n.T("This controller has no analog sticks."))
+	need(CatButtons, len(in.Buttons) > 0, i18n.T("No buttons are declared for this controller."))
+	need(CatTriggers, in.HasTriggers(), i18n.T("This controller has no analog triggers."))
+	need(CatTouchpad, in.TouchpadContacts > 0, i18n.T("This controller has no touchpad."))
+	need(CatMotion, caps.Supports(device.CapMotion), noteOr(caps, device.CapMotion, i18n.T("This controller has no motion sensors.")))
+	need(CatHaptics, caps.Supports(device.CapHaptics), noteOr(caps, device.CapHaptics, i18n.T("This controller has no vibration motors.")))
+	need(CatBattery, caps.Supports(device.CapBattery), i18n.T("This controller reports no battery telemetry (wired-only or unsupported)."))
 	set(CatConnection, NotTested, "")
 
 	audioCat := func(c Category, feats []device.Feature, wantCapture bool) {
@@ -56,25 +57,25 @@ func Plan(dc DeviceContext) map[Category]Availability {
 		if !has {
 			// Over Bluetooth the runtime set may have dropped the feature; explain that precisely.
 			if base := dc.Desc.Capabilities; base.Supports(device.CapAudio) && dc.Info.Connection == device.ConnBluetooth && in.Audio.RequiresUSB {
-				set(c, Unavailable, "Controller audio is only exposed as a USB audio device; connect it with a USB cable.")
+				set(c, Unavailable, i18n.T("Controller audio is only exposed as a USB audio device; connect it with a USB cable."))
 				return
 			}
-			set(c, Unsupported, "This controller has no "+map[bool]string{true: "microphone", false: "audio output"}[wantCapture]+".")
+			set(c, Unsupported, map[bool]string{true: i18n.T("This controller has no microphone."), false: i18n.T("This controller has no audio output.")}[wantCapture])
 			return
 		}
 		switch {
 		case !dc.Info.Connected:
-			set(c, Unavailable, "Controller is disconnected.")
+			set(c, Unavailable, i18n.T("Controller is disconnected."))
 		case dc.Info.Connection == device.ConnBluetooth && in.Audio.RequiresUSB:
-			set(c, Unavailable, "Controller audio is only exposed as a USB audio device; connect it with a USB cable.")
+			set(c, Unavailable, i18n.T("Controller audio is only exposed as a USB audio device; connect it with a USB cable."))
 		case dc.Audio.Err != nil:
-			set(c, Unavailable, "Audio system error: "+dc.Audio.Err.Error())
+			set(c, Unavailable, i18n.Tf("Audio system error: %s", dc.Audio.Err.Error()))
 		case !dc.Audio.Found:
-			set(c, Unavailable, "No sound card belonging to this controller was found (looked for USB ID "+joinIDs(in.Audio.USBIDs)+").")
+			set(c, Unavailable, i18n.Tf("No sound card belonging to this controller was found (looked for USB ID %s).", joinIDs(in.Audio.USBIDs)))
 		case wantCapture && !dc.Audio.Endpoint.CanCapture():
-			set(c, Unavailable, dc.Audio.Endpoint.CardName+" exposes no capture stream.")
+			set(c, Unavailable, i18n.Tf("%s exposes no capture stream.", dc.Audio.Endpoint.CardName))
 		case !wantCapture && !dc.Audio.Endpoint.CanPlay():
-			set(c, Unavailable, dc.Audio.Endpoint.CardName+" exposes no playback stream.")
+			set(c, Unavailable, i18n.Tf("%s exposes no playback stream.", dc.Audio.Endpoint.CardName))
 		default:
 			set(c, NotTested, "")
 		}
@@ -85,7 +86,7 @@ func Plan(dc DeviceContext) map[Category]Availability {
 	if !dc.Info.Connected {
 		for c, a := range out {
 			if a.Status == NotTested && c != CatConnection {
-				set(c, Unavailable, "Controller is disconnected.")
+				set(c, Unavailable, i18n.T("Controller is disconnected."))
 			}
 		}
 	}
@@ -94,14 +95,14 @@ func Plan(dc DeviceContext) map[Category]Availability {
 
 func noteOr(caps device.CapabilitySet, c device.Capability, def string) string {
 	if n := caps.Spec(c).Note; n != "" {
-		return n
+		return i18n.T(n)
 	}
 	return def
 }
 
 func joinIDs(ids []string) string {
 	if len(ids) == 0 {
-		return "(none declared)"
+		return i18n.T("(none declared)")
 	}
 	out := ids[0]
 	for _, id := range ids[1:] {

@@ -36,8 +36,13 @@ type Telemetry struct {
 	Raw            RawInput      // unprocessed values (no software deadzone or scaling)
 	Touch          [2]TouchPoint // multi-touch contacts
 	ReportsDropped uint64        // gaps detected in the device's report sequence counter
-	ReadErrors     uint64        // failed input reads
-	Simulated      bool          // produced by a mock/test device, never real hardware
+	// Samples holds every raw input report received since the previous poll
+	// (oldest first, bounded). Diagnostics use it to measure at the device's
+	// real report rate instead of the ~25 Hz UI poll rate. Nil when a backend
+	// cannot provide per-report data; then Raw is the only sample.
+	Samples    []RawSample
+	ReadErrors uint64 // failed input reads
+	Simulated  bool   // produced by a mock/test device, never real hardware
 
 	LastInputHex  string
 	LastOutputHex string
@@ -54,6 +59,17 @@ type RawInput struct {
 	Triggers [2]int32 // L, R
 	Gyro     [3]int16
 	Accel    [3]int16
+}
+
+// RawSample is one input report's raw values.
+type RawSample struct {
+	At       time.Time
+	Sticks   [4]int32 // LX, LY, RX, RY
+	Triggers [2]int32 // L, R (for a shared trigger axis both carry the axis value)
+	Buttons  ButtonSet
+	// Held marks a sample repeated by the backend because the device sent no
+	// new report (event-driven devices only report changes).
+	Held bool
 }
 
 // TouchPoint is one touchpad contact.

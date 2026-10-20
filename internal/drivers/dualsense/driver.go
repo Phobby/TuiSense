@@ -63,7 +63,6 @@ func MockVirtual() device.VirtualDevice {
 
 var (
 	_ device.Driver    = (*Driver)(nil)
-	_ device.Device    = (*LinuxBackend)(nil)
 	_ device.Device    = (*MockBackend)(nil)
 	_ device.Simulator = (*MockBackend)(nil)
 )
@@ -71,5 +70,4 @@ var (
 var (
 	_ device.ScenarioSimulator      = (*MockBackend)(nil)
 	_ device.BatteryDetailsProvider = (*MockBackend)(nil)
-	_ device.BatteryDetailsProvider = (*LinuxBackend)(nil)
 )

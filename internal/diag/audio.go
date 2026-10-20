@@ -3,6 +3,7 @@ package diag
 import (
 	"context"
 	"fmt"
+	"github.com/Phobby/TuiSense/internal/i18n"
 	"sync"
 	"time"
 
@@ -201,34 +202,34 @@ func (m *MicTest) Result(now time.Time, simulated bool, muteWarning string) *Res
 	defer m.mu.Unlock()
 	if m.Err != nil {
 		return &Result{Category: CatAudioIn, Status: Failed, Simulated: simulated, At: now,
-			Summary: "Could not capture from the controller microphone.", Details: []string{m.Err.Error()}}
+			Summary: i18n.T("Could not capture from the controller microphone."), Details: []string{m.Err.Error()}}
 	}
 	if m.started.IsZero() || now.Sub(m.started) < 2*time.Second || m.Chunks < 20 {
 		return nil
 	}
 	res := &Result{Category: CatAudioIn, Simulated: simulated, At: now}
 	res.Measurements = []Measurement{
-		{"Peak level", m.PeakDB, "dBFS"},
-		{"Quietest level", m.MinDB, "dBFS"},
-		{"Audio chunks received", float64(m.Chunks), "× 50 ms"},
+		{i18n.T("Peak level"), m.PeakDB, i18n.T("dBFS")},
+		{i18n.T("Quietest level"), m.MinDB, i18n.T("dBFS")},
+		{i18n.T("Audio chunks received"), float64(m.Chunks), i18n.T("× 50 ms")},
 	}
 	switch {
 	case m.ZeroChunks == m.Chunks:
 		res.Status = Warning
-		res.Summary = "The microphone stream opened but delivered only digital silence."
-		res.Details = append(res.Details, "The controller may have muted its microphone (mute button / mute LED, or the profile's mic mute).")
+		res.Summary = i18n.T("The microphone stream opened but delivered only digital silence.")
+		res.Details = append(res.Details, i18n.T("The controller may have muted its microphone (mute button / mute LED, or the profile's mic mute)."))
 	case m.PeakDB >= -50 && m.PeakDB-m.MinDB >= 10:
 		res.Status = Passed
-		res.Summary = fmt.Sprintf("Audio input received from the controller microphone (peak %.0f dBFS).", m.PeakDB)
+		res.Summary = i18n.Tf("Audio input received from the controller microphone (peak %.0f dBFS).", m.PeakDB)
 	default:
 		res.Status = Inconclusive
-		res.Summary = "Audio is arriving but stays very quiet — speak close to the controller and retest."
+		res.Summary = i18n.T("Audio is arriving but stays very quiet — speak close to the controller and retest.")
 	}
 	if muteWarning != "" {
 		res.Details = append(res.Details, muteWarning)
 	}
-	res.Details = append(res.Details, "Device: "+m.In.Label())
-	res.Limitations = []string{"Recordings are kept in memory only and discarded when the test stops; nothing is saved."}
+	res.Details = append(res.Details, i18n.T("Device: ")+m.In.Label())
+	res.Limitations = []string{i18n.T("Recordings are kept in memory only and discarded when the test stops; nothing is saved.")}
 	return res
 }
 
@@ -320,25 +321,25 @@ func (s *SpeakerTest) Result(now time.Time, simulated bool, volumeNote string) *
 	defer s.mu.Unlock()
 	if s.Err != nil {
 		return &Result{Category: CatAudioOut, Status: Failed, Simulated: simulated, At: now,
-			Summary: "Could not play audio on the controller.", Details: []string{s.Err.Error()}}
+			Summary: i18n.T("Could not play audio on the controller."), Details: []string{s.Err.Error()}}
 	}
 	if s.Heard == nil {
 		return nil
 	}
 	res := &Result{Category: CatAudioOut, Simulated: simulated, UserConfirmed: true, At: now}
 	if *s.Heard {
-		res.Status, res.Summary = Passed, "Test sound heard from the controller."
+		res.Status, res.Summary = Passed, i18n.T("Test sound heard from the controller.")
 	} else {
 		res.Status = Warning
-		res.Summary = "Playback succeeded but no sound was heard."
+		res.Summary = i18n.T("Playback succeeded but no sound was heard.")
 		res.Details = append(res.Details,
-			"If a headset is plugged into the controller, sound goes to the headset jack.",
-			"The controller firmware decides speaker/headphone routing; TuiSense does not change it.")
+			i18n.T("If a headset is plugged into the controller, sound goes to the headset jack."),
+			i18n.T("The controller firmware decides speaker/headphone routing; TuiSense does not change it."))
 	}
 	if volumeNote != "" {
 		res.Details = append(res.Details, volumeNote)
 	}
-	res.Details = append(res.Details, "Device: "+s.Out.Label())
-	res.Limitations = []string{"Only audio channels 1–2 are used; channels 3–4 (haptics on DualSense) stay silent."}
+	res.Details = append(res.Details, i18n.T("Device: ")+s.Out.Label())
+	res.Limitations = []string{i18n.T("Only audio channels 1–2 are used; channels 3–4 (haptics on DualSense) stay silent.")}
 	return res
 }

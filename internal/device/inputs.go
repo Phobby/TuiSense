@@ -59,8 +59,13 @@ type ButtonDef struct {
 }
 
 // AxisRange describes the raw value range a device reports for an input.
+// Center is the nominal resting value declared by the driver (for evdev
+// devices it comes from the kernel's absinfo, not from a guess). Invert flips
+// the axis direction so that every normalized value follows one convention:
+// sticks report negative X = left and negative Y = up; triggers 0 = released.
 type AxisRange struct {
 	Min, Max, Center float64
+	Invert           bool
 }
 
 // HalfSpan returns the raw distance from center to the edge.
@@ -68,6 +73,67 @@ func (r AxisRange) HalfSpan() float64 { return (r.Max - r.Min) / 2 }
 
 // Span returns the full raw range.
 func (r AxisRange) Span() float64 { return r.Max - r.Min }
+
+// Valid reports whether the range has a positive span.
+func (r AxisRange) Valid() bool { return r.Max > r.Min }
+
+// NormalizeBipolar maps a raw stick value to [-1, 1] around the declared
+// center. Each side is scaled separately, so asymmetric ranges such as 0..255
+// with center 128 (−128/+127 counts) reach exactly ±1 at both ends. No
+// deadzone is applied.
+func (r AxisRange) NormalizeBipolar(raw float64) float64 {
+	if !r.Valid() {
+		return 0
+	}
+	c := r.Center
+	if c < r.Min || c > r.Max {
+		c = (r.Min + r.Max) / 2
+	}
+	var v float64
+	switch {
+	case raw >= c && r.Max > c:
+		v = (raw - c) / (r.Max - c)
+	case raw < c && c > r.Min:
+		v = (raw - c) / (c - r.Min)
+	}
+	if v > 1 {
+		v = 1
+	} else if v < -1 {
+		v = -1
+	}
+	if r.Invert {
+		v = -v
+	}
+	return v
+}
+
+// NormalizeUnipolar maps a raw trigger value to [0, 1] (0 = released).
+func (r AxisRange) NormalizeUnipolar(raw float64) float64 {
+	if !r.Valid() {
+		return 0
+	}
+	v := (raw - r.Min) / r.Span()
+	if v > 1 {
+		v = 1
+	} else if v < 0 {
+		v = 0
+	}
+	if r.Invert {
+		v = 1 - v
+	}
+	return v
+}
+
+// TriggerKind says how a controller exposes its triggers in the current
+// input mode. The same physical trigger can be analog in one mode and a plain
+// button in another, so diagnostics must never assume analog travel.
+type TriggerKind string
+
+const (
+	TriggerAnalog     TriggerKind = ""            // one analog axis per trigger (default)
+	TriggerDigital    TriggerKind = "digital"     // on/off buttons only
+	TriggerSharedAxis TriggerKind = "shared_axis" // both triggers move one axis in opposite directions
+)
 
 // DriftHeuristics are driver-declared expectations used to *interpret* stick
 // measurements. They are heuristics, not manufacturer specifications, and the
@@ -111,12 +177,18 @@ func (m AudioMatch) Matches(usbID, name string) bool {
 // exist, their raw ranges, and labels. The diagnostics UI derives every test
 // view from it, so a new controller needs no dashboard changes.
 type InputLayout struct {
-	Buttons          []ButtonDef
-	StickLabels      [2]string // empty when the controller has no analog sticks
-	StickRange       AxisRange
+	Buttons     []ButtonDef
+	StickLabels [2]string // empty when the controller has no analog sticks
+	StickRange  AxisRange
+	// StickAxes optionally overrides StickRange per axis (LX, LY, RX, RY);
+	// drivers that read ranges from the OS fill it at open time.
+	StickAxes        [4]AxisRange
+	AxisNames        [6]string // optional raw axis names (LX, LY, RX, RY, L, R), e.g. "ABS_X"
 	Drift            DriftHeuristics
-	TriggerLabels    [2]string // empty when there are no analog triggers
+	TriggerLabels    [2]string // empty when there are no triggers
 	TriggerRange     AxisRange
+	TriggerAxes      [2]AxisRange // optional per-trigger override of TriggerRange
+	TriggerKind      TriggerKind
 	TouchpadContacts int
 	TouchpadSize     [2]int  // raw coordinate extent (width, height)
 	GyroLSBPerDPS    float64 // nominal raw counts per °/s (0 = unknown); uncalibrated
@@ -128,8 +200,25 @@ type InputLayout struct {
 // HasSticks reports whether analog sticks are declared.
 func (l InputLayout) HasSticks() bool { return l.StickLabels[0] != "" }
 
-// HasTriggers reports whether analog triggers are declared.
+// HasTriggers reports whether triggers (analog or digital) are declared.
 func (l InputLayout) HasTriggers() bool { return l.TriggerLabels[0] != "" }
+
+// StickAxis returns the raw range of stick axis i (0=LX, 1=LY, 2=RX, 3=RY).
+func (l InputLayout) StickAxis(i int) AxisRange {
+	if l.StickAxes[i].Valid() {
+		return l.StickAxes[i]
+	}
+	return l.StickRange
+}
+
+// TriggerAxis returns the raw range of trigger i (0=left, 1=right). For a
+// shared axis both entries describe the same axis.
+func (l InputLayout) TriggerAxis(i int) AxisRange {
+	if l.TriggerAxes[i].Valid() {
+		return l.TriggerAxes[i]
+	}
+	return l.TriggerRange
+}
 
 // Button returns the declaration for id.
 func (l InputLayout) Button(id ButtonID) (ButtonDef, bool) {

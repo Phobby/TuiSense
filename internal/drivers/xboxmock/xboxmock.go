@@ -91,7 +91,7 @@ func Descriptor() device.Descriptor {
 			device.CapabilitySpec{ID: device.CapConnection, Support: device.Full},
 			device.CapabilitySpec{ID: device.CapFirmwareInfo, Support: device.Full},
 			device.CapabilitySpec{ID: device.CapHaptics, Support: device.Full,
-				Features: []device.Feature{device.FeatDualMotors, device.FeatTriggerMotors, device.FeatTestPulse}},
+				Features: []device.Feature{device.FeatDualMotors, device.FeatTriggerMotors, device.FeatTestPulse, device.FeatMotorConfig}},
 			device.CapabilitySpec{ID: device.CapAdaptiveTriggers, Support: device.Unsupported,
 				Note: "Xbox controllers use impulse trigger motors instead of adaptive resistance."},
 			device.CapabilitySpec{ID: device.CapLighting, Support: device.Limited,

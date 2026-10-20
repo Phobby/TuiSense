@@ -2,6 +2,7 @@ package views
 
 import (
 	"fmt"
+	"github.com/Phobby/TuiSense/internal/i18n"
 
 	"github.com/Phobby/TuiSense/internal/device"
 	"github.com/Phobby/TuiSense/internal/state"
@@ -35,7 +36,7 @@ func RenderLightingPanel(f *terminal.Frame, area cell.Rect, s *state.AppState, d
 	}
 	p := s.Theme
 
-	inner := panelFrame(f, area, s, "Lighting")
+	inner := panelFrame(f, area, s, i18n.T("Lighting"))
 	y := inner.Y
 	y = supportBanner(f, inner, y, s, device.CapLighting)
 	hasRGB := s.Caps.HasFeature(device.CapLighting, device.FeatLightbarRGB)
@@ -58,7 +59,7 @@ func RenderLightingPanel(f *terminal.Frame, area cell.Rect, s *state.AppState, d
 	cbEnable := widgets.Checkbox{
 		ID:           "cb_lightbar_enabled",
 		Checked:      &s.Config.Lighting.Enabled,
-		Label:        "Enable LEDs",
+		Label:        i18n.T("Enable LEDs"),
 		Style:        p.LabelStyle(),
 		FocusedStyle: p.ButtonFocusedStyle(),
 	}
@@ -75,10 +76,10 @@ func RenderLightingPanel(f *terminal.Frame, area cell.Rect, s *state.AppState, d
 
 	// Row 1: Color Swatches
 	if hasRGB && y < inner.Y+inner.Height {
-		f.Buffer.SetStringWithin(inner.X, y, "Swatches:", p.MutedStyle(), 10)
+		f.Buffer.SetStringWithin(inner.X, y, i18n.T("Swatches:"), p.MutedStyle(), 10)
 		sx := inner.X + 10
 		for _, sw := range colorSwatches {
-			pill := fmt.Sprintf(" ● %s ", sw.Name)
+			pill := fmt.Sprintf(" ● %s ", i18n.T(sw.Name))
 			pw := uint16(cell.StringWidth(pill))
 			if sx+pw > inner.X+inner.Width {
 				break
@@ -101,11 +102,11 @@ func RenderLightingPanel(f *terminal.Frame, area cell.Rect, s *state.AppState, d
 
 	// Row 2: Brightness Presets
 	if hasBrightness && y < inner.Y+inner.Height {
-		f.Buffer.SetStringWithin(inner.X, y, "Brightness:", p.MutedStyle(), 12)
+		f.Buffer.SetStringWithin(inner.X, y, i18n.T("Brightness:"), p.MutedStyle(), 12)
 		bx := inner.X + 12
 		levels := []device.BrightnessLevel{device.BrightnessHigh, device.BrightnessMedium, device.BrightnessLow}
 		for _, lvl := range levels {
-			lbl := " " + lvl.String() + " "
+			lbl := " " + i18n.T(lvl.String()) + " "
 			lw := uint16(cell.StringWidth(lbl))
 			if bx+lw > inner.X+inner.Width {
 				break
@@ -124,10 +125,10 @@ func RenderLightingPanel(f *terminal.Frame, area cell.Rect, s *state.AppState, d
 
 	// Row 3: Animation Mode Selector
 	if hasAnim && y < inner.Y+inner.Height {
-		f.Buffer.SetStringWithin(inner.X, y, "Animation:", p.MutedStyle(), 12)
+		f.Buffer.SetStringWithin(inner.X, y, i18n.T("Animation:"), p.MutedStyle(), 12)
 		ax := inner.X + 12
 		for _, anim := range device.AllLightbarAnimations {
-			lbl := " " + string(anim) + " "
+			lbl := " " + i18n.T(string(anim)) + " "
 			aw := uint16(cell.StringWidth(lbl))
 			if ax+aw > inner.X+inner.Width {
 				break
@@ -147,7 +148,7 @@ func RenderLightingPanel(f *terminal.Frame, area cell.Rect, s *state.AppState, d
 
 	// Row 4: Player Indicator LEDs (P1..P4)
 	if hasPlayer && y < inner.Y+inner.Height {
-		f.Buffer.SetStringWithin(inner.X, y, "Player LED:", p.MutedStyle(), 12)
+		f.Buffer.SetStringWithin(inner.X, y, i18n.T("Player LED:"), p.MutedStyle(), 12)
 		px := inner.X + 12
 		masks := []struct {
 			num  int
@@ -158,7 +159,7 @@ func RenderLightingPanel(f *terminal.Frame, area cell.Rect, s *state.AppState, d
 			{2, 0x0A, " P2 (•█•█•) "},
 			{3, 0x15, " P3 (█•█•█) "},
 			{4, 0x1B, " P4 (██•██) "},
-			{0, 0x00, " Off "},
+			{0, 0x00, i18n.T(" Off ")},
 		}
 		for _, m := range masks {
 			mw := uint16(cell.StringWidth(m.str))

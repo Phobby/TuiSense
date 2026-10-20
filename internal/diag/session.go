@@ -1,6 +1,7 @@
 package diag
 
 import (
+	"github.com/Phobby/TuiSense/internal/i18n"
 	"time"
 
 	"github.com/Phobby/TuiSense/internal/audio"
@@ -61,6 +62,9 @@ func NewSession(dc DeviceContext, act Actuator, sim device.ScenarioSimulator, ba
 	scn := s.setScenario
 	if in.HasSticks() {
 		s.Sticks = NewStickTest(in, scn)
+		if dc.Info.EventDriven {
+			s.Sticks.SourceNote = i18n.T("This device reports only changed values (Linux evdev), and the kernel driver may suppress very small changes; tiny noise can therefore be invisible.")
+		}
 	}
 	if len(in.Buttons) > 0 {
 		s.Buttons = NewButtonTest(in, scn)
@@ -221,7 +225,7 @@ func (s *Session) MicMuteWarning() string {
 	}
 	cfg := s.act.CurrentConfig()
 	if cfg.Audio.ForceMicMute || cfg.Lighting.MicLED != device.MicLEDOff {
-		return "Your current profile mutes the controller microphone (mute LED on). Turn the mute LED off in Advanced › Audio to hear input."
+		return i18n.T("Your current profile mutes the controller microphone (mute LED on). Turn the mute LED off in Advanced › Audio to hear input.")
 	}
 	return ""
 }
@@ -232,7 +236,7 @@ func (s *Session) SpeakerVolumeNote() string {
 		return ""
 	}
 	if v := s.act.CurrentConfig().Audio.SpeakerVolume; v == 0 {
-		return "Your profile sets the controller speaker volume to 0%."
+		return i18n.T("Your profile sets the controller speaker volume to 0%.")
 	}
 	return ""
 }

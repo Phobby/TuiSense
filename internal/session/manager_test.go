@@ -205,3 +205,43 @@ func TestStartPollsActiveDevice(t *testing.T) {
 		t.Fatalf("expected telemetry events from the active mock")
 	}
 }
+
+// TestReenumerationKeepsTheControllerActive models an input-mode switch (or a
+// confirmed re-identification): the device disappears under one key and
+// reappears under another in the same scan. The replacement must become
+// active instead of leaving the user with no controller.
+func TestReenumerationKeepsTheControllerActive(t *testing.T) {
+	drv := &fakeDriver{}
+	log := &eventLog{}
+	m := NewManager(newRegistry(drv), Options{}, nil, log.add)
+	drv.set("evdev:/dev/input/event23#generic")
+	m.checkHotplug()
+	if m.ActiveKey() != "evdev:/dev/input/event23#generic" {
+		t.Fatalf("first pad should become active, got %q", m.ActiveKey())
+	}
+	drv.set("evdev:/dev/input/event24#msi")
+	m.checkHotplug()
+	if m.ActiveKey() != "evdev:/dev/input/event24#msi" || m.Device("evdev:/dev/input/event23#generic") != nil {
+		t.Fatalf("the re-enumerated controller must replace the old one, active=%q", m.ActiveKey())
+	}
+	if !log.has(EventDisconnected, "evdev:/dev/input/event23#generic") || !log.has(EventConnected, "evdev:/dev/input/event24#msi") {
+		t.Fatal("both lifecycle events must be emitted")
+	}
+}
+
+func TestRescanRunsOnThePollingGoroutine(t *testing.T) {
+	drv := &fakeDriver{}
+	m := NewManager(newRegistry(drv), Options{}, nil, nil)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go m.Start(ctx)
+	drv.set("hw:9")
+	m.Rescan()
+	deadline := time.Now().Add(time.Second)
+	for m.ActiveKey() != "hw:9" && time.Now().Before(deadline) {
+		time.Sleep(5 * time.Millisecond)
+	}
+	if m.ActiveKey() != "hw:9" {
+		t.Fatal("Rescan should trigger an immediate discovery")
+	}
+}

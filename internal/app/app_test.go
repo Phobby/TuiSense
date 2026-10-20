@@ -26,6 +26,9 @@ func newTestApp(t *testing.T, dirs testDirs, opts Options) *Application {
 	t.Helper()
 	opts.ProfileDir = dirs.profiles
 	opts.ConfigDir = dirs.config
+	if opts.Language == "" {
+		opts.Language = "en" // deterministic, independent of the host $LANG
+	}
 	if opts.Registry == nil {
 		opts.Registry = drivers.NewBuiltinRegistry(drivers.RegistryOptions{TestDevices: true})
 	}

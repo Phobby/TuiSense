@@ -2,6 +2,7 @@ package widgets
 
 import (
 	"fmt"
+	"github.com/Phobby/TuiSense/internal/i18n"
 	"time"
 
 	"github.com/Phobby/TuiSense/internal/device"
@@ -22,7 +23,7 @@ func RenderDeviceSummaryWidget(f *terminal.Frame, area cell.Rect, s *state.AppSt
 	info := s.DeviceInfo
 
 	block := widgets.Block{
-		Title:         " Device ",
+		Title:         i18n.T(" Device "),
 		TitleStyle:    p.CardTitle(),
 		Borders:       widgets.BorderAll,
 		BorderSymbols: widgets.SymbolsRounded,
@@ -36,13 +37,13 @@ func RenderDeviceSummaryWidget(f *terminal.Frame, area cell.Rect, s *state.AppSt
 		return
 	}
 
-	lastSeenStr := "Never"
+	lastSeenStr := i18n.T("Never")
 	if !info.LastSeen.IsZero() {
 		ago := time.Since(info.LastSeen)
 		if ago < time.Second {
-			lastSeenStr = fmt.Sprintf("%dms ago (Live)", ago.Milliseconds())
+			lastSeenStr = i18n.Tf("%dms ago (Live)", ago.Milliseconds())
 		} else {
-			lastSeenStr = fmt.Sprintf("%s (%ds ago)", info.LastSeen.Format("15:04:05"), int(ago.Seconds()))
+			lastSeenStr = i18n.Tf("%s (%ds ago)", info.LastSeen.Format("15:04:05"), int(ago.Seconds()))
 		}
 	}
 
@@ -57,7 +58,7 @@ func RenderDeviceSummaryWidget(f *terminal.Frame, area cell.Rect, s *state.AppSt
 		nameVal = info.Model
 	}
 	if !info.Connected {
-		nameVal = "No Controller Attached"
+		nameVal = i18n.T("No Controller Attached")
 	}
 
 	desc := s.Descriptor
@@ -68,23 +69,34 @@ func RenderDeviceSummaryWidget(f *terminal.Frame, area cell.Rect, s *state.AppSt
 	var rows []kvRow
 	if s.Mode == state.ModeEZ {
 		rows = []kvRow{
-			{key: "Model", val: nameVal, col: p.FgPrimary},
-			{key: "Brand", val: nonEmpty(desc.Brand, "—"), col: p.FgSecondary},
-			{key: "Link", val: string(info.Connection), col: p.FgSecondary},
-			{key: "Firmware", val: firmware, col: p.FgSecondary},
+			{key: i18n.T("Model"), val: nameVal, col: p.FgPrimary},
+			{key: i18n.T("Brand"), val: nonEmpty(desc.Brand, "—"), col: p.FgSecondary},
+			{key: i18n.T("Link"), val: i18n.T(string(info.Connection)), col: p.FgSecondary},
+		}
+		if s.Caps.Supports(device.CapFirmwareInfo) {
+			rows = append(rows, kvRow{key: i18n.T("Firmware"), val: firmware, col: p.FgSecondary})
 		}
 	} else {
 		rows = []kvRow{
-			{key: "Model", val: nameVal, col: p.FgPrimary},
-			{key: "Brand", val: nonEmpty(desc.Brand, "—"), col: p.FgSecondary},
-			{key: "Link", val: string(info.Connection), col: p.FgSecondary},
-			{key: "Firmware", val: fmt.Sprintf("%s · HW %s", nonEmpty(info.FirmwareVersion, "—"), nonEmpty(info.HardwareVersion, "—")), col: p.FgSecondary},
-			{key: "USB ID", val: fmt.Sprintf("%04X:%04X", info.VendorID, info.ProductID), col: p.FgMuted},
-			{key: "MAC", val: nonEmpty(info.MACAddress, "N/A"), col: p.FgSecondary},
-			{key: "Path", val: nonEmpty(info.HIDRawPath, "—"), col: p.FgSecondary},
-			{key: "Seen", val: lastSeenStr, col: p.FgMuted},
-			{key: "Caps", val: capabilityCounts(s.Caps), col: p.FgSecondary},
+			{key: i18n.T("Model"), val: nameVal, col: p.FgPrimary},
+			{key: i18n.T("Brand"), val: nonEmpty(desc.Brand, "—"), col: p.FgSecondary},
+			{key: i18n.T("Link"), val: i18n.T(string(info.Connection)), col: p.FgSecondary},
 		}
+		if s.Caps.Supports(device.CapFirmwareInfo) {
+			rows = append(rows, kvRow{key: i18n.T("Firmware"), val: i18n.Tf("%s · HW %s", nonEmpty(info.FirmwareVersion, "—"), nonEmpty(info.HardwareVersion, "—")), col: p.FgSecondary})
+		}
+		rows = append(rows, kvRow{key: i18n.T("USB ID"), val: fmt.Sprintf("%04X:%04X", info.VendorID, info.ProductID), col: p.FgMuted})
+		if info.MACAddress != "" {
+			rows = append(rows, kvRow{key: i18n.T("MAC"), val: info.MACAddress, col: p.FgSecondary})
+		}
+		if info.KernelDriver != "" {
+			rows = append(rows, kvRow{key: i18n.T("Driver"), val: info.KernelDriver, col: p.FgSecondary})
+		}
+		rows = append(rows,
+			kvRow{key: i18n.T("Path"), val: nonEmpty(info.HIDRawPath, nonEmpty(info.InputDevicePath, "—")), col: p.FgSecondary},
+			kvRow{key: i18n.T("Seen"), val: lastSeenStr, col: p.FgMuted},
+			kvRow{key: i18n.T("Caps"), val: capabilityCounts(s.Caps), col: p.FgSecondary},
+		)
 	}
 
 	labelW := uint16(10)
@@ -106,8 +118,8 @@ func RenderDeviceSummaryWidget(f *terminal.Frame, area cell.Rect, s *state.AppSt
 	f.RegisterAccessibility(accessibility.AccessibilityNode{
 		ID:     "device_summary_widget",
 		Role:   accessibility.RoleGeneric,
-		Label:  "Device Information",
-		Value:  fmt.Sprintf("%s MAC=%s Path=%s", nameVal, info.MACAddress, info.HIDRawPath),
+		Label:  i18n.T("Device Information"),
+		Value:  i18n.Tf("%s MAC=%s Path=%s", nameVal, info.MACAddress, nonEmpty(info.HIDRawPath, info.InputDevicePath)),
 		Bounds: area,
 	})
 }
@@ -129,5 +141,5 @@ func capabilityCounts(caps device.CapabilitySet) string {
 			limited++
 		}
 	}
-	return fmt.Sprintf("%d full · %d limited · %d n/a", full, limited, len(device.AllCapabilities)-full-limited)
+	return i18n.Tf("%d full · %d limited · %d n/a", full, limited, len(device.AllCapabilities)-full-limited)
 }

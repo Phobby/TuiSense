@@ -63,28 +63,35 @@ func TestDiagnosticsAdaptToSelectedController(t *testing.T) {
 	page.Expect(page.GetByLabel("≡ Menu")).ToBeVisible()
 }
 
-func TestXboxMockDriftTestReportsSimulatedPossibleDrift(t *testing.T) {
+func TestXboxMockStickTestFlagsSimulatedOffsetWithoutFaultClaim(t *testing.T) {
 	a := newMockApp(t, state.ModeAdvanced)
 	a.SelectDevice(xboxmock.Key)
 	a.State.ActivePanel = state.PanelDiagnostics
 	d := a.State.Diag
 	d.Sticks.Duration = 2 * time.Second
 	a.tickDiagnostics(time.Now())
-	d.Sticks.StartStationary(time.Now())
+	d.Sticks.Start(time.Now())
 	deadline := time.Now().Add(4 * time.Second)
 	for d.Sticks.Running() && time.Now().Before(deadline) {
 		a.pumpTelemetry()
 		time.Sleep(40 * time.Millisecond)
 	}
+	if d.Sticks.Step != diag.StickExplain {
+		t.Fatalf("after the resting step the explanation step should show, got %v", d.Sticks.Step)
+	}
 	r, ok := d.Results[diag.CatSticks]
 	if !ok {
-		t.Fatalf("drift test should produce a result")
+		t.Fatalf("the resting step should produce a preliminary result")
 	}
-	if !r.Simulated || r.Status != diag.Warning || !strings.Contains(d.Sticks.Analysis[1].Summary, "Possible drift") {
-		t.Fatalf("simulated right-stick offset should be flagged as possible drift (simulated), got %v %q", r.Status, d.Sticks.Analysis[1].Summary)
+	right := d.Sticks.Analysis[1]
+	if !r.Simulated || r.Status != diag.Warning || right.Verdict != diag.VerdictFurtherTesting {
+		t.Fatalf("simulated right-stick offset should ask for further testing (simulated), got %v %v %q", r.Status, right.Verdict, right.Headline)
 	}
-	if d.Sticks.Analysis[0].Status != diag.Passed {
-		t.Fatalf("left stick of the mock rests centered and should pass, got %q", d.Sticks.Analysis[0].Summary)
+	if d.Sticks.Analysis[0].Verdict != diag.VerdictNormal {
+		t.Fatalf("left stick of the mock rests centered and should be normal, got %q", d.Sticks.Analysis[0].Headline)
+	}
+	if r.Status == diag.Failed {
+		t.Fatal("a single measurement must never be a failure")
 	}
 }
 

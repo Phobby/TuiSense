@@ -1,7 +1,7 @@
 package diag
 
 import (
-	"fmt"
+	"github.com/Phobby/TuiSense/internal/i18n"
 	"math"
 	"time"
 
@@ -88,24 +88,24 @@ func (t *TouchTest) Result(now time.Time, simulated bool) *Result {
 	v, total := t.Coverage()
 	res := &Result{Category: CatTouchpad, Simulated: simulated, At: now}
 	res.Measurements = []Measurement{
-		{"Area covered", float64(v), fmt.Sprintf("of %d zones", total)},
-		{"Max simultaneous contacts", float64(t.MaxSimul), fmt.Sprintf("of %d supported", t.Layout.TouchpadContacts)},
-		{"Touch events", float64(t.Touches), ""},
-		{"Clicks", float64(t.Clicks), ""},
+		{i18n.T("Area covered"), float64(v), i18n.Tf("of %d zones", total)},
+		{i18n.T("Max simultaneous contacts"), float64(t.MaxSimul), i18n.Tf("of %d supported", t.Layout.TouchpadContacts)},
+		{i18n.T("Touch events"), float64(t.Touches), ""},
+		{i18n.T("Clicks"), float64(t.Clicks), ""},
 	}
 	switch {
 	case v == total && t.Clicks > 0:
-		res.Status, res.Summary = Passed, "Touch detected across the whole surface and the click switch works."
+		res.Status, res.Summary = Passed, i18n.T("Touch detected across the whole surface and the click switch works.")
 	case v < total:
-		res.Status, res.Summary = Inconclusive, fmt.Sprintf("Touch works; %d of %d zones covered so far — slide over the whole pad.", v, total)
+		res.Status, res.Summary = Inconclusive, i18n.Tf("Touch works; %d of %d zones covered so far — slide over the whole pad.", v, total)
 	default:
-		res.Status, res.Summary = Inconclusive, "Touch works across the pad; the click switch was not pressed yet."
+		res.Status, res.Summary = Inconclusive, i18n.T("Touch works across the pad; the click switch was not pressed yet.")
 	}
 	if t.MaxSimul >= 2 {
-		res.Details = append(res.Details, "Multi-touch: two simultaneous contacts detected.")
+		res.Details = append(res.Details, i18n.T("Multi-touch: two simultaneous contacts detected."))
 	}
 	if t.ClickNoTouch > 0 {
-		res.Details = append(res.Details, fmt.Sprintf("%d click(s) registered without a reported contact (normal if pressed at the very edge).", t.ClickNoTouch))
+		res.Details = append(res.Details, i18n.Tf("%d click(s) registered without a reported contact (normal if pressed at the very edge).", t.ClickNoTouch))
 	}
 	return res
 }
@@ -234,14 +234,14 @@ func (t *MotionTest) Result(now time.Time, simulated bool) *Result {
 		return nil
 	}
 	res := &Result{Category: CatMotion, Simulated: simulated, At: now}
-	names := [3]string{"X (pitch)", "Y (yaw)", "Z (roll)"}
+	names := [3]string{i18n.T("X (pitch)"), i18n.T("Y (yaw)"), i18n.T("Z (roll)")}
 	responsive := 0
 	var dead []string
 	for i := 0; i < 3; i++ {
 		res.Measurements = append(res.Measurements,
-			Measurement{"Gyro " + names[i] + " resting bias", t.stillGyro[i].Mean(), "raw counts"},
-			Measurement{"Gyro " + names[i] + " resting noise σ", t.stillGyro[i].Std(), "raw counts"},
-			Measurement{"Gyro " + names[i] + " peak response", t.moveGyro[i], "raw counts"},
+			Measurement{i18n.Tf("Gyro %s resting bias", names[i]), t.stillGyro[i].Mean(), i18n.T("raw counts")},
+			Measurement{i18n.Tf("Gyro %s resting noise σ", names[i]), t.stillGyro[i].Std(), i18n.T("raw counts")},
+			Measurement{i18n.Tf("Gyro %s peak response", names[i]), t.moveGyro[i], i18n.T("raw counts")},
 		)
 		if t.moveGyro[i] > t.axisThreshold(i) {
 			responsive++
@@ -251,24 +251,24 @@ func (t *MotionTest) Result(now time.Time, simulated bool) *Result {
 	}
 	if g := t.Layout.AccelLSBPerG; g > 0 {
 		mag := math.Sqrt(sq(t.stillAccel[0].Mean())+sq(t.stillAccel[1].Mean())+sq(t.stillAccel[2].Mean())) / g
-		res.Measurements = append(res.Measurements, Measurement{"Resting acceleration magnitude (nominal scale)", mag, "g"})
+		res.Measurements = append(res.Measurements, Measurement{i18n.T("Resting acceleration magnitude (nominal scale)"), mag, "g"})
 		if mag > 0.85 && mag < 1.15 {
-			res.Details = append(res.Details, fmt.Sprintf("Accelerometer at rest reads ≈%.2f g — consistent with gravity.", mag))
+			res.Details = append(res.Details, i18n.Tf("Accelerometer at rest reads ≈%.2f g — consistent with gravity.", mag))
 		} else {
-			res.Details = append(res.Details, fmt.Sprintf("Accelerometer at rest reads %.2f g using the nominal (uncalibrated) scale; this alone does not prove a fault.", mag))
+			res.Details = append(res.Details, i18n.Tf("Accelerometer at rest reads %.2f g using the nominal (uncalibrated) scale; this alone does not prove a fault.", mag))
 		}
 	}
 	switch {
 	case responsive == 3:
-		res.Status, res.Summary = Passed, "All three gyroscope axes respond to movement."
+		res.Status, res.Summary = Passed, i18n.T("All three gyroscope axes respond to movement.")
 	case responsive == 0:
-		res.Status, res.Summary = Inconclusive, "No rotation detected — was the controller moved during step 2?"
+		res.Status, res.Summary = Inconclusive, i18n.T("No rotation detected — was the controller moved during step 2?")
 	default:
-		res.Status, res.Summary = Warning, fmt.Sprintf("Gyro axes without a clear response: %v — rotate on every axis and retest.", dead)
+		res.Status, res.Summary = Warning, i18n.Tf("Gyro axes without a clear response: %v — rotate on every axis and retest.", dead)
 	}
 	res.Limitations = []string{
-		"Values are raw sensor counts; factory calibration data is not read, so TuiSense does not claim the sensors are calibrated.",
-		"A responding axis shows the sensor reacts; it does not verify accuracy.",
+		i18n.T("Values are raw sensor counts; factory calibration data is not read, so TuiSense does not claim the sensors are calibrated."),
+		i18n.T("A responding axis shows the sensor reacts; it does not verify accuracy."),
 	}
 	return res
 }

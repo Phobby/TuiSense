@@ -2,6 +2,7 @@ package views
 
 import (
 	"fmt"
+	"github.com/Phobby/TuiSense/internal/i18n"
 
 	"github.com/Phobby/TuiSense/internal/device"
 	"github.com/Phobby/TuiSense/internal/state"
@@ -20,7 +21,7 @@ func RenderTriggersPanel(f *terminal.Frame, area cell.Rect, s *state.AppState, d
 	}
 	p := s.Theme
 
-	inner := panelFrame(f, area, s, "Adaptive Triggers")
+	inner := panelFrame(f, area, s, i18n.T("Adaptive Triggers"))
 	y := inner.Y
 
 	y = supportBanner(f, inner, y, s, device.CapAdaptiveTriggers)
@@ -28,7 +29,7 @@ func RenderTriggersPanel(f *terminal.Frame, area cell.Rect, s *state.AppState, d
 	// Row 1: L2 vs R2 Selector + Link Triggers Checkbox
 	l2Btn := widgets.Button{
 		ID:           "btn_trig_l2",
-		Label:        "L2 Left Trigger",
+		Label:        i18n.T("L2 Left Trigger"),
 		Style:        p.ButtonStyle(!s.EditingRightTrigger),
 		FocusedStyle: p.ButtonFocusedStyle(),
 		OnPress: func() {
@@ -38,7 +39,7 @@ func RenderTriggersPanel(f *terminal.Frame, area cell.Rect, s *state.AppState, d
 	}
 	r2Btn := widgets.Button{
 		ID:           "btn_trig_r2",
-		Label:        "R2 Right Trigger",
+		Label:        i18n.T("R2 Right Trigger"),
 		Style:        p.ButtonStyle(s.EditingRightTrigger),
 		FocusedStyle: p.ButtonFocusedStyle(),
 		OnPress: func() {
@@ -56,7 +57,7 @@ func RenderTriggersPanel(f *terminal.Frame, area cell.Rect, s *state.AppState, d
 		cb := widgets.Checkbox{
 			ID:           "cb_link_triggers",
 			Checked:      &s.Config.LinkTriggers,
-			Label:        "Mirror L2=R2",
+			Label:        i18n.T("Mirror L2=R2"),
 			Style:        p.LabelStyle(),
 			FocusedStyle: p.ButtonFocusedStyle(),
 		}
@@ -99,7 +100,7 @@ func RenderTriggersPanel(f *terminal.Frame, area cell.Rect, s *state.AppState, d
 	}
 
 	// Row 2: Mode Selector Pills
-	f.Buffer.SetStringWithin(inner.X, y, "Mode:", p.MutedStyle(), 6)
+	f.Buffer.SetStringWithin(inner.X, y, i18n.T("Mode:"), p.MutedStyle(), 6)
 	mx := inner.X + 6
 	for _, mode := range device.AllTriggerModes {
 		short := shortTriggerModeName(mode)
@@ -122,10 +123,10 @@ func RenderTriggersPanel(f *terminal.Frame, area cell.Rect, s *state.AppState, d
 
 	// Row 3: Curated Presets Row
 	if y < inner.Y+inner.Height {
-		f.Buffer.SetStringWithin(inner.X, y, "Presets:", p.MutedStyle(), 9)
+		f.Buffer.SetStringWithin(inner.X, y, i18n.T("Presets:"), p.MutedStyle(), 9)
 		px := inner.X + 9
 		for i, preset := range device.BuiltinTriggerPresets {
-			tag := fmt.Sprintf(" [%s] ", preset.Name)
+			tag := fmt.Sprintf(" [%s] ", i18n.T(preset.Name))
 			tw := uint16(cell.StringWidth(tag))
 			if px+tw > inner.X+inner.Width {
 				break
@@ -174,16 +175,16 @@ func RenderTriggersPanel(f *terminal.Frame, area cell.Rect, s *state.AppState, d
 		y++
 	}
 
-	drawParamSlider("slider_"+prefix+"_start", "Start Zone:", activeTrig.StartPosition, 0, 255, startSlider, func(v uint8) {
+	drawParamSlider("slider_"+prefix+"_start", i18n.T("Start Zone:"), activeTrig.StartPosition, 0, 255, startSlider, func(v uint8) {
 		activeTrig.StartPosition = v
 	})
-	drawParamSlider("slider_"+prefix+"_end", "End / Snap:", activeTrig.EndPosition, 0, 255, endSlider, func(v uint8) {
+	drawParamSlider("slider_"+prefix+"_end", i18n.T("End / Snap:"), activeTrig.EndPosition, 0, 255, endSlider, func(v uint8) {
 		activeTrig.EndPosition = v
 	})
-	drawParamSlider("slider_"+prefix+"_strength", "Force Strength:", activeTrig.Strength, 0, 255, strSlider, func(v uint8) {
+	drawParamSlider("slider_"+prefix+"_strength", i18n.T("Force Strength:"), activeTrig.Strength, 0, 255, strSlider, func(v uint8) {
 		activeTrig.Strength = v
 	})
-	drawParamSlider("slider_"+prefix+"_freq", "Pulse Freq Hz:", activeTrig.Frequency, 0, 100, freqSlider, func(v uint8) {
+	drawParamSlider("slider_"+prefix+"_freq", i18n.T("Pulse Freq Hz:"), activeTrig.Frequency, 0, 100, freqSlider, func(v uint8) {
 		activeTrig.Frequency = v
 	})
 	y++
@@ -191,8 +192,8 @@ func RenderTriggersPanel(f *terminal.Frame, area cell.Rect, s *state.AppState, d
 	// Live Force-Curve Braille Graph
 	remainH := int(inner.Y+inner.Height) - int(y)
 	if remainH >= 4 && s.CurveCanvas != nil {
-		f.Buffer.SetStringWithin(inner.X, y, fmt.Sprintf("Live Force Curve (%s) │ Pull: %3.0f%% │ Resistance: %3.0f%%",
-			activeTrig.Mode, livePull*100, activeTrig.ForceAt(livePull)*100), p.SectionHeaderStyle(), inner.Width)
+		f.Buffer.SetStringWithin(inner.X, y, i18n.Tf("Live Force Curve (%s) │ Pull: %3.0f%% │ Resistance: %3.0f%%",
+			i18n.T(string(activeTrig.Mode)), livePull*100, activeTrig.ForceAt(livePull)*100), p.SectionHeaderStyle(), inner.Width)
 		y++
 		remainH--
 
@@ -235,17 +236,17 @@ func RenderTriggersPanel(f *terminal.Frame, area cell.Rect, s *state.AppState, d
 func shortTriggerModeName(m device.TriggerMode) string {
 	switch m {
 	case device.TriggerModeOff:
-		return "Off"
+		return i18n.T("Off")
 	case device.TriggerModeResistance:
-		return "Resistance"
+		return i18n.T("Resistance")
 	case device.TriggerModeWeapon:
-		return "Weapon"
+		return i18n.T("Weapon")
 	case device.TriggerModeFeedback:
-		return "Feedback"
+		return i18n.T("Feedback")
 	case device.TriggerModeVibration:
-		return "Pulse"
+		return i18n.T("Pulse")
 	case device.TriggerModeCustom:
-		return "Custom"
+		return i18n.T("Custom")
 	default:
 		return string(m)
 	}

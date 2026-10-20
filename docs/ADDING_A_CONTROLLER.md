@@ -61,7 +61,13 @@ Inputs: device.InputLayout{
 ```
 
 Fill `Telemetry.Raw`, `Buttons`, and (if possible) `ButtonsLatched`,
-`ReportsDropped`, `ReadErrors`. Implement `device.BatteryDetailsProvider` only
+`ReportsDropped`, `ReadErrors`. Real backends should also attach every report
+since the last poll as `Telemetry.Samples` (an empty, non-nil slice when
+nothing new arrived) so diagnostics measure at the device's real rate and never
+count stale data. Declare per-axis ranges in `StickAxes` / `TriggerAxes` when
+they differ, set `AxisRange.Invert` for axes that report "up" as a high value,
+and set `TriggerKind` (`TriggerDigital`, `TriggerSharedAxis`) when the
+triggers are not one analog axis each. Implement `device.BatteryDetailsProvider` only
 with values the device/OS really reports. The diagnostics UI then shows exactly
 the tests your declaration supports.
 
@@ -75,6 +81,17 @@ only the `Config` sections your capabilities support; ignore the rest.
 Add `internal/ui/visual/<family>.go`, register it in `init()` with
 `Register("<visual id>", v)`, build the mesh with `meshBuilder.box/disk`, and
 return one `Anchor` per region so 3D picking works.
+
+### Linux evdev gamepads
+
+Controllers that Linux already exposes as `/dev/input/event*` gamepads (xpad,
+hid-generic, …) need no protocol driver: add a `gamepad.Model` (see
+`internal/drivers/msigc20`) with `Identify` (never claim a match you cannot
+support with evidence — return `Probable` for shared IDs), `Describe` (labels,
+visual, only real capabilities via `gamepad.Capabilities`) and an optional
+`ModeHint`. Inputs are mapped from what the kernel reports, so different input
+modes of one controller work without per-mode tables. Pass the model to
+`gamepad.NewDriver` in `builtin.go`.
 
 ## 4. Register it
 

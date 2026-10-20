@@ -2,6 +2,7 @@ package views
 
 import (
 	"fmt"
+	"github.com/Phobby/TuiSense/internal/i18n"
 	"strings"
 	"time"
 
@@ -72,6 +73,9 @@ func (c *cursor) wrap(text string, st cell.Style, maxLines int) {
 // pills renders a pill row, wrapping onto further lines (aligned after the
 // label) when the items do not fit.
 func (c *cursor) pills(label string, lw uint16, items []choice) {
+	if label != "" && uint16(cell.StringWidth(label)+1) > lw {
+		lw = uint16(cell.StringWidth(label) + 1)
+	}
 	first := true
 	for len(items) > 0 && c.ok() {
 		x := c.r.X + lw
@@ -95,15 +99,24 @@ func (c *cursor) pills(label string, lw uint16, items []choice) {
 	}
 }
 
+// kv writes "key value", wrapping a long value onto up to two more lines
+// aligned under the value column.
 func (c *cursor) kv(key, val string, keyW uint16, valStyle cell.Style) {
 	if !c.ok() {
 		return
 	}
 	c.f.Buffer.SetStringWithin(c.r.X, c.y, key, c.p().MutedStyle(), keyW)
-	if c.r.Width > keyW {
-		c.f.Buffer.SetStringWithin(c.r.X+keyW, c.y, val, valStyle, c.r.Width-keyW)
+	if c.r.Width <= keyW {
+		c.y++
+		return
 	}
-	c.y++
+	sub := &cursor{f: c.f, r: cell.NewRect(c.r.X+keyW, c.y, c.r.Width-keyW, uint16(max(1, c.remaining()))), y: c.y, s: c.s}
+	if cell.StringWidth(val) <= int(sub.r.Width) || !strings.Contains(val, " ") {
+		sub.line(val, valStyle)
+	} else {
+		sub.wrap(val, valStyle, 3)
+	}
+	c.y = sub.y
 }
 
 func (c *cursor) gauge(id, label string, ratio float64, valText string, col cell.Color) {
@@ -163,21 +176,21 @@ func statusColor(p theme.Palette, st diag.Status) cell.Color {
 func shortCategory(c diag.Category) string {
 	switch c {
 	case diag.CatSticks:
-		return "Sticks"
+		return i18n.T("Sticks")
 	case diag.CatAudioIn:
-		return "Mic"
+		return i18n.T("Mic")
 	case diag.CatAudioOut:
-		return "Speaker"
+		return i18n.T("Speaker")
 	case diag.CatMotion:
-		return "Motion"
+		return i18n.T("Motion")
 	case diag.CatTouchpad:
-		return "Touch"
+		return i18n.T("Touch")
 	case diag.CatHaptics:
-		return "Rumble"
+		return i18n.T("Rumble")
 	case diag.CatBattery:
-		return "Power"
+		return i18n.T("Power")
 	case diag.CatConnection:
-		return "Link"
+		return i18n.T("Link")
 	}
 	return c.Label()
 }
@@ -186,25 +199,25 @@ func shortCategory(c diag.Category) string {
 func renderDiagnosticsPanel(f *terminal.Frame, area cell.Rect, pc PanelContext) {
 	s := pc.S
 	p := s.Theme
-	title := "Diagnostics"
+	title := i18n.T("Diagnostics")
 	d := s.Diag
 	if d != nil && d.Ctx.Simulated {
-		title += " · SIMULATED DATA"
+		title += i18n.T(" · SIMULATED DATA")
 	}
 	inner := panelFrame(f, area, s, title)
 	c := newCursor(f, inner, s)
 	if d == nil {
-		c.line("Connect a controller (or choose one with [C]) to run diagnostics.", p.LabelStyle())
+		c.line(i18n.T("Connect a controller (or choose one with [C]) to run diagnostics."), p.LabelStyle())
 		return
 	}
 	now := time.Now()
 	renderDiagTabs(c, d)
 	if g := d.Guided; g != nil {
 		if cat, ok := g.Current(); ok {
-			c.pills(fmt.Sprintf("Guided %d/%d", g.Idx+1, len(g.Steps)), 13, []choice{
+			c.pills(i18n.Tf("Guided %d/%d", g.Idx+1, len(g.Steps)), 13, []choice{
 				{ID: "diag_guided_step", Label: cat.Label(), Selected: true},
-				{ID: "diag_guided_next", Label: "Next ›", OnSelect: d.NextGuided},
-				{ID: "diag_guided_end", Label: "■ End", OnSelect: d.StopGuided},
+				{ID: "diag_guided_next", Label: i18n.T("Next ›"), OnSelect: d.NextGuided},
+				{ID: "diag_guided_end", Label: i18n.T("■ End"), OnSelect: d.StopGuided},
 			})
 		}
 	}
@@ -214,7 +227,7 @@ func renderDiagnosticsPanel(f *terminal.Frame, area cell.Rect, pc PanelContext) 
 		return
 	}
 	if a := d.Avail[d.Active]; !a.Available() {
-		c.line(a.Status.Icon()+" "+d.Active.Label()+": "+a.Status.String(), cell.Style{Fg: p.Warning, Bg: p.BgPanel, Modifier: cell.ModifierBold})
+		c.line(a.Status.Icon()+" "+d.Active.Label()+": "+a.Status.Label(), cell.Style{Fg: p.Warning, Bg: p.BgPanel, Modifier: cell.ModifierBold})
 		c.wrap(a.Reason, p.LabelStyle(), 4)
 		return
 	}
@@ -238,7 +251,7 @@ func renderDiagnosticsPanel(f *terminal.Frame, area cell.Rect, pc PanelContext) 
 	case diag.CatBattery:
 		renderBatteryDiag(c, d, now)
 	case diag.CatConnection:
-		renderConnectionDiag(c, d, now)
+		renderConnectionDiag(c, d, pc, now)
 	}
 }
 
@@ -269,7 +282,7 @@ func renderDiagTabs(c *cursor, d *diag.Session) {
 	if d.Active == "" {
 		sumStyle = p.ButtonStyle(true)
 	}
-	draw("diag_tab_summary", " ◎ All ", sumStyle, func() { d.Active = "" })
+	draw("diag_tab_summary", i18n.T(" ◎ All "), sumStyle, func() { d.Active = "" })
 	for _, cat := range d.Visible() {
 		st := d.Status(cat)
 		style := cell.Style{Fg: statusColor(p, st), Bg: p.BgElevated}
@@ -291,14 +304,14 @@ func renderDiagSummary(c *cursor, d *diag.Session, pc PanelContext) {
 	p := c.p()
 	adv := c.s.Mode == state.ModeAdvanced
 	if d.Ctx.Simulated {
-		c.line("⚠ Simulated device — every value below is mock data, not a hardware measurement.", cell.Style{Fg: p.Warning, Bg: p.BgPanel})
+		c.line(i18n.T("⚠ Simulated device — every value below is mock data, not a hardware measurement."), cell.Style{Fg: p.Warning, Bg: p.BgPanel})
 	}
 	actions := []choice{
-		{ID: "diag_run_guided", Label: "▶ Run guided check", OnSelect: d.StartGuided},
-		{ID: "diag_reset", Label: "↻ Reset results", OnSelect: func() { d.Reset(time.Now()) }},
+		{ID: "diag_run_guided", Label: i18n.T("▶ Run guided check"), OnSelect: d.StartGuided},
+		{ID: "diag_reset", Label: i18n.T("↻ Reset results"), OnSelect: func() { d.Reset(time.Now()) }},
 	}
 	if adv && pc.CB.OnExportReport != nil {
-		actions = append(actions, choice{ID: "diag_export", Label: "⇩ Export report", OnSelect: pc.CB.OnExportReport})
+		actions = append(actions, choice{ID: "diag_export", Label: i18n.T("⇩ Export report"), OnSelect: pc.CB.OnExportReport})
 	}
 	c.pills("", 0, actions)
 	c.gap()
@@ -311,7 +324,7 @@ func renderDiagSummary(c *cursor, d *diag.Session, pc PanelContext) {
 		if !adv && st == diag.Unsupported {
 			continue
 		}
-		text := st.String()
+		text := st.Label()
 		if r, ok := d.Results[cat]; ok && (st != diag.Unsupported && st != diag.Unavailable) {
 			text += " — " + r.Summary
 		} else if a := d.Avail[cat]; !a.Available() && adv {
@@ -332,7 +345,7 @@ func renderDiagSummary(c *cursor, d *diag.Session, pc PanelContext) {
 	}
 	if c.remaining() > 1 {
 		c.gap()
-		c.line("Passed only appears after a real measurement or your explicit confirmation.", p.MutedStyle())
+		c.line(i18n.T("Passed only appears after a real measurement or your explicit confirmation."), p.MutedStyle())
 	}
 }
 
@@ -344,12 +357,12 @@ func renderResult(c *cursor, r diag.Result, adv bool) {
 	p := c.p()
 	tag := ""
 	if r.Simulated {
-		tag = " [simulated]"
+		tag = i18n.T(" [simulated]")
 	}
 	if r.UserConfirmed {
-		tag += " [your confirmation]"
+		tag += i18n.T(" [your confirmation]")
 	}
-	c.line(fmt.Sprintf("%s %s — %s%s", r.Status.Icon(), r.Status, r.Summary, tag), cell.Style{Fg: statusColor(p, r.Status), Bg: p.BgPanel, Modifier: cell.ModifierBold})
+	c.line(fmt.Sprintf("%s %s — %s%s", r.Status.Icon(), r.Status.Label(), r.Summary, tag), cell.Style{Fg: statusColor(p, r.Status), Bg: p.BgPanel, Modifier: cell.ModifierBold})
 	maxDetails := 2
 	if adv {
 		maxDetails = 8
@@ -386,13 +399,13 @@ func renderHealthCard(f *terminal.Frame, area cell.Rect, s *state.AppState) {
 	p := s.Theme
 	d := s.Diag
 	f.RenderWidget(widgets.Block{
-		Title: " Health ", TitleStyle: p.CardTitle(),
+		Title: i18n.T(" Health "), TitleStyle: p.CardTitle(),
 		Borders: widgets.BorderAll, BorderSymbols: widgets.SymbolsRounded,
 		BorderStyle: p.CardBorder(), Style: p.PanelStyle(),
 	}, area)
 	c := newCursor(f, cell.NewRect(area.X+2, area.Y+1, area.Width-4, area.Height-2), s)
 	if d == nil {
-		c.line("No controller", p.MutedStyle())
+		c.line(i18n.T("No controller"), p.MutedStyle())
 		return
 	}
 	for _, cat := range diag.AllCategories {
@@ -406,7 +419,7 @@ func renderHealthCard(f *terminal.Frame, area cell.Rect, s *state.AppState) {
 		rowY := c.y
 		c.f.Buffer.SetStringWithin(c.r.X, c.y, st.Icon()+" "+shortCategory(cat), cell.Style{Fg: statusColor(p, st), Bg: p.BgPanel}, 12)
 		if c.r.Width > 12 {
-			c.f.Buffer.SetStringWithin(c.r.X+12, c.y, st.String(), p.MutedStyle(), c.r.Width-12)
+			c.f.Buffer.SetStringWithin(c.r.X+12, c.y, st.Label(), p.MutedStyle(), c.r.Width-12)
 		}
 		if st != diag.Unsupported {
 			cat := cat

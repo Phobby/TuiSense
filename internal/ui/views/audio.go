@@ -2,6 +2,7 @@ package views
 
 import (
 	"fmt"
+	"github.com/Phobby/TuiSense/internal/i18n"
 
 	"github.com/Phobby/TuiSense/internal/device"
 	"github.com/thebanri/limoni/core/cell"
@@ -14,7 +15,7 @@ import (
 func renderAudioPanel(f *terminal.Frame, area cell.Rect, pc PanelContext) {
 	s := pc.S
 	p := s.Theme
-	inner := panelFrame(f, area, s, "Audio & Microphone")
+	inner := panelFrame(f, area, s, i18n.T("Audio & Microphone"))
 	y := supportBanner(f, inner, inner.Y, s, device.CapAudio)
 	y++
 
@@ -49,13 +50,13 @@ func renderAudioPanel(f *terminal.Frame, area cell.Rect, pc PanelContext) {
 	}
 
 	if s.Caps.HasFeature(device.CapAudio, device.FeatSpeaker) {
-		volume("slider_speaker_vol", "Speaker:", &s.Config.Audio.SpeakerVolume, s.SpeakerVolSlider, p.Success)
+		volume("slider_speaker_vol", i18n.T("Speaker:"), &s.Config.Audio.SpeakerVolume, s.SpeakerVolSlider, p.Success)
 	}
 	if s.Caps.HasFeature(device.CapAudio, device.FeatHeadset) {
-		volume("slider_headset_vol", "Headset:", &s.Config.Audio.HeadphoneVolume, s.HeadsetVolSlider, p.AccentBlue)
+		volume("slider_headset_vol", i18n.T("Headset:"), &s.Config.Audio.HeadphoneVolume, s.HeadsetVolSlider, p.AccentBlue)
 	}
 	if s.Caps.HasFeature(device.CapAudio, device.FeatMicrophone) {
-		volume("slider_mic_gain", "Mic Gain:", &s.Config.Audio.MicGain, s.MicGainSlider, p.AccentPurple)
+		volume("slider_mic_gain", i18n.T("Mic Gain:"), &s.Config.Audio.MicGain, s.MicGainSlider, p.AccentPurple)
 	}
 
 	if s.Caps.HasFeature(device.CapLighting, device.FeatMicLED) && y+1 < inner.Y+inner.Height {
@@ -65,7 +66,7 @@ func renderAudioPanel(f *terminal.Frame, area cell.Rect, pc PanelContext) {
 			mode := mm
 			items = append(items, choice{
 				ID:       "mic_led_" + mode.String(),
-				Label:    mode.String(),
+				Label:    i18n.T(mode.String()),
 				Selected: s.Config.Lighting.MicLED == mode,
 				OnSelect: func() {
 					s.Config.Lighting.MicLED = mode
@@ -74,7 +75,7 @@ func renderAudioPanel(f *terminal.Frame, area cell.Rect, pc PanelContext) {
 				},
 			})
 		}
-		pillRow(f, inner.X, y, inner.X+inner.Width, s, "Mute LED:", 11, items)
+		pillRow(f, inner.X, y, inner.X+inner.Width, s, i18n.T("Mute LED:"), 11, items)
 	}
 }
 
@@ -83,14 +84,14 @@ func renderAudioPanel(f *terminal.Frame, area cell.Rect, pc PanelContext) {
 func renderFirmwarePanel(f *terminal.Frame, area cell.Rect, pc PanelContext) {
 	s := pc.S
 	p := s.Theme
-	inner := panelFrame(f, area, s, "Firmware")
+	inner := panelFrame(f, area, s, i18n.T("Firmware"))
 	y := supportBanner(f, inner, inner.Y, s, device.CapFirmwareUpdate)
 	y++
 
 	rows := [][2]string{
-		{"Installed", nonEmptyStr(s.DeviceInfo.FirmwareVersion, "unknown")},
-		{"Hardware", nonEmptyStr(s.DeviceInfo.HardwareVersion, "unknown")},
-		{"Model", s.Descriptor.DisplayName},
+		{i18n.T("Installed"), nonEmptyStr(s.DeviceInfo.FirmwareVersion, "unknown")},
+		{i18n.T("Hardware"), nonEmptyStr(s.DeviceInfo.HardwareVersion, "unknown")},
+		{i18n.T("Model"), s.Descriptor.DisplayName},
 	}
 	for _, r := range rows {
 		if y >= inner.Y+inner.Height {
@@ -104,10 +105,10 @@ func renderFirmwarePanel(f *terminal.Frame, area cell.Rect, pc PanelContext) {
 	if y < inner.Y+inner.Height {
 		pillRow(f, inner.X, y, inner.X+inner.Width, s, "", 0, []choice{{
 			ID:    "btn_firmware_check",
-			Label: "⟳ Check for updates",
+			Label: i18n.T("⟳ Check for updates"),
 			OnSelect: func() {
 				if s.Toasts != nil {
-					s.Toasts.Info("Firmware", fmt.Sprintf("%s firmware %s is up to date (simulated check).",
+					s.Toasts.Info(i18n.T("Firmware"), i18n.Tf("%s firmware %s is up to date (simulated check).",
 						s.Descriptor.ShortName, s.DeviceInfo.FirmwareVersion))
 				}
 			},

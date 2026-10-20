@@ -2,69 +2,78 @@ package views
 
 import (
 	"fmt"
+	"github.com/Phobby/TuiSense/internal/i18n"
 	"time"
 
 	"github.com/Phobby/TuiSense/internal/device"
-	"github.com/Phobby/TuiSense/internal/state"
 	"github.com/thebanri/limoni/core/cell"
 	"github.com/thebanri/limoni/core/terminal"
 )
 
-// RenderDeviceInfoPanel renders the full hardware, firmware, transport, and capability matrix view.
-func RenderDeviceInfoPanel(f *terminal.Frame, area cell.Rect, s *state.AppState) {
+// RenderDeviceInfoPanel renders the hardware, transport, identification and
+// capability matrix view. Rows only appear for facts the device reports.
+func RenderDeviceInfoPanel(f *terminal.Frame, area cell.Rect, pc PanelContext) {
 	if area.Width < 24 || area.Height < 8 {
 		return
 	}
+	s := pc.S
 	p := s.Theme
 	info := s.DeviceInfo
 	tel := s.Telemetry
 
-	inner := panelFrame(f, area, s, "Device & Capabilities")
-	y := inner.Y
+	inner := panelFrame(f, area, s, i18n.T("Device & Capabilities"))
+	c := newCursor(f, inner, s)
+	c.line(i18n.T("Identity & Transport"), p.SectionHeaderStyle())
 
-	f.Buffer.SetStringWithin(inner.X, y, "Identity & Transport", p.SectionHeaderStyle(), inner.Width)
-	y++
-
-	lastSeen := "Offline"
+	lastSeen := i18n.T("Offline")
 	if !info.LastSeen.IsZero() {
-		lastSeen = fmt.Sprintf("%s (%dms ago)", info.LastSeen.Format("15:04:05.000"), time.Since(info.LastSeen).Milliseconds())
+		lastSeen = i18n.Tf("%s (%dms ago)", info.LastSeen.Format("15:04:05.000"), time.Since(info.LastSeen).Milliseconds())
 	}
-
-	details := []struct {
-		k string
-		v string
-	}{
-		{"Device Name:", info.Name},
-		{"Model ID:", s.Descriptor.ModelID + " (" + s.Descriptor.Brand + ")"},
-		{"Model / SKU:", info.Model},
-		{"USB VID / PID:", fmt.Sprintf("0x%04X : 0x%04X", info.VendorID, info.ProductID)},
-		{"Firmware / HW:", fmt.Sprintf("FW %s / HW %s", info.FirmwareVersion, info.HardwareVersion)},
-		{"Bluetooth MAC:", nonEmptyStr(info.MACAddress, "N/A (Wired USB)")},
-		{"HIDRaw Node:", nonEmptyStr(info.HIDRawPath, "None")},
-		{"Evdev Input:", nonEmptyStr(info.InputDevicePath, "Managed by hid-playstation")},
-		{"Transport:", string(info.Connection)},
-		{"Input Report:", info.InputMode},
-		{"Output Report:", info.OutputMode},
-		{"Packets Rx/Tx:", fmt.Sprintf("%d Rx  /  %d Tx", tel.PacketsRx, tel.PacketsTx)},
-		{"Touchpad Pt 1:", fmt.Sprintf("Active=%v  X=%d  Y=%d", tel.TouchActive, tel.TouchX, tel.TouchY)},
-		{"Last Seen:", lastSeen},
+	type row struct{ k, v string }
+	rows := []row{
+		{i18n.T("Device Name:"), info.Name},
+		{i18n.T("Model ID:"), s.Descriptor.ModelID + " (" + s.Descriptor.Brand + ")"},
+		{i18n.T("Model / SKU:"), i18n.T(info.Model)},
+		{i18n.T("USB VID / PID:"), fmt.Sprintf("0x%04X : 0x%04X", info.VendorID, info.ProductID)},
 	}
-
-	for _, d := range details {
-		if y >= inner.Y+inner.Height {
+	if s.Caps.Supports(device.CapFirmwareInfo) {
+		rows = append(rows, row{i18n.T("Firmware / HW:"), i18n.Tf("FW %s / HW %s", info.FirmwareVersion, info.HardwareVersion)})
+	}
+	if info.MACAddress != "" {
+		rows = append(rows, row{i18n.T("Bluetooth MAC:"), info.MACAddress})
+	}
+	if info.HIDRawPath != "" {
+		rows = append(rows, row{i18n.T("HIDRaw Node:"), info.HIDRawPath})
+	}
+	if info.InputDevicePath != "" {
+		rows = append(rows, row{i18n.T("Evdev Input:"), info.InputDevicePath})
+	}
+	rows = append(rows,
+		row{i18n.T("Transport:"), i18n.T(string(info.Connection))},
+		row{i18n.T("Input Report:"), i18n.T(info.InputMode)},
+		row{i18n.T("Output Report:"), i18n.T(info.OutputMode)},
+		row{i18n.T("Packets Rx/Tx:"), i18n.Tf("%d Rx  /  %d Tx", tel.PacketsRx, tel.PacketsTx)},
+	)
+	if s.Descriptor.Inputs.TouchpadContacts > 0 {
+		rows = append(rows, row{i18n.T("Touchpad Pt 1:"), i18n.Tf("Active=%v  X=%d  Y=%d", tel.TouchActive, tel.TouchX, tel.TouchY)})
+	}
+	rows = append(rows, row{i18n.T("Last Seen:"), lastSeen})
+	for _, d := range info.Details {
+		rows = append(rows, row{i18n.T(d.Label) + ":", i18n.T(d.Value)})
+	}
+	for _, d := range rows {
+		if !c.ok() {
 			break
 		}
-		f.Buffer.SetStringWithin(inner.X, y, fmt.Sprintf("%-16s", d.k), p.MutedStyle(), 16)
-		if inner.Width > 16 {
-			f.Buffer.SetStringWithin(inner.X+16, y, d.v, p.LabelStyle(), inner.Width-16)
-		}
-		y++
+		c.kv(fmt.Sprintf("%-16s", d.k), d.v, 16, p.LabelStyle())
 	}
-	y++
+	renderIdentity(c, s, pc.CB)
+	c.gap()
+	y := c.y
 
 	// Capability Matrix (declared support × live availability)
 	if y < inner.Y+inner.Height {
-		f.Buffer.SetStringWithin(inner.X, y, "Capability Matrix", p.SectionHeaderStyle(), inner.Width)
+		f.Buffer.SetStringWithin(inner.X, y, i18n.T("Capability Matrix"), p.SectionHeaderStyle(), inner.Width)
 		y++
 	}
 	for _, c := range device.AllCapabilities {
@@ -72,11 +81,11 @@ func RenderDeviceInfoPanel(f *terminal.Frame, area cell.Rect, s *state.AppState)
 			break
 		}
 		level, reason := device.Availability(info, s.Caps, c)
-		badge := " ✓ FULL    "
+		badge := i18n.T(" ✓ FULL    ")
 		bStyle := p.BadgeStyle(p.BgCanvas, p.Success)
 		switch level {
 		case device.Limited:
-			badge = " ◐ LIMITED "
+			badge = i18n.T(" ◐ LIMITED ")
 			bStyle = p.BadgeStyle(p.BgCanvas, p.Warning)
 		case device.Unsupported:
 			badge = " ✕ N/A     "

@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"fmt"
+	"github.com/Phobby/TuiSense/internal/i18n"
 	"math"
 	"path/filepath"
 	"runtime"
@@ -13,6 +14,7 @@ import (
 	"github.com/Phobby/TuiSense/internal/device"
 	"github.com/Phobby/TuiSense/internal/diag"
 	"github.com/Phobby/TuiSense/internal/drivers"
+	"github.com/Phobby/TuiSense/internal/drivers/gamepad"
 	"github.com/Phobby/TuiSense/internal/logging"
 	"github.com/Phobby/TuiSense/internal/session"
 	"github.com/Phobby/TuiSense/internal/state"
@@ -40,6 +42,8 @@ type Options struct {
 	AudioBackend audio.Backend
 	ReportDir    string // diagnostics reports; default $XDG_DATA_HOME/tuisense/reports
 	Version      string
+	// Language forces the UI language ("en"/"tr"); empty = saved choice, then $LANG.
+	Language string
 }
 
 // Application coordinates AppState, the device session, the dispatcher, and the Limoni render loop.
@@ -59,6 +63,8 @@ type Application struct {
 	simAudio     map[string]*audio.Simulated
 	prevPanel    state.PanelID
 	audioProbeAt time.Time
+	// confirmed holds the user's controller identifications (hardware key → model ID).
+	confirmed map[string]string
 }
 
 // appActuator lets diagnostics drive hardware through the dispatcher and read
@@ -97,6 +103,14 @@ func New(opts Options) *Application {
 		logger.Warn("PREFS", "Ignoring unreadable %s: %v", a.Prefs.Path(), err)
 	}
 	s.Mode = state.ParseMode(prefs.Mode)
+	lang, ok := i18n.Parse(opts.Language)
+	if !ok {
+		if lang, ok = i18n.Parse(prefs.Language); !ok {
+			lang = i18n.Detect()
+		}
+	}
+	s.Language = lang
+	i18n.Set(lang)
 	if prefs.HighContrast {
 		s.HighContrast = true
 		s.Theme = theme.HighContrast()
@@ -105,6 +119,11 @@ func New(opts Options) *Application {
 		s.AutoRotate = *prefs.AutoRotate
 	}
 	s.RestoreActiveProfiles(prefs.ActiveProfiles)
+	a.confirmed = map[string]string{}
+	for k, v := range prefs.ConfirmedModels {
+		a.confirmed[k] = v
+	}
+	gamepad.SetOverrides(a.confirmed)
 
 	reg := opts.Registry
 	if reg == nil {
@@ -155,14 +174,14 @@ func (a *Application) onDeviceEvent(ev session.DeviceEvent) {
 		a.syncActiveDevice()
 		s.ClearError()
 		if s.Toasts != nil && ev.Key == s.ActiveDeviceKey {
-			s.Toasts.Success("Controller Connected", fmt.Sprintf("%s (%s)", s.Descriptor.ShortName, ev.Info.Connection))
+			s.Toasts.Success(i18n.T("Controller Connected"), fmt.Sprintf("%s (%s)", i18n.T(s.Descriptor.ShortName), i18n.T(string(ev.Info.Connection))))
 		}
 	case session.EventDisconnected:
 		a.syncActiveDevice()
 		if s.Toasts != nil {
-			s.Toasts.Warning("Controller Disconnected", "Waiting for hot-plug...")
+			s.Toasts.Warning(i18n.T("Controller Disconnected"), i18n.T("Waiting for hot-plug..."))
 		}
-	case session.EventSelected:
+	case session.EventSelected, session.EventListChanged:
 		a.syncActiveDevice()
 	case session.EventTelemetry:
 		if ev.Key == s.ActiveDeviceKey {
@@ -174,7 +193,7 @@ func (a *Application) onDeviceEvent(ev session.DeviceEvent) {
 		}
 	case session.EventError:
 		if ev.Err != nil {
-			s.SetError("Device Write Error", ev.Err.Error())
+			s.SetError(i18n.T("Device Write Error"), ev.Err.Error())
 		}
 	}
 }
@@ -201,7 +220,7 @@ func (a *Application) syncActiveDevice() {
 	if dev == nil {
 		s.Diag = nil
 		s.ActivateDevice("", device.PlaceholderDescriptor(), device.NewCapabilitySet(),
-			device.Info{Name: "No Controller Detected", Connection: device.ConnDisconnected}, device.Telemetry{}, s.Config)
+			device.Info{Name: i18n.T("No Controller Detected"), Connection: device.ConnDisconnected}, device.Telemetry{}, s.Config)
 		s.ActiveDeviceKey = ""
 		return
 	}
@@ -266,7 +285,7 @@ func (a *Application) audioBackendFor(key string, simulated bool, caps device.Ca
 	if caps.HasFeature(device.CapAudio, device.FeatSpeaker) || caps.HasFeature(device.CapAudio, device.FeatHeadset) {
 		playback = 2
 	}
-	b := audio.NewSimulated(desc.ShortName+" audio", capture, playback)
+	b := audio.NewSimulated(desc.ShortName+i18n.T(" audio"), capture, playback)
 	a.simAudio[key] = b
 	return b
 }
@@ -297,10 +316,6 @@ func (a *Application) tickDiagnostics(now time.Time) {
 	if s.Diag == nil {
 		return
 	}
-	if st := s.Diag.Sticks; st != nil {
-		// Read-only context for interpreting drift; diagnostics never change it.
-		st.Deadzone = [2]float64{float64(s.Config.Sticks.Left.InnerDeadzone), float64(s.Config.Sticks.Right.InnerDeadzone)}
-	}
 	s.Diag.Tick(now)
 	if s.ActivePanel == state.PanelDiagnostics && !s.Diag.Ctx.Simulated && !s.Diag.Ctx.Audio.Found && now.Sub(a.audioProbeAt) > 3*time.Second {
 		a.audioProbeAt = now
@@ -330,12 +345,12 @@ func (a *Application) ExportDiagnosticsReport() {
 	r := diag.BuildReport(s.Diag, a.Opts.Version, false, time.Now())
 	jp, _, err := r.Export(dir)
 	if err != nil {
-		s.SetError("Report Export", err.Error())
+		s.SetError(i18n.T("Report Export"), err.Error())
 		return
 	}
 	a.Logger.Info("DIAG", "Report written to %s (+ .txt)", jp)
 	if s.Toasts != nil {
-		s.Toasts.Success("Report saved", jp)
+		s.Toasts.Success(i18n.T("Report saved"), jp)
 	}
 }
 
@@ -367,10 +382,14 @@ func (a *Application) savePrefs() {
 	auto := s.AutoRotate
 	p := state.Preferences{
 		Mode:           string(s.Mode),
+		Language:       string(s.Language),
 		LastDevice:     s.ActiveDeviceKey,
 		ActiveProfiles: s.ActiveProfiles(),
 		HighContrast:   s.HighContrast,
 		AutoRotate:     &auto,
+	}
+	if len(a.confirmed) > 0 {
+		p.ConfirmedModels = a.confirmed
 	}
 	if err := a.Prefs.Save(p); err != nil {
 		a.Logger.Warn("PREFS", "Could not save %s: %v", a.Prefs.Path(), err)
@@ -386,13 +405,13 @@ func (a *Application) SelectDevice(key string) {
 		a.State.Diag.Suspend() // cleanup commands still target the outgoing device
 	}
 	if err := a.Manager.Select(key); err != nil {
-		a.State.SetError("Device Selection", err.Error())
+		a.State.SetError(i18n.T("Device Selection"), err.Error())
 		return
 	}
 	a.syncActiveDevice()
 	a.savePrefs()
 	if a.State.Toasts != nil {
-		a.State.Toasts.Info("Controller", "Switched to "+a.State.Descriptor.DisplayName)
+		a.State.Toasts.Info(i18n.T("Controller"), i18n.Tf("Switched to %s", i18n.T(a.State.Descriptor.DisplayName)))
 	}
 }
 
@@ -408,6 +427,40 @@ func (a *Application) CycleDevice(delta int) {
 	a.savePrefs()
 }
 
+// SetLanguage switches the UI language and persists the choice.
+func (a *Application) SetLanguage(l i18n.Lang) {
+	if a.State.Language == l {
+		return
+	}
+	a.State.Language = l
+	i18n.Set(l)
+	a.savePrefs()
+	if a.State.Toasts != nil {
+		a.State.Toasts.Info(i18n.T("Language"), l.Name())
+	}
+}
+
+// ConfirmIdentity remembers the user's model choice for a hardware key
+// (modelID "" forgets it) and asks the session to re-detect devices, which
+// re-opens the controller with the chosen model's descriptor.
+func (a *Application) ConfirmIdentity(hwKey, modelID string) {
+	if hwKey == "" {
+		return
+	}
+	if modelID == "" {
+		delete(a.confirmed, hwKey)
+	} else {
+		a.confirmed[hwKey] = modelID
+	}
+	gamepad.SetOverride(hwKey, modelID)
+	a.savePrefs()
+	a.Logger.Info("IDENTITY", "Identification for %s set to %q", hwKey, modelID)
+	if a.State.Toasts != nil {
+		a.State.Toasts.Info(i18n.T("Identification saved"), i18n.T("Re-detecting the controller…"))
+	}
+	a.Manager.Rescan()
+}
+
 // SetMode switches EZ/Advanced and persists the choice.
 func (a *Application) SetMode(m state.UXMode) {
 	if a.State.Mode == m {
@@ -416,7 +469,7 @@ func (a *Application) SetMode(m state.UXMode) {
 	a.State.SetMode(m)
 	a.savePrefs()
 	if a.State.Toasts != nil {
-		a.State.Toasts.Info("Mode", m.Label()+" mode")
+		a.State.Toasts.Info(i18n.T("Mode"), i18n.Tf("%s mode", m.Label()))
 	}
 }
 
@@ -433,7 +486,7 @@ func (a *Application) simulator() (device.Simulator, bool) {
 		return a.Manager.ActiveSimulator(), true
 	}
 	if a.State.Toasts != nil {
-		a.State.Toasts.Warning("Simulation", "Simulation controls only apply to mock and test devices")
+		a.State.Toasts.Warning(i18n.T("Simulation"), i18n.T("Simulation controls only apply to mock and test devices"))
 	}
 	return nil, false
 }
@@ -479,9 +532,9 @@ func (a *Application) ToggleSimulatedConnection() {
 	a.refreshActive()
 	if a.State.Toasts != nil {
 		if a.State.DeviceInfo.Connected {
-			a.State.Toasts.Success("Hot-Plug Connected", fmt.Sprintf("Attached %s (%s)", a.State.Descriptor.ShortName, a.State.DeviceInfo.Connection))
+			a.State.Toasts.Success(i18n.T("Hot-Plug Connected"), i18n.Tf("Attached %s (%s)", i18n.T(a.State.Descriptor.ShortName), i18n.T(string(a.State.DeviceInfo.Connection))))
 		} else {
-			a.State.Toasts.Warning("Hot-Plug Disconnected", "Controller unplugged (empty state active)")
+			a.State.Toasts.Warning(i18n.T("Hot-Plug Disconnected"), i18n.T("Controller unplugged (empty state active)"))
 		}
 	}
 }
@@ -495,7 +548,7 @@ func (a *Application) CycleSimulatedTransport() {
 	conn := sim.CycleTransport()
 	a.refreshActive()
 	if a.State.Toasts != nil {
-		a.State.Toasts.Info("Transport Changed", fmt.Sprintf("Switched to %s", conn))
+		a.State.Toasts.Info(i18n.T("Transport Changed"), i18n.Tf("Switched to %s", i18n.T(string(conn))))
 	}
 }
 
@@ -508,7 +561,7 @@ func (a *Application) ToggleSimulatedPermission() {
 	denied := sim.TogglePermissionError()
 	a.refreshActive()
 	if denied {
-		a.State.SetError("Permission Denied", a.State.DeviceInfo.PermissionHint)
+		a.State.SetError(i18n.T("Permission Denied"), a.State.DeviceInfo.PermissionHint)
 	} else {
 		a.State.ClearError()
 	}
@@ -521,7 +574,7 @@ func (a *Application) TestPulse() {
 		if act.ID == "pulse_test" && s.Caps.Supports(act.Capability) {
 			a.Dispatcher.Dispatch(act.Command)
 			if s.Toasts != nil {
-				s.Toasts.Info(act.Label, s.Descriptor.ShortName+" pulsed")
+				s.Toasts.Info(i18n.T(act.Label), i18n.Tf("%s pulsed", i18n.T(s.Descriptor.ShortName)))
 			}
 			return
 		}
@@ -538,6 +591,8 @@ func (a *Application) callbacks() views.Callbacks {
 		OnSetMode:          a.SetMode,
 		OnPrefsChanged:     a.savePrefs,
 		OnExportReport:     a.ExportDiagnosticsReport,
+		OnSetLanguage:      a.SetLanguage,
+		OnConfirmIdentity:  a.ConfirmIdentity,
 	}
 }
 

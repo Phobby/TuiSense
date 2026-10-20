@@ -2,6 +2,7 @@ package widgets
 
 import (
 	"fmt"
+	"github.com/Phobby/TuiSense/internal/i18n"
 	"math"
 
 	"github.com/Phobby/TuiSense/internal/device"
@@ -39,7 +40,7 @@ func RenderControllerStage(f *terminal.Frame, area cell.Rect, s *state.AppState,
 	accent := AccentColor(s.Descriptor)
 
 	// Row 0: centered device title + source tag (click opens the device selector)
-	title := s.Descriptor.DisplayName
+	title := i18n.T(s.Descriptor.DisplayName)
 	tag := sourceTag(s)
 	titleW := uint16(cell.StringWidth(title) + cell.StringWidth(tag) + 1)
 	tx := area.X
@@ -139,9 +140,9 @@ func RenderControllerStage(f *terminal.Frame, area cell.Rect, s *state.AppState,
 		y := area.Y + area.Height - 2
 		line := ""
 		if r, ok := s.Descriptor.Region(s.SelectedRegion); ok {
-			line = "● " + r.Label + " — " + r.Description
+			line = "● " + i18n.T(r.Label) + " — " + i18n.T(r.Description)
 		} else if s.DeviceInfo.Connected {
-			line = "Select a highlighted region to configure it"
+			line = i18n.T("Select a highlighted region to configure it")
 		}
 		renderCentered(f, cell.NewRect(area.X+1, y, area.Width-2, 1), line, cell.Style{Fg: p.FgSecondary, Bg: p.BgCanvas})
 		renderDeviceSwitcher(f, cell.NewRect(area.X, y+1, area.Width, 1), s, accent, cb)
@@ -153,9 +154,9 @@ func sourceTag(s *state.AppState) string {
 		if d.Key == s.ActiveDeviceKey {
 			switch d.Source {
 			case device.SourceMock:
-				return " MOCK "
+				return i18n.T(" MOCK ")
 			case device.SourceTest:
-				return " TEST "
+				return i18n.T(" TEST ")
 			}
 		}
 	}
@@ -181,20 +182,20 @@ func renderEmptyBanner(f *terminal.Frame, viewArea cell.Rect, s *state.AppState)
 	bx := viewArea.X + (viewArea.Width-bw)/2
 	by := viewArea.Y + (viewArea.Height-bh)/2
 	f.RenderWidget(widgets.Block{
-		Title:         " NO CONTROLLER CONNECTED ",
+		Title:         i18n.T(" NO CONTROLLER CONNECTED "),
 		Borders:       widgets.BorderAll,
 		BorderSymbols: widgets.SymbolsRounded,
 		BorderStyle:   cell.Style{Fg: p.Warning, Bg: p.BgElevated},
 		TitleStyle:    cell.Style{Fg: p.Warning, Bg: p.BgElevated, Modifier: cell.ModifierBold},
 		Style:         cell.Style{Fg: p.FgPrimary, Bg: p.BgElevated},
 	}, cell.NewRect(bx, by, bw, bh))
-	f.Buffer.SetStringWithin(bx+2, by+1, "Connect a controller via USB or Bluetooth.", cell.Style{Fg: p.FgPrimary, Bg: p.BgElevated}, bw-4)
-	f.Buffer.SetStringWithin(bx+2, by+2, "Hot-plug detection is active.", cell.Style{Fg: p.FgSecondary, Bg: p.BgElevated}, bw-4)
-	f.Buffer.SetStringWithin(bx+2, by+3, "[D] simulate  ·  [C] choose another device", cell.Style{Fg: p.AccentCyan, Bg: p.BgElevated}, bw-4)
+	f.Buffer.SetStringWithin(bx+2, by+1, i18n.T("Connect a controller via USB or Bluetooth."), cell.Style{Fg: p.FgPrimary, Bg: p.BgElevated}, bw-4)
+	f.Buffer.SetStringWithin(bx+2, by+2, i18n.T("Hot-plug detection is active."), cell.Style{Fg: p.FgSecondary, Bg: p.BgElevated}, bw-4)
+	f.Buffer.SetStringWithin(bx+2, by+3, i18n.T("[D] simulate  ·  [C] choose another device"), cell.Style{Fg: p.AccentCyan, Bg: p.BgElevated}, bw-4)
 	f.RegisterAccessibility(accessibility.AccessibilityNode{
 		ID:     "empty_state_banner",
 		Role:   accessibility.RoleGeneric,
-		Label:  "No controller connected",
+		Label:  i18n.T("No controller connected"),
 		Bounds: cell.NewRect(bx, by, bw, bh),
 	})
 }
@@ -203,7 +204,7 @@ func renderEmptyBanner(f *terminal.Frame, viewArea cell.Rect, s *state.AppState)
 func renderDeviceSwitcher(f *terminal.Frame, area cell.Rect, s *state.AppState, accent cell.Color, cb StageCallbacks) {
 	p := s.Theme
 	if len(s.Devices) == 0 {
-		renderCentered(f, area, "No devices attached", cell.Style{Fg: p.FgMuted, Bg: p.BgCanvas})
+		renderCentered(f, area, i18n.T("No devices attached"), cell.Style{Fg: p.FgMuted, Bg: p.BgCanvas})
 		return
 	}
 	labels := make([]string, len(s.Devices))
@@ -276,10 +277,10 @@ func renderStageToolbar(f *terminal.Frame, area cell.Rect, s *state.AppState) {
 	}
 	markerNames := [3]string{"Braille", "HalfBlock", "Quadrant"}
 	items := []item{
-		{fmt.Sprintf(" ⟳ Orbit %s ", onOff(s.AutoRotate)), s.AutoRotate, func() { s.AutoRotate = !s.AutoRotate }},
+		{i18n.Tf(" ⟳ Orbit %s ", onOff(s.AutoRotate)), s.AutoRotate, func() { s.AutoRotate = !s.AutoRotate }},
 		{fmt.Sprintf(" ◐ %s ", s.ShadingMode), false, func() { CycleShading(s) }},
 		{fmt.Sprintf(" ❖ %s ", markerNames[s.RenderMarker%3]), false, func() { s.RenderMarker = (s.RenderMarker + 1) % 3 }},
-		{" ⌖ Reset ", false, s.ResetCamera},
+		{i18n.T(" ⌖ Reset "), false, s.ResetCamera},
 	}
 	totalW := 0
 	for _, it := range items {
@@ -307,9 +308,9 @@ func renderStageToolbar(f *terminal.Frame, area cell.Rect, s *state.AppState) {
 
 func onOff(b bool) string {
 	if b {
-		return "ON"
+		return i18n.T("ON")
 	}
-	return "OFF"
+	return i18n.T("OFF")
 }
 
 // CycleShading advances the stage shading mode.
@@ -457,7 +458,7 @@ func renderRegionHotspotPills(
 	}
 
 	for _, region := range s.Descriptor.Regions {
-		label := " ◉ " + region.Badge + " "
+		label := " ◉ " + i18n.T(region.Badge) + " "
 		w := uint16(cell.StringWidth(label))
 		var x, y uint16
 		switch region.Slot {
@@ -511,8 +512,8 @@ func renderRegionHotspotPills(
 		f.RegisterAccessibility(accessibility.AccessibilityNode{
 			ID:     "region_" + string(region.ID),
 			Role:   accessibility.RoleButton,
-			Label:  region.Badge,
-			Value:  region.Label,
+			Label:  i18n.T(region.Badge),
+			Value:  i18n.T(region.Label),
 			State:  nodeState,
 			Bounds: rect,
 		})

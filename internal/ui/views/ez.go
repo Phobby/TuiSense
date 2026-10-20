@@ -2,6 +2,7 @@ package views
 
 import (
 	"fmt"
+	"github.com/Phobby/TuiSense/internal/i18n"
 
 	"github.com/Phobby/TuiSense/internal/device"
 	"github.com/Phobby/TuiSense/internal/state"
@@ -61,7 +62,7 @@ func testPulse(pc PanelContext) {
 		if a.ID == "pulse_test" && s.Caps.Supports(a.Capability) {
 			pc.dispatch(a.Command)
 			if s.Toasts != nil {
-				s.Toasts.Info(a.Label, s.Descriptor.ShortName+" pulsed")
+				s.Toasts.Info(i18n.T(a.Label), i18n.Tf("%s pulsed", i18n.T(s.Descriptor.ShortName)))
 			}
 			return
 		}
@@ -111,7 +112,7 @@ func applyProfile(pc PanelContext, prof state.Profile) {
 	pc.dispatch(device.Command{Type: device.CmdApplyFullConfig, Config: s.Config})
 	pc.prefsChanged()
 	if s.Toasts != nil {
-		s.Toasts.Success("Profile", "Applied "+prof.Name)
+		s.Toasts.Success(i18n.T("Profile"), i18n.Tf("Applied %s", prof.Name))
 	}
 }
 
@@ -138,7 +139,7 @@ func lightChoices(pc PanelContext) []choice {
 			sw := sw
 			items = append(items, choice{
 				ID:       fmt.Sprintf("ez_light_%d", i),
-				Label:    "● " + sw.Short,
+				Label:    "● " + i18n.T(sw.Short),
 				Selected: cfg.Enabled && cfg.Red == sw.R && cfg.Green == sw.G && cfg.Blue == sw.B,
 				OnSelect: func() { setLightColor(pc, sw.R, sw.G, sw.B) },
 			})
@@ -147,7 +148,7 @@ func lightChoices(pc PanelContext) []choice {
 	}
 	for _, lvl := range []device.BrightnessLevel{device.BrightnessLow, device.BrightnessMedium, device.BrightnessHigh} {
 		lvl := lvl
-		name := map[device.BrightnessLevel]string{device.BrightnessLow: "Dim", device.BrightnessMedium: "Medium", device.BrightnessHigh: "Bright"}[lvl]
+		name := map[device.BrightnessLevel]string{device.BrightnessLow: i18n.T("Dim"), device.BrightnessMedium: i18n.T("Medium"), device.BrightnessHigh: i18n.T("Bright")}[lvl]
 		items = append(items, choice{
 			ID:       "ez_bright_" + name,
 			Label:    name,
@@ -165,7 +166,7 @@ func vibrationChoices(pc PanelContext) []choice {
 		v := l.Value
 		items = append(items, choice{
 			ID:       "ez_vib_" + l.Name,
-			Label:    l.Name,
+			Label:    i18n.T(l.Name),
 			Selected: i == cur,
 			OnSelect: func() { setVibration(pc, v) },
 		})
@@ -178,27 +179,27 @@ func vibrationChoices(pc PanelContext) []choice {
 func renderEZHome(f *terminal.Frame, area cell.Rect, pc PanelContext) {
 	s := pc.S
 	p := s.Theme
-	inner := panelFrame(f, area, s, "Quick Settings")
+	inner := panelFrame(f, area, s, i18n.T("Quick Settings"))
 	y := inner.Y
 	limit := inner.X + inner.Width
 	bottom := inner.Y + inner.Height
 
 	if !s.DeviceInfo.Connected {
-		f.Buffer.SetStringWithin(inner.X, y, "No controller is connected yet.", cell.Style{Fg: p.Warning, Bg: p.BgPanel, Modifier: cell.ModifierBold}, inner.Width)
+		f.Buffer.SetStringWithin(inner.X, y, i18n.T("No controller is connected yet."), cell.Style{Fg: p.Warning, Bg: p.BgPanel, Modifier: cell.ModifierBold}, inner.Width)
 		y += 2
 		if y < bottom {
 			pillRow(f, inner.X, y, limit, s, "", 0, []choice{
-				{ID: "btn_overview_reconnect", Label: "Use a simulated controller [D]", OnSelect: pc.CB.OnToggleConnect},
+				{ID: "btn_overview_reconnect", Label: i18n.T("Use a simulated controller [D]"), OnSelect: pc.CB.OnToggleConnect},
 			})
 		}
 		return
 	}
 
-	status := fmt.Sprintf("%s is ready", s.Descriptor.ShortName)
+	status := i18n.Tf("%s is ready", s.Descriptor.ShortName)
 	if s.Caps.Supports(device.CapBattery) {
-		status += fmt.Sprintf(" · battery %d%%", s.Telemetry.BatteryPercent)
+		status += i18n.Tf(" · battery %d%%", s.Telemetry.BatteryPercent)
 		if s.Telemetry.Charging {
-			status += " (charging)"
+			status += i18n.T(" (charging)")
 		}
 	}
 	f.Buffer.SetStringWithin(inner.X, y, status, cell.Style{Fg: p.FgPrimary, Bg: p.BgPanel, Modifier: cell.ModifierBold}, inner.Width)
@@ -219,24 +220,27 @@ func renderEZHome(f *terminal.Frame, area cell.Rect, pc PanelContext) {
 	}
 
 	if s.Caps.Supports(device.CapLighting) {
-		row("Lights", lightChoices(pc))
+		row(i18n.T("Lights"), lightChoices(pc))
 	}
 	if s.Caps.Supports(device.CapHaptics) {
-		items := vibrationChoices(pc)
-		items = append(items, choice{ID: "ez_test", Label: "▶ Test", OnSelect: func() { testPulse(pc) }})
-		row("Vibration", items)
+		var items []choice
+		if s.Caps.HasFeature(device.CapHaptics, device.FeatMotorConfig) {
+			items = vibrationChoices(pc) // persistent intensity only where a backend applies it
+		}
+		items = append(items, choice{ID: "ez_test", Label: i18n.T("▶ Test"), OnSelect: func() { testPulse(pc) }})
+		row(i18n.T("Vibration"), items)
 	}
 	if s.Caps.Supports(device.CapAdaptiveTriggers) {
 		cur := currentTriggerFeel(s)
 		var items []choice
 		for i, tf := range triggerFeels[:4] {
 			tc := tf.Config
-			items = append(items, choice{ID: "ez_trig_" + tf.Name, Label: tf.Name, Selected: i == cur, OnSelect: func() { applyTriggerFeel(pc, tc) }})
+			items = append(items, choice{ID: "ez_trig_" + tf.Name, Label: i18n.T(tf.Name), Selected: i == cur, OnSelect: func() { applyTriggerFeel(pc, tc) }})
 		}
-		row("Triggers", items)
+		row(i18n.T("Triggers"), items)
 	}
 	if s.Caps.Supports(device.CapProfiles) {
-		row("Profile", []choice{
+		row(i18n.T("Profile"), []choice{
 			{ID: "ez_profile_prev", Label: "‹", OnSelect: func() { cycleProfile(pc, -1) }},
 			{ID: "ez_profile_name", Label: s.ActiveProfile, Selected: true},
 			{ID: "ez_profile_next", Label: "›", OnSelect: func() { cycleProfile(pc, 1) }},
@@ -244,18 +248,18 @@ func renderEZHome(f *terminal.Frame, area cell.Rect, pc PanelContext) {
 	}
 
 	if bottom > inner.Y+1 && bottom-1 > y {
-		f.Buffer.SetStringWithin(inner.X, bottom-1, "Tip: click a part of the controller · [E] shows every setting", p.MutedStyle(), inner.Width)
+		f.Buffer.SetStringWithin(inner.X, bottom-1, i18n.T("Tip: click a part of the controller · [E] shows every setting"), p.MutedStyle(), inner.Width)
 	}
 }
 
 func renderEZLighting(f *terminal.Frame, area cell.Rect, pc PanelContext) {
 	s := pc.S
-	inner := panelFrame(f, area, s, "Lights")
+	inner := panelFrame(f, area, s, i18n.T("Lights"))
 	y := supportBanner(f, inner, inner.Y, s, device.CapLighting)
 	limit := inner.X + inner.Width
 	enabled := s.Config.Lighting.Enabled
-	pillRow(f, inner.X, y, limit, s, "Power", 12, []choice{
-		{ID: "ez_light_on", Label: "On", Selected: enabled, OnSelect: func() {
+	pillRow(f, inner.X, y, limit, s, i18n.T("Power"), 12, []choice{
+		{ID: "ez_light_on", Label: i18n.T("On"), Selected: enabled, OnSelect: func() {
 			s.Config.Lighting.Enabled = true
 			if s.Config.Lighting.Animation == device.AnimOff {
 				s.Config.Lighting.Animation = device.AnimSolid
@@ -263,7 +267,7 @@ func renderEZLighting(f *terminal.Frame, area cell.Rect, pc PanelContext) {
 			l := s.Config.Lighting
 			pc.dispatch(device.Command{Type: device.CmdSetLighting, Config: s.Config, Lighting: &l})
 		}},
-		{ID: "ez_light_off", Label: "Off", Selected: !enabled, OnSelect: func() {
+		{ID: "ez_light_off", Label: i18n.T("Off"), Selected: !enabled, OnSelect: func() {
 			s.Config.Lighting.Enabled = false
 			l := s.Config.Lighting
 			pc.dispatch(device.Command{Type: device.CmdSetLighting, Config: s.Config, Lighting: &l})
@@ -271,9 +275,9 @@ func renderEZLighting(f *terminal.Frame, area cell.Rect, pc PanelContext) {
 	})
 	y += 2
 	items := lightChoices(pc)
-	label := "Color"
+	label := i18n.T("Color")
 	if !s.Caps.HasFeature(device.CapLighting, device.FeatLightbarRGB) {
-		label = "Brightness"
+		label = i18n.T("Brightness")
 	}
 	// Wrap the choices across rows so each stays easy to hit.
 	for len(items) > 0 && y < inner.Y+inner.Height {
@@ -288,16 +292,16 @@ func renderEZLighting(f *terminal.Frame, area cell.Rect, pc PanelContext) {
 func renderEZHaptics(f *terminal.Frame, area cell.Rect, pc PanelContext) {
 	s := pc.S
 	p := s.Theme
-	inner := panelFrame(f, area, s, "Vibration")
+	inner := panelFrame(f, area, s, i18n.T("Vibration"))
 	y := supportBanner(f, inner, inner.Y, s, device.CapHaptics)
 	limit := inner.X + inner.Width
-	f.Buffer.SetStringWithin(inner.X, y, "How strong should vibration feel in games?", p.LabelStyle(), inner.Width)
+	f.Buffer.SetStringWithin(inner.X, y, i18n.T("How strong should vibration feel in games?"), p.LabelStyle(), inner.Width)
 	y += 2
-	pillRow(f, inner.X, y, limit, s, "Strength", 12, vibrationChoices(pc))
+	pillRow(f, inner.X, y, limit, s, i18n.T("Strength"), 12, vibrationChoices(pc))
 	y += 2
 	if y < inner.Y+inner.Height {
-		pillRow(f, inner.X, y, limit, s, "Try it", 12, []choice{
-			{ID: "ez_test", Label: "▶ Test vibration", OnSelect: func() { testPulse(pc) }},
+		pillRow(f, inner.X, y, limit, s, i18n.T("Try it"), 12, []choice{
+			{ID: "ez_test", Label: i18n.T("▶ Test vibration"), OnSelect: func() { testPulse(pc) }},
 		})
 		y += 2
 	}
@@ -310,10 +314,10 @@ func renderEZHaptics(f *terminal.Frame, area cell.Rect, pc PanelContext) {
 				pc.dispatch(device.Command{Type: device.CmdSetHaptics, Config: s.Config})
 			}
 		}
-		pillRow(f, inner.X, y, limit, s, "Triggers", 12, []choice{
-			{ID: "ez_trigmotor_off", Label: "Off", Selected: level == 0, OnSelect: set(0)},
-			{ID: "ez_trigmotor_low", Label: "Low", Selected: level > 0 && level <= 130, OnSelect: set(120)},
-			{ID: "ez_trigmotor_high", Label: "High", Selected: level > 130, OnSelect: set(230)},
+		pillRow(f, inner.X, y, limit, s, i18n.T("Triggers"), 12, []choice{
+			{ID: "ez_trigmotor_off", Label: i18n.T("Off"), Selected: level == 0, OnSelect: set(0)},
+			{ID: "ez_trigmotor_low", Label: i18n.T("Low"), Selected: level > 0 && level <= 130, OnSelect: set(120)},
+			{ID: "ez_trigmotor_high", Label: i18n.T("High"), Selected: level > 130, OnSelect: set(230)},
 		})
 	}
 }
@@ -321,9 +325,9 @@ func renderEZHaptics(f *terminal.Frame, area cell.Rect, pc PanelContext) {
 func renderEZTriggers(f *terminal.Frame, area cell.Rect, pc PanelContext) {
 	s := pc.S
 	p := s.Theme
-	inner := panelFrame(f, area, s, "Trigger Feel")
+	inner := panelFrame(f, area, s, i18n.T("Trigger Feel"))
 	y := supportBanner(f, inner, inner.Y, s, device.CapAdaptiveTriggers)
-	f.Buffer.SetStringWithin(inner.X, y, "Pick how the triggers push back. Applies to both triggers.", p.LabelStyle(), inner.Width)
+	f.Buffer.SetStringWithin(inner.X, y, i18n.T("Pick how the triggers push back. Applies to both triggers."), p.LabelStyle(), inner.Width)
 	y += 2
 	cur := currentTriggerFeel(s)
 	for i, tf := range triggerFeels {
@@ -332,10 +336,10 @@ func renderEZTriggers(f *terminal.Frame, area cell.Rect, pc PanelContext) {
 		}
 		tc := tf.Config
 		x := pillRow(f, inner.X, y, inner.X+inner.Width, s, "", 0, []choice{
-			{ID: "ez_trig_" + tf.Name, Label: fmt.Sprintf("%-7s", tf.Name), Selected: i == cur, OnSelect: func() { applyTriggerFeel(pc, tc) }},
+			{ID: "ez_trig_" + tf.Name, Label: fmt.Sprintf("%-7s", i18n.T(tf.Name)), Selected: i == cur, OnSelect: func() { applyTriggerFeel(pc, tc) }},
 		})
 		if x < inner.X+inner.Width {
-			f.Buffer.SetStringWithin(x+1, y, tf.Description, p.MutedStyle(), inner.X+inner.Width-x-1)
+			f.Buffer.SetStringWithin(x+1, y, i18n.T(tf.Description), p.MutedStyle(), inner.X+inner.Width-x-1)
 		}
 		y += 2
 	}
@@ -344,9 +348,9 @@ func renderEZTriggers(f *terminal.Frame, area cell.Rect, pc PanelContext) {
 func renderEZProfiles(f *terminal.Frame, area cell.Rect, pc PanelContext) {
 	s := pc.S
 	p := s.Theme
-	inner := panelFrame(f, area, s, "Profiles")
+	inner := panelFrame(f, area, s, i18n.T("Profiles"))
 	y := inner.Y
-	f.Buffer.SetStringWithin(inner.X, y, "Choose a ready-made setup:", p.LabelStyle(), inner.Width)
+	f.Buffer.SetStringWithin(inner.X, y, i18n.T("Choose a ready-made setup:"), p.LabelStyle(), inner.Width)
 	y += 2
 	for i, prof := range s.ProfileMgr.ListFor(s.Descriptor.Family) {
 		if y >= inner.Y+inner.Height {
@@ -357,7 +361,7 @@ func renderEZProfiles(f *terminal.Frame, area cell.Rect, pc PanelContext) {
 			{ID: fmt.Sprintf("ez_profile_%d", i), Label: fmt.Sprintf("%-20s", prof.Name), Selected: prof.Name == s.ActiveProfile, OnSelect: func() { applyProfile(pc, prof) }},
 		})
 		if x < inner.X+inner.Width {
-			f.Buffer.SetStringWithin(x+1, y, prof.Description, p.MutedStyle(), inner.X+inner.Width-x-1)
+			f.Buffer.SetStringWithin(x+1, y, i18n.T(prof.Description), p.MutedStyle(), inner.X+inner.Width-x-1)
 		}
 		y++
 	}
@@ -366,12 +370,13 @@ func renderEZProfiles(f *terminal.Frame, area cell.Rect, pc PanelContext) {
 func renderEZSettings(f *terminal.Frame, area cell.Rect, pc PanelContext) {
 	s := pc.S
 	p := s.Theme
-	inner := panelFrame(f, area, s, "Settings")
+	inner := panelFrame(f, area, s, i18n.T("Settings"))
 	y := renderModeChooser(f, inner, inner.Y, s, pc.CB)
+	y = renderLanguageChooser(f, inner, y+1, s, pc.CB)
 	y++
 	if y < inner.Y+inner.Height {
 		f.RenderWidget(widgets.Checkbox{
-			ID: "cb_settings_autorot", Checked: &s.AutoRotate, Label: "Slowly rotate the controller",
+			ID: "cb_settings_autorot", Checked: &s.AutoRotate, Label: i18n.T("Slowly rotate the controller"),
 			Style: p.LabelStyle(), FocusedStyle: p.ButtonFocusedStyle(),
 		}, cell.NewRect(inner.X, y, inner.Width, 1))
 		y += 2
@@ -379,7 +384,7 @@ func renderEZSettings(f *terminal.Frame, area cell.Rect, pc PanelContext) {
 	if y < inner.Y+inner.Height {
 		prevHC := s.HighContrast
 		f.RenderWidget(widgets.Checkbox{
-			ID: "cb_settings_high_contrast", Checked: &s.HighContrast, Label: "High-contrast colors",
+			ID: "cb_settings_high_contrast", Checked: &s.HighContrast, Label: i18n.T("High-contrast colors"),
 			Style: p.LabelStyle(), FocusedStyle: p.ButtonFocusedStyle(),
 		}, cell.NewRect(inner.X, y, inner.Width, 1))
 		if s.HighContrast != prevHC {

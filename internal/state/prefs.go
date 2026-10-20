@@ -10,10 +10,14 @@ import (
 // Preferences are user choices persisted across sessions in settings.json.
 type Preferences struct {
 	Mode           string            `json:"mode"`
+	Language       string            `json:"language,omitempty"`
 	LastDevice     string            `json:"last_device,omitempty"`
 	ActiveProfiles map[string]string `json:"active_profiles,omitempty"` // device family -> profile name
 	HighContrast   bool              `json:"high_contrast,omitempty"`
 	AutoRotate     *bool             `json:"auto_rotate,omitempty"`
+	// ConfirmedModels remembers the user's controller identifications:
+	// non-unique hardware key "vid:pid:version" → model ID.
+	ConfirmedModels map[string]string `json:"confirmed_models,omitempty"`
 }
 
 // PrefsStore reads and writes Preferences at a fixed path.

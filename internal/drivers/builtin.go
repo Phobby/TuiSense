@@ -5,6 +5,8 @@ package drivers
 import (
 	"github.com/Phobby/TuiSense/internal/device"
 	"github.com/Phobby/TuiSense/internal/drivers/dualsense"
+	"github.com/Phobby/TuiSense/internal/drivers/gamepad"
+	"github.com/Phobby/TuiSense/internal/drivers/msigc20"
 	"github.com/Phobby/TuiSense/internal/drivers/xboxmock"
 )
 
@@ -19,6 +21,9 @@ func NewBuiltinRegistry(opts RegistryOptions) *device.Registry {
 	r := device.NewRegistry()
 	if opts.Hardware {
 		_ = r.RegisterDriver(dualsense.NewDriver())
+		// Generic Linux evdev gamepads, with model matchers for real
+		// controllers that have no dedicated protocol driver.
+		_ = r.RegisterDriver(gamepad.NewDriver(msigc20.Model()))
 	}
 	// The simulated DualSense is always registered; the session decides
 	// whether to attach it (forced --mock, or fallback when no hardware).

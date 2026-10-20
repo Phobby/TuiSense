@@ -84,6 +84,9 @@ type Descriptor struct {
 	DefaultConfig func() Config
 	// DefaultProfile names the built-in profile applied on first use ("" = factory config).
 	DefaultProfile string
+	// ModeGuide lists the controller's physical input modes (how to switch,
+	// how to recognize them) for troubleshooting. Empty when not applicable.
+	ModeGuide []string
 }
 
 // Region returns the region with id, if declared.
@@ -112,6 +115,10 @@ func (d Descriptor) NewDefaultConfig() Config {
 	}
 	return DefaultConfig()
 }
+
+// GenericGamepadModelID is the descriptor ID of unidentified gamepads. As an
+// identity confirmation it means "this is not one of the known models".
+const GenericGamepadModelID = "generic.evdev_gamepad"
 
 // PlaceholderDescriptor is used when no controller is active. It keeps the UI
 // renderable (dimmed visual, empty capabilities) without special-casing nil.

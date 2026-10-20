@@ -101,3 +101,34 @@ func TestDescriptorRegionsAndPlaceholder(t *testing.T) {
 		t.Fatalf("placeholder must have a visual and no capabilities")
 	}
 }
+
+func TestAxisNormalization(t *testing.T) {
+	ds := AxisRange{Min: 0, Max: 255, Center: 128}
+	for raw, want := range map[float64]float64{0: -1, 128: 0, 255: 1, 64: -0.5} {
+		if got := ds.NormalizeBipolar(raw); got != want {
+			t.Errorf("8-bit %v → %v, want %v", raw, got, want)
+		}
+	}
+	wide := AxisRange{Min: -32768, Max: 32767, Center: -0.5}
+	if wide.NormalizeBipolar(-32768) != -1 || wide.NormalizeBipolar(32767) != 1 || wide.NormalizeBipolar(-0.5) != 0 {
+		t.Error("16-bit range must reach ±1 at both ends")
+	}
+	if v := wide.NormalizeBipolar(40000); v != 1 {
+		t.Errorf("out-of-range values clamp, got %v", v)
+	}
+	inv := AxisRange{Min: 0, Max: 1023, Center: 511.5, Invert: true}
+	if inv.NormalizeBipolar(1023) != -1 || inv.NormalizeUnipolar(1023) != 0 || inv.NormalizeUnipolar(0) != 1 {
+		t.Error("inverted axes flip direction")
+	}
+	trig := AxisRange{Min: 0, Max: 1023}
+	if trig.NormalizeUnipolar(1023) != 1 || trig.NormalizeUnipolar(0) != 0 || trig.NormalizeUnipolar(511.5) != 0.5 {
+		t.Error("unipolar trigger normalization wrong")
+	}
+	if (AxisRange{}).NormalizeBipolar(5) != 0 {
+		t.Error("an invalid range must not produce values")
+	}
+	l := InputLayout{StickRange: ds, StickAxes: [4]AxisRange{3: wide}}
+	if l.StickAxis(0) != ds || l.StickAxis(3) != wide {
+		t.Error("per-axis ranges override the shared range")
+	}
+}

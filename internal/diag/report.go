@@ -3,6 +3,7 @@ package diag
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/Phobby/TuiSense/internal/i18n"
 	"io"
 	"os"
 	"path/filepath"
@@ -47,20 +48,20 @@ type Report struct {
 func BuildReport(s *Session, version string, includeIDs bool, now time.Time) Report {
 	info := s.Ctx.Info
 	r := Report{
-		Tool: "TuiSense", Version: version, GeneratedAt: now,
+		Tool: i18n.T("TuiSense"), Version: version, GeneratedAt: now,
 		Device: ReportDevice{
 			Model: s.Ctx.Desc.DisplayName, ModelID: s.Ctx.Desc.ModelID, Brand: s.Ctx.Desc.Brand,
 			Firmware: info.FirmwareVersion, Hardware: info.HardwareVersion,
 			Connection: string(info.Connection), Simulated: s.Ctx.Simulated,
 		},
 		Notes: []string{
-			"Statuses are only 'Passed' when a measurement or explicit user confirmation was performed.",
-			"Results marked user_confirmed rely on what the user felt or heard.",
-			"No microphone recordings are stored or included.",
+			i18n.T("Statuses are only 'Passed' when a measurement or explicit user confirmation was performed."),
+			i18n.T("Results marked user_confirmed rely on what the user felt or heard."),
+			i18n.T("No microphone recordings are stored or included."),
 		},
 	}
 	if s.Ctx.Simulated {
-		r.Notes = append(r.Notes, "SIMULATED DEVICE: all values are synthetic mock data, not hardware measurements.")
+		r.Notes = append(r.Notes, i18n.T("SIMULATED DEVICE: all values are synthetic mock data, not hardware measurements."))
 	}
 	if includeIDs {
 		r.Device.Identifiers = map[string]string{"mac": info.MACAddress, "path": info.HIDRawPath}
@@ -90,19 +91,19 @@ func (r Report) WriteJSON(w io.Writer) error {
 // WriteText writes a human-readable report.
 func (r Report) WriteText(w io.Writer) error {
 	var b strings.Builder
-	fmt.Fprintf(&b, "TuiSense %s — Controller Diagnostics Report\n", r.Version)
-	fmt.Fprintf(&b, "Generated: %s\n\n", r.GeneratedAt.Format(time.RFC1123))
-	fmt.Fprintf(&b, "Controller: %s (%s, %s)\n", r.Device.Model, r.Device.Brand, r.Device.ModelID)
-	fmt.Fprintf(&b, "Connection: %s\n", r.Device.Connection)
+	fmt.Fprintf(&b, i18n.T("TuiSense %s — Controller Diagnostics Report\n"), r.Version)
+	fmt.Fprintf(&b, i18n.T("Generated: %s\n\n"), r.GeneratedAt.Format(time.RFC1123))
+	fmt.Fprintf(&b, i18n.T("Controller: %s (%s, %s)\n"), r.Device.Model, r.Device.Brand, r.Device.ModelID)
+	fmt.Fprintf(&b, i18n.T("Connection: %s\n"), r.Device.Connection)
 	if r.Device.Firmware != "" {
-		fmt.Fprintf(&b, "Firmware:   %s (hardware %s)\n", r.Device.Firmware, r.Device.Hardware)
+		fmt.Fprintf(&b, i18n.T("Firmware:   %s (hardware %s)\n"), r.Device.Firmware, r.Device.Hardware)
 	}
 	if r.Device.Simulated {
-		b.WriteString("\n*** SIMULATED DEVICE — values are mock data, not hardware measurements ***\n")
+		b.WriteString(i18n.T("\n*** SIMULATED DEVICE — values are mock data, not hardware measurements ***\n"))
 	}
 	b.WriteString("\n")
 	for _, e := range r.Entries {
-		fmt.Fprintf(&b, "[%s] %-20s %s\n", e.Status.Icon(), e.Label, e.Status)
+		fmt.Fprintf(&b, "[%s] %-20s %s\n", e.Status.Icon(), e.Label, e.Status.Label())
 		if e.Reason != "" && e.Result == nil {
 			fmt.Fprintf(&b, "      %s\n", e.Reason)
 		}
@@ -115,11 +116,11 @@ func (r Report) WriteText(w io.Writer) error {
 				fmt.Fprintf(&b, "      · %s\n", m)
 			}
 			for _, l := range e.Result.Limitations {
-				fmt.Fprintf(&b, "      (limitation) %s\n", l)
+				fmt.Fprintf(&b, i18n.T("      (limitation) %s\n"), l)
 			}
 		}
 	}
-	b.WriteString("\nNotes:\n")
+	b.WriteString(i18n.T("\nNotes:\n"))
 	for _, n := range r.Notes {
 		fmt.Fprintf(&b, "  - %s\n", n)
 	}

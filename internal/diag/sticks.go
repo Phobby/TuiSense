@@ -1,103 +1,269 @@
 package diag
 
 import (
-	"fmt"
 	"math"
+	"strings"
 	"time"
 
 	"github.com/Phobby/TuiSense/internal/device"
+	"github.com/Phobby/TuiSense/internal/i18n"
 )
 
-// StickPhase is a step of the guided drift test.
-type StickPhase int
+// StickStep is a step of the guided stick test.
+type StickStep int
 
 const (
-	StickIdle       StickPhase = iota
-	StickStationary            // sticks released: measure resting center & noise
-	StickRange                 // sticks rotated: measure reach in 8 directions
-	StickRecenter              // released again: verify return to center
-	StickDone
+	StickIdle    StickStep = iota
+	StickRelease           // 1: sticks released — measure the resting position
+	StickExplain           // 2: resting result explained; waiting for the user
+	StickUp                // 3: movement range, one direction at a time…
+	StickDown
+	StickLeft
+	StickRight
+	StickRotate   // …then around the rim
+	StickRelease2 // 3 (end): released again — same resting point?
+	StickDone     // 4: final result
 )
+
+// Verdict is the human-level conclusion for one stick or trigger. Inputs are
+// never declared "failed": a measurement alone cannot prove a hardware defect.
+type Verdict string
+
+const (
+	VerdictNone           Verdict = ""
+	VerdictNormal         Verdict = "normal"
+	VerdictPossibleDrift  Verdict = "possible_drift"
+	VerdictFurtherTesting Verdict = "further_testing"
+	VerdictInconclusive   Verdict = "inconclusive"
+	VerdictPossibleIssue  Verdict = "possible_issue" // triggers: e.g. not returning to rest
+)
+
+// Label returns the verdict in the active UI language.
+func (v Verdict) Label() string {
+	switch v {
+	case VerdictNormal:
+		return i18n.T("Normal — within tolerance")
+	case VerdictPossibleDrift:
+		return i18n.T("Possible drift")
+	case VerdictFurtherTesting:
+		return i18n.T("Further testing recommended")
+	case VerdictInconclusive:
+		return i18n.T("Inconclusive")
+	case VerdictPossibleIssue:
+		return i18n.T("Possible issue")
+	}
+	return i18n.T("Not tested")
+}
+
+// Status maps the verdict to a health status.
+func (v Verdict) Status() Status {
+	switch v {
+	case VerdictNormal:
+		return Passed
+	case VerdictPossibleDrift, VerdictFurtherTesting, VerdictPossibleIssue:
+		return Warning
+	case VerdictInconclusive:
+		return Inconclusive
+	}
+	return NotTested
+}
+
+// Movement directions in StickTest reach arrays.
+const (
+	DirUp = iota
+	DirDown
+	DirLeft
+	DirRight
+)
+
+const (
+	stickSectors   = 16
+	reachThreshold = 0.85 // a direction counts as reached at 85% of travel
+	rimRadius      = 0.70 // rotation coverage counts sectors reached at ≥70%
+	rimSectorsGoal = 14   // of 16 sectors
+
+	stickSettle      = 500 * time.Millisecond // ignored while a released stick springs back
+	directionTimeout = 8 * time.Second
+	rotateTimeout    = 12 * time.Second
+	release2Duration = 2 * time.Second
+	minRestSamples   = 10
+	trailLen         = 40
+	historyLen       = 120
+)
+
+// StickDurations are the resting-measurement lengths offered in Advanced mode.
+var StickDurations = []time.Duration{2 * time.Second, 3 * time.Second, 5 * time.Second, 10 * time.Second}
 
 // StickLive is the real-time view of one stick.
 type StickLive struct {
 	Raw      [2]float64 // raw counts (X, Y)
-	Norm     [2]float64 // normalized [-1,1], no deadzone applied
+	Norm     [2]float64 // normalized [-1, 1] with the device's own range; no deadzone
 	Min, Max [2]float64 // raw extremes since reset
-	jitter   [2]*Ring   // last ~1 s of raw values
 	Trail    [][2]float64
+	HistX    *Ring // normalized X per update, for time-series graphs
+	HistY    *Ring
+	jitter   [2]*Ring // normalized values of the most recent samples
 }
 
-// Jitter returns the rolling standard deviation (raw counts) of X and Y.
-func (l *StickLive) Jitter() [2]float64 {
-	return [2]float64{l.jitter[0].Std(), l.jitter[1].Std()}
+// JitterPct returns the recent standard deviation of X and Y in % of travel.
+func (l *StickLive) JitterPct() [2]float64 {
+	return [2]float64{100 * l.jitter[0].Std(), 100 * l.jitter[1].Std()}
 }
 
-// StickStats summarizes one stick over a measurement phase.
-type StickStats struct {
-	X, Y   AxisStats
-	MaxDev float64 // largest distance from the nominal center, raw counts
+// restStats accumulates one released-stick measurement.
+type restStats struct {
+	X, Y       AxisStats // normalized
+	RawX, RawY AxisStats
+	Dev        AxisStats       // distance from nominal center per sample (normalized)
+	Half       [2][2]AxisStats // [half][axis] normalized, for stability
+	mid        time.Time
+	rate       rateCounter
 }
 
-// RangeStats tracks reach per 45° direction during the range phase.
-type RangeStats struct {
-	Octant [8]float64 // max normalized radius reached per direction
-	Peak   float64
+func (r *restStats) add(s device.RawSample, raw, n [2]float64) {
+	r.X.Add(n[0])
+	r.Y.Add(n[1])
+	r.RawX.Add(raw[0])
+	r.RawY.Add(raw[1])
+	r.Dev.Add(math.Hypot(n[0], n[1]))
+	h := 0
+	if !s.At.Before(r.mid) {
+		h = 1
+	}
+	r.Half[h][0].Add(n[0])
+	r.Half[h][1].Add(n[1])
+	r.rate.add(s)
+}
+
+// RestSummary is one resting measurement in human terms (all % of travel).
+type RestSummary struct {
+	N          int
+	RateHz     float64
+	Mean       [2]float64 // normalized mean position
+	OffsetPct  float64    // distance of the mean from the nominal center
+	OffsetRaw  float64    // the same in raw counts
+	AvgDevPct  float64    // average distance of individual samples
+	MaxDevPct  float64
+	NoisePct   float64 // larger of the X/Y standard deviations
+	NoiseRaw   float64
+	P2PPct     float64 // largest X/Y peak-to-peak
+	StableDiff float64 // shift of the mean between the first and second half
+}
+
+func summarizeRest(r restStats, l device.InputLayout, stick int) RestSummary {
+	s := RestSummary{N: r.X.N, RateHz: r.rate.Hz()}
+	if s.N == 0 {
+		return s
+	}
+	s.Mean = [2]float64{r.X.Mean(), r.Y.Mean()}
+	s.OffsetPct = 100 * math.Hypot(s.Mean[0], s.Mean[1])
+	ax, ay := l.StickAxis(2*stick), l.StickAxis(2*stick+1)
+	s.OffsetRaw = math.Hypot(r.RawX.Mean()-ax.Center, r.RawY.Mean()-ay.Center)
+	s.AvgDevPct = 100 * r.Dev.Mean()
+	s.MaxDevPct = 100 * r.Dev.Max
+	s.NoisePct = 100 * math.Max(r.X.Std(), r.Y.Std())
+	s.NoiseRaw = math.Max(r.RawX.Std(), r.RawY.Std())
+	s.P2PPct = 100 * math.Max(r.X.PeakToPeak(), r.Y.PeakToPeak())
+	if r.Half[0][0].N > 0 && r.Half[1][0].N > 0 {
+		s.StableDiff = 100 * math.Hypot(r.Half[1][0].Mean()-r.Half[0][0].Mean(), r.Half[1][1].Mean()-r.Half[0][1].Mean())
+	}
+	return s
+}
+
+// TravelStats tracks how far a stick moved during the movement steps.
+type TravelStats struct {
+	Reach  [4]float64            // max normalized reach up/down/left/right
+	Sector [stickSectors]float64 // max radius per 22.5° sector (outer boundary)
+}
+
+// Coverage returns how many sectors reached the rim radius.
+func (t TravelStats) Coverage() int {
+	n := 0
+	for _, r := range t.Sector {
+		if r >= rimRadius {
+			n++
+		}
+	}
+	return n
+}
+
+// OuterRadiusPct returns the mean outer radius over covered sectors (100 = full circle).
+func (t TravelStats) OuterRadiusPct() float64 {
+	sum, n := 0.0, 0
+	for _, r := range t.Sector {
+		if r >= rimRadius {
+			sum += r
+			n++
+		}
+	}
+	if n == 0 {
+		return 0
+	}
+	return 100 * sum / float64(n)
+}
+
+func (t *TravelStats) add(n [2]float64) {
+	reach := [4]float64{-n[1], n[1], -n[0], n[0]}
+	for d, v := range reach {
+		t.Reach[d] = math.Max(t.Reach[d], v)
+	}
+	r := math.Hypot(n[0], n[1])
+	if r < 0.05 {
+		return
+	}
+	ang := math.Mod(math.Atan2(n[1], n[0])+2*math.Pi, 2*math.Pi)
+	sec := int(ang/(2*math.Pi)*stickSectors) % stickSectors
+	t.Sector[sec] = math.Max(t.Sector[sec], r)
 }
 
 // StickAnalysis is the interpreted result for one stick.
 type StickAnalysis struct {
-	Status      Status
-	Summary     string
-	Explanation []string
-	OffsetRaw   float64 // resting offset from nominal center, raw counts
-	OffsetPct   float64 // as % of half travel
-	NoiseRaw    float64 // standard deviation, raw counts
-	PeakToPeak  float64
-	MaxDevPct   float64
-	Samples     int
-	ReachedDirs int     // range phase: directions reaching ≥90%
-	RecenterRaw float64 // change of resting center between measurements, raw counts
+	Verdict     Verdict
+	Headline    string   // one plain-language sentence
+	Explanation []string // why, and what it means for gameplay
+	Advice      []string // how to repeat or what to try
+	RestA       RestSummary
+	RestB       RestSummary // zero until the second resting measurement
+	HasRestB    bool
+	ShiftPct    float64 // difference between the two resting points
+	Travel      TravelStats
+	TravelDone  bool
+	Missed      []int // directions not reached during the movement steps
 }
 
-// StickTest is the guided drift / range test for all declared sticks.
+// Status returns the health status of the analysis.
+func (a StickAnalysis) Status() Status { return a.Verdict.Status() }
+
+// StickTest is the guided stick test for all declared sticks.
 type StickTest struct {
-	Layout   device.InputLayout
-	Duration time.Duration // stationary sampling period (configurable)
-	Deadzone [2]float64    // TuiSense's configured inner deadzone in % (read-only context)
+	Layout          device.InputLayout
+	Duration        time.Duration // resting measurement length (after settling)
+	PreviewDeadzone float64       // deadzone preview size in %, never applied to input
+	SourceNote      string        // set by the session, e.g. event-driven input caveat
 
-	Phase      StickPhase
-	PhaseStart time.Time
-	PhaseEnd   time.Time
+	Step      StickStep
+	StepStart time.Time
+	StepEnd   time.Time
 
-	Live       [2]StickLive
-	Stationary [2]StickStats
-	Recenter   [2]StickStats
-	Range      [2]RangeStats
-	Analysis   [2]StickAnalysis
-	History    [2]*Ring // offset magnitude (%) history for graphs
+	Live     [2]StickLive
+	Rest     [2]restStats
+	Rest2    [2]restStats
+	Travel   [2]TravelStats
+	Analysis [2]StickAnalysis
+	DirDone  [4]bool // a direction step completed (reached by both sticks)
+	DirSkip  [4]bool // a direction step timed out or was skipped
+	RotateOK bool
 
 	scenario func(device.InputScenario)
 }
 
-// Durations offered in the UI.
-var StickDurations = []time.Duration{2 * time.Second, 5 * time.Second, 10 * time.Second}
-
-const (
-	rangeDuration    = 6 * time.Second
-	recenterDuration = 3 * time.Second
-	trailLen         = 40
-	// settleTime is ignored at the start of resting phases: a released stick
-	// needs a moment to spring back to center.
-	settleTime = 400 * time.Millisecond
-)
-
 // NewStickTest creates the test for a layout.
 func NewStickTest(layout device.InputLayout, scenario func(device.InputScenario)) *StickTest {
-	t := &StickTest{Layout: layout, Duration: 5 * time.Second, scenario: scenario}
+	t := &StickTest{Layout: layout, Duration: 3 * time.Second, PreviewDeadzone: DefaultPreviewDeadzone, scenario: scenario}
 	for i := range t.Live {
-		t.Live[i].jitter = [2]*Ring{NewRing(25), NewRing(25)}
-		t.History[i] = NewRing(60)
+		t.Live[i].jitter = [2]*Ring{NewRing(100), NewRing(100)}
+		t.Live[i].HistX = NewRing(historyLen)
+		t.Live[i].HistY = NewRing(historyLen)
 	}
 	t.ResetLive()
 	return t
@@ -121,284 +287,440 @@ func (t *StickTest) setScenario(s device.InputScenario) {
 	}
 }
 
-// rawSticks returns raw counts, reconstructing from normalized values when the
-// backend provides no raw data.
-func rawSticks(tel device.Telemetry, r device.AxisRange) [4]float64 {
-	if tel.Raw.Valid {
-		return [4]float64{float64(tel.Raw.Sticks[0]), float64(tel.Raw.Sticks[1]), float64(tel.Raw.Sticks[2]), float64(tel.Raw.Sticks[3])}
+// Normalize converts raw stick counts to [-1, 1] using the declared ranges.
+func (t *StickTest) Normalize(stick int, raw [2]float64) [2]float64 {
+	return [2]float64{
+		t.Layout.StickAxis(2 * stick).NormalizeBipolar(raw[0]),
+		t.Layout.StickAxis(2*stick + 1).NormalizeBipolar(raw[1]),
 	}
-	n := [4]float64{tel.LeftStickX, tel.LeftStickY, tel.RightStickX, tel.RightStickY}
-	for i := range n {
-		n[i] = r.Center + n[i]*r.HalfSpan()
-	}
-	return n
 }
 
-// Feed processes one telemetry sample.
+// Feed processes one telemetry update (which may carry many reports).
+//
+// Steps advance on each sample's own timestamp, so a backlog of reports
+// (e.g. after a slow UI frame) is attributed to the step it was measured in
+// instead of ending the step early with too few samples.
 func (t *StickTest) Feed(tel device.Telemetry, now time.Time) {
-	r := t.Layout.StickRange
-	if r.HalfSpan() == 0 {
-		return
+	samples := inputSamples(tel, t.Layout, now)
+	for _, s := range samples {
+		t.Tick(s.At)
+		t.feedSample(s)
 	}
-	raw := rawSticks(tel, r)
-	for i := 0; i < 2; i++ {
-		x, y := raw[2*i], raw[2*i+1]
-		l := &t.Live[i]
-		l.Raw = [2]float64{x, y}
-		l.Norm = [2]float64{(x - r.Center) / r.HalfSpan(), (y - r.Center) / r.HalfSpan()}
-		for a, v := range l.Raw {
-			l.Min[a] = math.Min(l.Min[a], v)
-			l.Max[a] = math.Max(l.Max[a], v)
-			l.jitter[a].Push(v)
+	if len(samples) > 0 {
+		for i := range t.Live {
+			t.Live[i].HistX.Push(t.Live[i].Norm[0])
+			t.Live[i].HistY.Push(t.Live[i].Norm[1])
 		}
-		l.Trail = append(l.Trail, l.Norm)
+	}
+	if len(samples) > 0 {
+		t.Tick(samples[len(samples)-1].At)
+	} else {
+		t.Tick(now) // no data: time still runs out for the step
+	}
+}
+
+func (t *StickTest) feedSample(s device.RawSample) {
+	settled := !s.At.Before(t.StepStart.Add(stickSettle))
+	for i := 0; i < 2; i++ {
+		raw := [2]float64{float64(s.Sticks[2*i]), float64(s.Sticks[2*i+1])}
+		n := t.Normalize(i, raw)
+		l := &t.Live[i]
+		l.Raw, l.Norm = raw, n
+		for a := range raw {
+			l.Min[a] = math.Min(l.Min[a], raw[a])
+			l.Max[a] = math.Max(l.Max[a], raw[a])
+			l.jitter[a].Push(n[a])
+		}
+		l.Trail = append(l.Trail, n)
 		if len(l.Trail) > trailLen {
 			l.Trail = l.Trail[1:]
 		}
-		t.History[i].Push(100 * math.Hypot(l.Norm[0], l.Norm[1]))
-
-		dev := math.Hypot(x-r.Center, y-r.Center)
-		settling := now.Sub(t.PhaseStart) < settleTime
-		switch t.Phase {
-		case StickStationary:
-			if !settling {
-				addStick(&t.Stationary[i], x, y, dev)
+		switch t.Step {
+		case StickRelease:
+			if settled {
+				t.Rest[i].add(s, raw, n)
 			}
-		case StickRecenter:
-			if !settling {
-				addStick(&t.Recenter[i], x, y, dev)
+		case StickRelease2:
+			if settled {
+				t.Rest2[i].add(s, raw, n)
 			}
-		case StickRange:
-			rad := math.Hypot(l.Norm[0], l.Norm[1])
-			oct := int(math.Mod(math.Atan2(l.Norm[1], l.Norm[0])+2*math.Pi+math.Pi/8, 2*math.Pi) / (math.Pi / 4))
-			rs := &t.Range[i]
-			rs.Octant[oct%8] = math.Max(rs.Octant[oct%8], rad)
-			rs.Peak = math.Max(rs.Peak, rad)
+		case StickUp, StickDown, StickLeft, StickRight, StickRotate:
+			t.Travel[i].add(n)
 		}
 	}
-	t.Tick(now)
 }
 
-func addStick(s *StickStats, x, y, dev float64) {
-	s.X.Add(x)
-	s.Y.Add(y)
-	s.MaxDev = math.Max(s.MaxDev, dev)
+// stepReached reports whether both sticks completed the current movement step.
+func (t *StickTest) stepReached() bool {
+	switch t.Step {
+	case StickUp, StickDown, StickLeft, StickRight:
+		d := int(t.Step - StickUp)
+		return t.Travel[0].Reach[d] >= reachThreshold && t.Travel[1].Reach[d] >= reachThreshold
+	case StickRotate:
+		return t.Travel[0].Coverage() >= rimSectorsGoal && t.Travel[1].Coverage() >= rimSectorsGoal
+	}
+	return false
 }
 
-// Tick advances timed phases.
+// Tick advances timed steps and completes movement steps.
 func (t *StickTest) Tick(now time.Time) {
-	if t.Phase == StickIdle || t.Phase == StickDone || now.Before(t.PhaseEnd) {
-		return
+	switch t.Step {
+	case StickRelease:
+		if !now.Before(t.StepEnd) {
+			t.analyzeAll(false)
+			t.Step = StickExplain
+			t.setScenario(device.ScenarioDemo)
+		}
+	case StickUp, StickDown, StickLeft, StickRight, StickRotate:
+		reached := t.stepReached()
+		if reached || !now.Before(t.StepEnd) {
+			if t.Step == StickRotate {
+				t.RotateOK = reached
+			} else {
+				d := int(t.Step - StickUp)
+				t.DirDone[d], t.DirSkip[d] = reached, !reached
+			}
+			t.advanceMovement(now)
+		}
+	case StickRelease2:
+		if !now.Before(t.StepEnd) {
+			t.analyzeAll(true)
+			t.Step = StickDone
+			t.setScenario(device.ScenarioDemo)
+		}
 	}
-	switch t.Phase {
-	case StickStationary:
-		for i := range t.Analysis {
-			t.Analysis[i] = t.analyzeStationary(i, t.Stationary[i])
+}
+
+func (t *StickTest) begin(step StickStep, now time.Time, d time.Duration) {
+	t.Step, t.StepStart, t.StepEnd = step, now, now.Add(d)
+}
+
+func (t *StickTest) advanceMovement(now time.Time) {
+	switch t.Step {
+	case StickUp, StickDown, StickLeft:
+		t.begin(t.Step+1, now, directionTimeout)
+	case StickRight:
+		t.begin(StickRotate, now, rotateTimeout)
+	case StickRotate:
+		t.begin(StickRelease2, now, stickSettle+release2Duration)
+		for i := range t.Rest2 {
+			t.Rest2[i].mid = now.Add(stickSettle + release2Duration/2)
 		}
-		t.Phase = StickDone
-		t.setScenario(device.ScenarioDemo)
-	case StickRange:
-		for i := range t.Analysis {
-			t.Analysis[i].ReachedDirs = reached(t.Range[i])
-		}
-		t.begin(StickRecenter, now, recenterDuration)
 		t.setScenario(device.ScenarioIdle)
-	case StickRecenter:
-		for i := range t.Analysis {
-			t.Analysis[i] = t.analyzeRecenter(i)
-		}
-		t.Phase = StickDone
-		t.setScenario(device.ScenarioDemo)
 	}
 }
 
-func (t *StickTest) begin(p StickPhase, now time.Time, d time.Duration) {
-	t.Phase, t.PhaseStart, t.PhaseEnd = p, now, now.Add(d)
-}
-
-// StartStationary begins step 1 (user has released both sticks).
-func (t *StickTest) StartStationary(now time.Time) {
-	t.Stationary = [2]StickStats{}
-	t.Recenter = [2]StickStats{}
-	t.Range = [2]RangeStats{}
+// Start begins step 1: the user has released both sticks.
+func (t *StickTest) Start(now time.Time) {
+	t.Rest, t.Rest2 = [2]restStats{}, [2]restStats{}
+	t.Travel = [2]TravelStats{}
 	t.Analysis = [2]StickAnalysis{}
-	t.begin(StickStationary, now, t.Duration)
+	t.DirDone, t.DirSkip, t.RotateOK = [4]bool{}, [4]bool{}, false
+	t.begin(StickRelease, now, stickSettle+t.Duration)
+	mid := now.Add(stickSettle + t.Duration/2)
+	for i := range t.Rest {
+		t.Rest[i].mid = mid
+	}
 	t.setScenario(device.ScenarioIdle)
 }
 
-// StartRange begins the optional movement step (after a stationary run).
-func (t *StickTest) StartRange(now time.Time) {
-	t.Range = [2]RangeStats{}
-	t.Recenter = [2]StickStats{}
-	t.begin(StickRange, now, rangeDuration)
+// Continue moves from the explanation (step 2) to the movement steps (step 3).
+func (t *StickTest) Continue(now time.Time) {
+	if t.Step != StickExplain {
+		return
+	}
+	t.Travel = [2]TravelStats{}
+	t.Rest2 = [2]restStats{}
+	t.begin(StickUp, now, directionTimeout)
 	t.setScenario(device.ScenarioMove)
 }
 
-// Cancel aborts any running phase without producing results.
+// Finish ends the test after step 2 with the preliminary (resting-only) result.
+func (t *StickTest) Finish() {
+	if t.Step == StickExplain {
+		t.Step = StickDone
+	}
+}
+
+// SkipStep skips the current movement step (counted as not reached).
+func (t *StickTest) SkipStep(now time.Time) {
+	switch t.Step {
+	case StickUp, StickDown, StickLeft, StickRight:
+		t.DirSkip[int(t.Step-StickUp)] = true
+		t.advanceMovement(now)
+	case StickRotate:
+		t.advanceMovement(now)
+	}
+}
+
+// Cancel aborts any running step without producing results.
+// A finished step-2 explanation is kept as the (preliminary) result.
 func (t *StickTest) Cancel() {
-	if t.Phase != StickIdle && t.Phase != StickDone {
-		t.Phase = StickIdle
+	switch {
+	case t.Step == StickExplain:
+		t.Step = StickDone
+	case t.Running():
+		t.Step = StickIdle
 		t.setScenario(device.ScenarioDemo)
 	}
 }
 
-// Running reports whether a measurement phase is active.
+// Running reports whether a measurement step is active.
 func (t *StickTest) Running() bool {
-	return t.Phase == StickStationary || t.Phase == StickRange || t.Phase == StickRecenter
+	return t.Step == StickRelease || (t.Step >= StickUp && t.Step <= StickRelease2)
 }
 
-// Progress returns 0..1 of the current phase.
+// Moving reports whether a movement step (3) is active.
+func (t *StickTest) Moving() bool { return t.Step >= StickUp && t.Step <= StickRotate }
+
+// Progress returns 0..1 of the current step.
 func (t *StickTest) Progress(now time.Time) float64 {
-	total := t.PhaseEnd.Sub(t.PhaseStart)
+	switch t.Step {
+	case StickUp, StickDown, StickLeft, StickRight:
+		d := int(t.Step - StickUp)
+		return math.Min(1, math.Min(t.Travel[0].Reach[d], t.Travel[1].Reach[d])/reachThreshold)
+	case StickRotate:
+		return math.Min(1, float64(min(t.Travel[0].Coverage(), t.Travel[1].Coverage()))/rimSectorsGoal)
+	}
+	total := t.StepEnd.Sub(t.StepStart)
 	if total <= 0 {
 		return 0
 	}
-	return math.Min(1, float64(now.Sub(t.PhaseStart))/float64(total))
+	return clamp01(float64(now.Sub(t.StepStart)) / float64(total))
 }
 
-func reached(rs RangeStats) int {
-	n := 0
-	for _, r := range rs.Octant {
-		if r >= 0.9 {
-			n++
+// Settling reports whether the current resting step is still ignoring samples.
+func (t *StickTest) Settling(now time.Time) bool {
+	return (t.Step == StickRelease || t.Step == StickRelease2) && now.Before(t.StepStart.Add(stickSettle))
+}
+
+// Tolerances returns the center and noise tolerances in % of travel. They
+// come from the driver's declared heuristics (raw counts), converted with the
+// device's own range; 3% / 1% when the driver declares none.
+func (t *StickTest) Tolerances() (centerPct, noisePct float64) {
+	hs := t.Layout.StickAxis(0).HalfSpan()
+	centerPct, noisePct = 3, 1
+	if hs > 0 && t.Layout.Drift.CenterTolerance > 0 {
+		centerPct = 100 * t.Layout.Drift.CenterTolerance / hs
+	}
+	if hs > 0 && t.Layout.Drift.NoiseTolerance > 0 {
+		noisePct = 100 * t.Layout.Drift.NoiseTolerance / hs
+	}
+	return centerPct, noisePct
+}
+
+func (t *StickTest) analyzeAll(final bool) {
+	for i := range t.Analysis {
+		t.Analysis[i] = t.analyze(i, final)
+	}
+}
+
+// DirectionLabel names a movement direction.
+func DirectionLabel(d int) string {
+	return [...]string{i18n.T("up"), i18n.T("down"), i18n.T("left"), i18n.T("right")}[d]
+}
+
+func (t *StickTest) analyze(i int, final bool) StickAnalysis {
+	tolC, tolN := t.Tolerances()
+	moveLimit := math.Max(8*tolN, 8)
+	name := inSentence(i18n.T(t.Layout.StickLabels[i]))
+	a := StickAnalysis{RestA: summarizeRest(t.Rest[i], t.Layout, i), Travel: t.Travel[i]}
+	ra := a.RestA
+	retry := i18n.T("Release the stick completely, put the controller on a table, and run the test again.")
+
+	switch {
+	case ra.N < minRestSamples:
+		a.Verdict = VerdictInconclusive
+		a.Headline = i18n.Tf("The result is inconclusive: too few readings arrived from the %s.", name)
+		a.Advice = append(a.Advice, i18n.T("Keep the controller connected and run the test again."))
+		return a
+	case ra.P2PPct > moveLimit:
+		a.Verdict = VerdictInconclusive
+		a.Headline = i18n.Tf("The result is inconclusive. Try the test again without touching the %s.", name)
+		a.Explanation = append(a.Explanation, i18n.Tf("The reading moved by %.0f%% of travel while the stick should have been released.", ra.P2PPct))
+		a.Advice = append(a.Advice, retry)
+		return a
+	}
+
+	overA := ra.OffsetPct > tolC
+	noisy := ra.NoisePct > tolN
+	offset := ra.OffsetPct
+
+	if !final {
+		switch {
+		case !overA && !noisy:
+			a.Verdict = VerdictNormal
+			a.Headline = i18n.Tf("Your %s is resting close to the center (%.1f%% away).", name, ra.OffsetPct)
+		case overA:
+			a.Verdict = VerdictFurtherTesting
+			a.Headline = i18n.Tf("Your %s rested %.1f%% away from the center. Continue with the movement test to see whether this repeats.", name, ra.OffsetPct)
+		default:
+			a.Verdict = VerdictFurtherTesting
+			a.Headline = i18n.Tf("Your %s is centered, but its reading flickers slightly at rest (±%.1f%%).", name, ra.NoisePct)
+		}
+	} else {
+		a.HasRestB = true
+		a.RestB = summarizeRest(t.Rest2[i], t.Layout, i)
+		rb := a.RestB
+		a.TravelDone = true
+		for d := 0; d < 4; d++ {
+			if a.Travel.Reach[d] < reachThreshold {
+				a.Missed = append(a.Missed, d)
+			}
+		}
+		if rb.N < minRestSamples || rb.P2PPct > moveLimit {
+			a.Verdict = VerdictInconclusive
+			a.Headline = i18n.Tf("The result is inconclusive: the %s was moving during the second resting measurement.", name)
+			a.Advice = append(a.Advice, retry)
+			return a
+		}
+		overB := rb.OffsetPct > tolC
+		a.ShiftPct = 100 * math.Hypot(rb.Mean[0]-ra.Mean[0], rb.Mean[1]-ra.Mean[1])
+		consistent := a.ShiftPct <= math.Max(tolC, 0.5*math.Max(ra.OffsetPct, rb.OffsetPct))
+		offset = math.Max(ra.OffsetPct, rb.OffsetPct)
+		switch {
+		case overA && overB && consistent:
+			a.Verdict = VerdictPossibleDrift
+			a.Headline = i18n.Tf("Your %s shows some center movement: it rested %.1f%% and %.1f%% away from the center in two measurements. This may cause unwanted movement with very small deadzones.", name, ra.OffsetPct, rb.OffsetPct)
+		case overA || overB:
+			a.Verdict = VerdictFurtherTesting
+			a.Headline = i18n.Tf("Your %s did not rest at the same point each time (%.1f%%, then %.1f%% from the center). Repeat the test to see whether this persists.", name, ra.OffsetPct, rb.OffsetPct)
+		case noisy || rb.NoisePct > tolN:
+			a.Verdict = VerdictFurtherTesting
+			a.Headline = i18n.Tf("Your %s is centered, but its reading flickers slightly at rest (±%.1f%%).", name, math.Max(ra.NoisePct, rb.NoisePct))
+		default:
+			a.Verdict = VerdictNormal
+			a.Headline = i18n.Tf("Your %s is resting close to the center (%.1f%% away) and returns to the same point after movement.", name, offset)
 		}
 	}
-	return n
-}
 
-func (t *StickTest) tolerances() (center, noise float64) {
-	hs := t.Layout.StickRange.HalfSpan()
-	center, noise = t.Layout.Drift.CenterTolerance, t.Layout.Drift.NoiseTolerance
-	if center <= 0 {
-		center = 0.02 * hs
+	// Why it matters, in terms of the deadzone preview.
+	dz := t.PreviewDeadzone
+	if offset > tolC {
+		if FilteredBy(offset, dz) {
+			a.Explanation = append(a.Explanation, i18n.Tf("The measured deviation was %.1f%%. At the selected %.0f%% deadzone preview, this movement would be filtered out.", offset, dz))
+		} else {
+			a.Explanation = append(a.Explanation, i18n.Tf("The measured deviation was %.1f%%. At the selected %.0f%% deadzone preview, this movement would still reach the game; a deadzone of about %.0f%% would hide it.", offset, dz, suggestDeadzone(offset)))
+		}
+		a.Explanation = append(a.Explanation, i18n.Tf("Expected: a released stick rests within about %.1f%% of the center (an interpretation heuristic, not a manufacturer specification).", tolC))
 	}
-	if noise <= 0 {
-		noise = 0.01 * hs
+	if noisy {
+		a.Explanation = append(a.Explanation, i18n.T("A flickering reading at rest is usually electrical noise; most games hide it with their deadzone."))
 	}
-	return center, noise
-}
-
-func (t *StickTest) analyzeStationary(i int, st StickStats) StickAnalysis {
-	r := t.Layout.StickRange
-	hs := r.HalfSpan()
-	tolC, tolN := t.tolerances()
-	name := t.Layout.StickLabels[i]
-	a := StickAnalysis{Samples: st.X.N}
-	dx, dy := st.X.Mean()-r.Center, st.Y.Mean()-r.Center
-	a.OffsetRaw = math.Hypot(dx, dy)
-	a.OffsetPct = 100 * a.OffsetRaw / hs
-	a.NoiseRaw = math.Max(st.X.Std(), st.Y.Std())
-	a.PeakToPeak = math.Max(st.X.PeakToPeak(), st.Y.PeakToPeak())
-	a.MaxDevPct = 100 * st.MaxDev / hs
-	dzRaw := t.Deadzone[i] / 100 * hs
-	moveLimit := math.Max(8*tolN, 0.08*hs)
-
-	switch {
-	case a.Samples < 10:
-		a.Status, a.Summary = Inconclusive, "Too few samples — keep the controller connected and retry."
-	case a.PeakToPeak > moveLimit:
-		a.Status = Inconclusive
-		a.Summary = fmt.Sprintf("%s moved during the measurement (range %.0f counts).", name, a.PeakToPeak)
-		a.Explanation = append(a.Explanation, "Release the stick completely and keep the controller still, then retest.")
-	case a.OffsetRaw <= tolC && a.NoiseRaw <= tolN:
-		a.Status = Passed
-		a.Summary = fmt.Sprintf("%s rests %.1f%% from center with low noise — no sign of drift at rest.", name, a.OffsetPct)
-		a.Explanation = append(a.Explanation, "Small constant offsets like this are normal manufacturing/calibration differences.")
-	case a.OffsetRaw <= tolC:
-		a.Status = Warning
-		a.Summary = fmt.Sprintf("%s is centered but noisy (σ %.1f counts).", name, a.NoiseRaw)
-		a.Explanation = append(a.Explanation, "Jitter without a center offset usually indicates electrical noise or a worn potentiometer track, not drift.")
-	case dzRaw > 0 && a.OffsetRaw < dzRaw:
-		a.Status = Warning
-		a.Summary = fmt.Sprintf("%s rests %.1f%% off-center — above typical tolerance but hidden by your %.0f%% deadzone.", name, a.OffsetPct, t.Deadzone[i])
-		a.Explanation = append(a.Explanation,
-			"This can be a calibration difference or early drift. Run the movement step to see whether the center is stable.")
-	default:
-		a.Status = Warning
-		a.Summary = fmt.Sprintf("Possible drift: %s rests %.1f%% off-center, beyond your %.0f%% deadzone.", name, a.OffsetPct, t.Deadzone[i])
-		a.Explanation = append(a.Explanation,
-			"Games using a similar or smaller deadzone may register movement while the stick is released.",
-			"Run the movement step: an offset that persists (or changes) after moving the stick strengthens the drift indication.")
+	switch a.Verdict {
+	case VerdictPossibleDrift:
+		a.Explanation = append(a.Explanation, i18n.T("This is not proof of a hardware defect: dirt, a slightly worn sensor or calibration differences can cause it."))
+		a.Advice = append(a.Advice,
+			i18n.T("Repeat the test a few times. If the result stays the same and games show unwanted movement, cleaning, recalibration or repair may help."))
+	case VerdictFurtherTesting:
+		a.Advice = append(a.Advice, i18n.T("Run the test again; a result that changes between runs is not a reliable sign of a fault."))
+	}
+	if final {
+		if len(a.Missed) == 0 {
+			a.Explanation = append(a.Explanation, i18n.T("Full movement range reached in all four directions."))
+		} else {
+			var dirs []string
+			for _, d := range a.Missed {
+				dirs = append(dirs, i18n.Tf("%s %.0f%%", DirectionLabel(d), 100*a.Travel.Reach[d]))
+			}
+			a.Explanation = append(a.Explanation, i18n.Tf("The edge was not reached in every direction (%s). Push the stick all the way and repeat; this alone does not indicate a fault.", strings.Join(dirs, ", ")))
+		}
 	}
 	return a
 }
 
-func (t *StickTest) analyzeRecenter(i int) StickAnalysis {
-	first := t.analyzeStationary(i, t.Stationary[i])
-	second := t.analyzeStationary(i, t.Recenter[i])
-	r := t.Layout.StickRange
-	tolC, _ := t.tolerances()
-	a := first
-	a.ReachedDirs = reached(t.Range[i])
-	a.RecenterRaw = math.Hypot(t.Recenter[i].X.Mean()-t.Stationary[i].X.Mean(), t.Recenter[i].Y.Mean()-t.Stationary[i].Y.Mean())
-	name := t.Layout.StickLabels[i]
-	dzRaw := t.Deadzone[i] / 100 * r.HalfSpan()
-	threshold := math.Max(tolC, dzRaw)
-
-	switch {
-	case first.Status == Inconclusive || second.Status == Inconclusive:
-		a.Status = Inconclusive
-		a.Summary = name + ": a measurement was disturbed by movement — retest."
-	case first.OffsetRaw > threshold && second.OffsetRaw > threshold:
-		a.Status = Failed
-		a.Summary = fmt.Sprintf("Drift confirmed: %s rested %.1f%% and %.1f%% off-center in two measurements.", name, first.OffsetPct, second.OffsetPct)
-		a.Explanation = append(a.Explanation, "Both measurements exceed the declared tolerance and your deadzone.")
-	case a.RecenterRaw > tolC:
-		a.Status = worst(first.Status, Warning)
-		a.Summary = fmt.Sprintf("%s does not return to the same center (shifted %.0f counts after movement).", name, a.RecenterRaw)
-		a.Explanation = append(a.Explanation, "An inconsistent return to center is typical of worn sticks and can cause intermittent drift.")
-	default:
-		a.Status = worst(first.Status, second.Status)
-		a.Explanation = append(a.Explanation, fmt.Sprintf("Center is stable after movement (shift %.0f counts).", a.RecenterRaw))
+// inSentence lowercases a label used mid-sentence in English ("your left
+// stick"); other languages keep the label as written.
+func inSentence(label string) string {
+	if i18n.Current() == i18n.English {
+		return strings.ToLower(label)
 	}
-	if a.ReachedDirs < 8 {
-		a.Explanation = append(a.Explanation, fmt.Sprintf("Full travel reached in %d/8 directions (move the stick to the rim; a low count can also mean it was not pushed fully).", a.ReachedDirs))
-	} else {
-		a.Explanation = append(a.Explanation, "Full travel reached in all 8 directions.")
-	}
-	return a
+	return label
 }
 
-// Result combines both sticks into a category result (nil before a run).
+// suggestDeadzone returns the smallest preview preset that hides offsetPct.
+func suggestDeadzone(offsetPct float64) float64 {
+	for _, p := range DeadzonePresets {
+		if p >= offsetPct+0.5 {
+			return p
+		}
+	}
+	return math.Ceil(offsetPct + 1)
+}
+
+// Preliminary reports whether the shown result is based on step 1 only.
+func (t *StickTest) Preliminary() bool {
+	return (t.Step == StickExplain || t.Step == StickDone) && !t.Analysis[0].HasRestB
+}
+
+// Result combines both sticks into a category result (nil before step 1 ends).
 func (t *StickTest) Result(now time.Time, simulated bool) *Result {
-	if t.Phase != StickDone {
+	if t.Step != StickExplain && t.Step != StickDone {
 		return nil
 	}
 	res := &Result{Category: CatSticks, Simulated: simulated, At: now}
 	var st []Status
+	var drift, retest []string
 	for i, a := range t.Analysis {
-		st = append(st, a.Status)
-		res.Details = append(res.Details, a.Summary)
+		st = append(st, a.Status())
+		lbl := i18n.T(t.Layout.StickLabels[i])
+		switch a.Verdict {
+		case VerdictPossibleDrift:
+			drift = append(drift, lbl)
+		case VerdictFurtherTesting:
+			retest = append(retest, lbl)
+		}
+		res.Details = append(res.Details, a.Headline)
 		res.Details = append(res.Details, a.Explanation...)
-		lbl := t.Layout.StickLabels[i]
+		res.Details = append(res.Details, a.Advice...)
+		ra := a.RestA
 		res.Measurements = append(res.Measurements,
-			Measurement{lbl + " resting offset", a.OffsetPct, "% of half travel"},
-			Measurement{lbl + " resting offset (raw)", a.OffsetRaw, "counts"},
-			Measurement{lbl + " noise σ", a.NoiseRaw, "counts"},
-			Measurement{lbl + " peak-to-peak", a.PeakToPeak, "counts"},
-			Measurement{lbl + " max deviation", a.MaxDevPct, "%"},
-			Measurement{lbl + " samples", float64(a.Samples), ""},
+			Measurement{i18n.Tf("%s center offset", lbl), ra.OffsetPct, i18n.T("% of travel")},
+			Measurement{i18n.Tf("%s center offset (raw)", lbl), ra.OffsetRaw, i18n.T("counts")},
+			Measurement{i18n.Tf("%s average resting deviation", lbl), ra.AvgDevPct, i18n.T("% of travel")},
+			Measurement{i18n.Tf("%s maximum resting deviation", lbl), ra.MaxDevPct, i18n.T("% of travel")},
+			Measurement{i18n.Tf("%s noise σ", lbl), ra.NoisePct, i18n.T("% of travel")},
+			Measurement{i18n.Tf("%s noise σ (raw)", lbl), ra.NoiseRaw, i18n.T("counts")},
+			Measurement{i18n.Tf("%s stability (mean shift)", lbl), ra.StableDiff, i18n.T("% of travel")},
+			Measurement{i18n.Tf("%s samples", lbl), float64(ra.N), ""},
 		)
-		if t.Range[i].Peak > 0 {
-			res.Measurements = append(res.Measurements, Measurement{lbl + " directions at full travel", float64(a.ReachedDirs), "of 8"})
+		if ra.RateHz > 0 {
+			res.Measurements = append(res.Measurements, Measurement{i18n.Tf("%s sample rate", lbl), ra.RateHz, i18n.T("Hz")})
+		}
+		if a.HasRestB {
+			res.Measurements = append(res.Measurements,
+				Measurement{i18n.Tf("%s second center offset", lbl), a.RestB.OffsetPct, i18n.T("% of travel")},
+				Measurement{i18n.Tf("%s return-to-center shift", lbl), a.ShiftPct, i18n.T("% of travel")},
+				Measurement{i18n.Tf("%s travel coverage", lbl), 100 * float64(a.Travel.Coverage()) / stickSectors, "%"},
+				Measurement{i18n.Tf("%s outer radius", lbl), a.Travel.OuterRadiusPct(), "%"},
+			)
+			for d := 0; d < 4; d++ {
+				res.Measurements = append(res.Measurements, Measurement{i18n.Tf("%s reach %s", lbl, DirectionLabel(d)), 100 * a.Travel.Reach[d], "%"})
+			}
 		}
 	}
 	res.Status = worst(st...)
-	switch res.Status {
-	case Passed:
-		res.Summary = "No signs of stick drift at rest."
-	case Failed:
-		res.Summary = "Stick drift confirmed by repeated measurements."
-	case Warning:
-		res.Summary = "Stick findings need attention — see details."
+	switch {
+	case len(drift) > 0:
+		res.Summary = i18n.Tf("Possible drift: %s. Not a confirmed hardware fault.", strings.Join(drift, ", "))
+	case res.Status == Inconclusive:
+		res.Summary = i18n.T("Inconclusive — repeat the test without touching the sticks.")
+	case len(retest) > 0:
+		res.Summary = i18n.Tf("Further testing recommended: %s.", strings.Join(retest, ", "))
+	case t.Preliminary():
+		res.Summary = i18n.T("Both sticks rest close to the center (movement step not run).")
 	default:
-		res.Summary = "Measurement inconclusive — retest with sticks released."
+		res.Summary = i18n.T("Both sticks rest close to the center and cover their full range.")
 	}
+	tolC, tolN := t.Tolerances()
 	res.Limitations = []string{
-		"Samples are taken at the host poll rate (~25 Hz) using the newest report per poll; the first 0.4 s of each resting step is ignored while the stick settles.",
-		"Thresholds are interpretation heuristics, not manufacturer specifications: " + t.Layout.Drift.Rationale,
-		fmt.Sprintf("Deadzones shown (L %.0f%%, R %.0f%%) are TuiSense's configured values; each game applies its own.", t.Deadzone[0], t.Deadzone[1]),
-		"Stick calibration and deadzones are never read from or written to the controller by this test.",
+		i18n.Tf("Tolerances (center %.1f%%, noise %.1f%% of travel) are interpretation heuristics, not manufacturer specifications. ", tolC, tolN) + i18n.T(t.Layout.Drift.Rationale),
+		i18n.T("The first 0.5 s of each resting step is ignored while the stick springs back."),
+		i18n.T("Deadzone preview only — TuiSense does not change game input."),
+		i18n.T("Stick calibration is never read from or written to the controller."),
+	}
+	if t.SourceNote != "" {
+		res.Limitations = append(res.Limitations, t.SourceNote)
 	}
 	return res
 }
