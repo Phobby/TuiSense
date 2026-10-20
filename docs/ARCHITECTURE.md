@@ -332,6 +332,7 @@ internal/diag/      pure diagnostics engine (no UI, no driver code)
   samples.go        per-report raw samples (no fabricated data), fresh-sample rate
   deadzone.go       radial deadzone preview (never applied to input)
   sticks.go         guided 4-step stick test, verdicts, travel/circularity
+  snapback.go       sudden-release overshoot and settle-time measurement
   buttons.go        live state, press counts (latched between polls), guided press-each-button
   triggers.go       guided A–D trigger test (analog / digital / shared axis), bounded adaptive resistance
   touch_motion.go   touch coverage, contacts & click; gyro/accel stillness noise + axis response
@@ -410,6 +411,21 @@ old trigger test ran a single timed "press fully, then release slowly" window
 sampled at the 25 Hz UI poll rate: a press that did not land in the window was
 reported as reaching "only X%" (Warning), and fast presses skipped positions
 and produced "worn sensor" hints.
+
+### Snapback test
+
+`diag/snapback.go` is the second sub-test of the stick category (selector
+*Deadzone test | Snapback test*; only one can run at a time, and both feed one
+merged stick result via `mergeStickResults`). It detects
+*sudden releases*: the stick at ≥90% of travel returns below 25% within
+120 ms (hand-guided returns are counted and ignored). For 300 ms after each
+release it measures the largest swing past the resting point opposite to the
+push (overshoot), center crossings and the settle time (last moment outside a
+3% band around the window's final position). Verdicts per stick: *Normal*
+(every overshoot inside the deadzone preview), *Noticeable snapback* (Warning,
+explained as common spring mechanics, never a defect), *Inconclusive* (fewer
+than 3 releases, or a clean result measured below 100 samples/s, where short
+overshoots can be missed). The deadzone preview is shared with the stick test.
 
 ### Deadzone preview
 

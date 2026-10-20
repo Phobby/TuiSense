@@ -137,6 +137,7 @@ const (
 	ScenarioTouch    InputScenario = "touch"    // touch contacts move and click
 	ScenarioStill    InputScenario = "still"    // controller resting flat
 	ScenarioMotion   InputScenario = "motion"   // controller rotated on every axis
+	ScenarioSnapback InputScenario = "snapback" // sticks pushed to the edge and released suddenly
 )
 
 // ScenarioSimulator is implemented by mock/test devices only.

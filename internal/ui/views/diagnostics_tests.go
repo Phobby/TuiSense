@@ -475,6 +475,14 @@ func DiagPrimaryAction(d *diag.Session, now time.Time) {
 	}
 	switch d.Active {
 	case diag.CatSticks:
+		if d.StickSubTest == diag.StickSubSnapback && d.Snapback != nil {
+			if d.Snapback.Running() {
+				d.Snapback.Finish()
+			} else if !d.Sticks.Running() {
+				d.Snapback.Start(now)
+			}
+			return
+		}
 		st := d.Sticks
 		switch {
 		case st.Step == diag.StickExplain:

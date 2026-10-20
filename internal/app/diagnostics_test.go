@@ -185,3 +185,37 @@ func TestEZDiagnosticsAreGuidedAndPlain(t *testing.T) {
 		t.Fatalf("switching modes must not discard diagnostics state")
 	}
 }
+
+func TestSnapbackTestOnSimulatedDualSense(t *testing.T) {
+	a, page := openDiagnostics(t, state.ModeEZ)
+	d := a.State.Diag
+	page.Expect(page.GetByID("diag_tab_snapback")).Not().ToBeVisible()
+	page.GetByID("diag_tab_sticks").Click()
+	page.Expect(page.GetByID("stick_sub_deadzone")).ToBeVisible()
+	page.Expect(page.GetByID("stick_start")).ToBeVisible()
+	page.GetByID("stick_sub_snapback").Click()
+	if d.Active != diag.CatSticks || d.StickSubTest != diag.StickSubSnapback {
+		t.Fatalf("the snapback test lives inside the stick category, got %s/%s", d.Active, d.StickSubTest)
+	}
+	page.GetByID("snap_start").Click()
+	if !d.Snapback.Running() {
+		t.Fatal("snapback collection should start on the explicit click")
+	}
+	deadline := time.Now().Add(6 * time.Second)
+	for len(d.Snapback.Events[0]) < 3 && time.Now().Before(deadline) {
+		a.pumpTelemetry()
+		time.Sleep(40 * time.Millisecond)
+	}
+	page.GetByID("snap_finish").Click()
+	r, ok := d.Results[diag.CatSticks]
+	if !ok || !r.Simulated {
+		t.Fatalf("a simulated snapback result is expected")
+	}
+	if left := d.Snapback.Analyze(0); left.Verdict != diag.VerdictSnapback {
+		t.Fatalf("the mock's 14%% overshoot should be noticeable, got %v %q", left.Verdict, left.Headline)
+	}
+	if right := d.Snapback.Analyze(1); right.Verdict == diag.VerdictNormal {
+		t.Fatalf("at the mock's 25 Hz poll rate a clean result must not be claimed, got %q", right.Headline)
+	}
+	page.Expect(page.GetByID("snap_again")).ToBeVisible()
+}

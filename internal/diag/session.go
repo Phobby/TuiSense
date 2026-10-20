@@ -38,16 +38,20 @@ type Session struct {
 	Active  Category // "" = health summary
 
 	Sticks   *StickTest
-	Buttons  *ButtonTest
-	Triggers *TriggerTest
-	Touch    *TouchTest
-	Motion   *MotionTest
-	Haptics  *HapticTest
-	Battery  *BatteryMonitor
-	Conn     *ConnMonitor
-	Mic      *MicTest
-	Speaker  *SpeakerTest
-	Guided   *Guided
+	Snapback *SnapbackTest
+	// StickSubTest selects the view inside the stick category:
+	// StickSubDeadzone (drift / deadzone test) or StickSubSnapback.
+	StickSubTest string
+	Buttons      *ButtonTest
+	Triggers     *TriggerTest
+	Touch        *TouchTest
+	Motion       *MotionTest
+	Haptics      *HapticTest
+	Battery      *BatteryMonitor
+	Conn         *ConnMonitor
+	Mic          *MicTest
+	Speaker      *SpeakerTest
+	Guided       *Guided
 
 	Backend  audio.Backend
 	OnChange func()
@@ -62,6 +66,7 @@ func NewSession(dc DeviceContext, act Actuator, sim device.ScenarioSimulator, ba
 	scn := s.setScenario
 	if in.HasSticks() {
 		s.Sticks = NewStickTest(in, scn)
+		s.Snapback = NewSnapbackTest(in, scn)
 		if dc.Info.EventDriven {
 			s.Sticks.SourceNote = i18n.T("This device reports only changed values (Linux evdev), and the kernel driver may suppress very small changes; tiny noise can therefore be invisible.")
 		}
@@ -143,6 +148,9 @@ func (s *Session) Feed(tel device.Telemetry, info device.Info, now time.Time) {
 		if s.Sticks != nil {
 			s.Sticks.Feed(tel, now)
 		}
+		if s.Snapback != nil {
+			s.Snapback.Feed(tel, now)
+		}
 		if s.Buttons != nil {
 			s.Buttons.Feed(tel, now)
 		}
@@ -167,6 +175,10 @@ func (s *Session) Tick(now time.Time) {
 	if s.Sticks != nil {
 		s.Sticks.Tick(now)
 	}
+	if s.Snapback != nil {
+		s.Snapback.PreviewDeadzone = s.Sticks.PreviewDeadzone // one shared preview
+		s.Snapback.Tick(now)
+	}
 	if s.Triggers != nil {
 		s.Triggers.Tick(now)
 	}
@@ -188,7 +200,11 @@ func (s *Session) collect(now time.Time) {
 		}
 	}
 	if s.Sticks != nil {
-		put(s.Sticks.Result(now, sim))
+		var snap *Result
+		if s.Snapback != nil {
+			snap = s.Snapback.Result(now, sim)
+		}
+		put(mergeStickResults(s.Sticks.Result(now, sim), snap))
 	}
 	if s.Buttons != nil {
 		put(s.Buttons.Result(now, sim))
@@ -245,7 +261,7 @@ func (s *Session) SpeakerVolumeNote() string {
 func (s *Session) Running(c Category) bool {
 	switch c {
 	case CatSticks:
-		return s.Sticks != nil && s.Sticks.Running()
+		return (s.Sticks != nil && s.Sticks.Running()) || (s.Snapback != nil && s.Snapback.Running())
 	case CatTriggers:
 		return s.Triggers != nil && (s.Triggers.Running() || s.Triggers.ResistanceActive)
 	case CatMotion:
@@ -297,6 +313,9 @@ func (s *Session) Visible() []Category {
 func (s *Session) Suspend() {
 	if s.Sticks != nil {
 		s.Sticks.Cancel()
+	}
+	if s.Snapback != nil {
+		s.Snapback.Cancel()
 	}
 	if s.Triggers != nil {
 		s.Triggers.Cancel()
@@ -365,4 +384,31 @@ func (s *Session) NextGuided() {
 func (s *Session) StopGuided() {
 	s.Suspend()
 	s.Guided = nil
+}
+
+// Sub-tests of the stick category.
+const (
+	StickSubDeadzone = "deadzone"
+	StickSubSnapback = "snapback"
+)
+
+// mergeStickResults combines the deadzone/drift and snapback results into
+// the single stick category result (either may be nil).
+func mergeStickResults(drift, snap *Result) *Result {
+	switch {
+	case drift == nil:
+		return snap
+	case snap == nil:
+		return drift
+	}
+	r := *drift
+	r.Status = worst(drift.Status, snap.Status)
+	r.Summary = drift.Summary + " · " + i18n.T("Snapback: ") + snap.Summary
+	r.Details = append(append(append([]string{}, drift.Details...), i18n.T("Snapback test:")), snap.Details...)
+	r.Measurements = append(append([]Measurement{}, drift.Measurements...), snap.Measurements...)
+	r.Limitations = append(append([]string{}, drift.Limitations...), snap.Limitations...)
+	if snap.At.After(r.At) {
+		r.At = snap.At
+	}
+	return &r
 }

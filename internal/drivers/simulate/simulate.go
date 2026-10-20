@@ -87,6 +87,27 @@ func (g *Generator) Frame(scn device.InputScenario, t float64) Frame {
 				f.Buttons = f.Buttons.With(device.ButtonTouchpadClick)
 			}
 		}
+	case device.ScenarioSnapback:
+		// Every 1.2 s: push to the edge (rotating direction), then release
+		// suddenly. The simulated left stick overshoots ~14% past center,
+		// the right one ~4%, so both outcomes can be demonstrated.
+		k := int(t / 1.2)
+		ph := math.Mod(t, 1.2)
+		a := float64(k) * math.Pi / 2
+		over := [2]float64{0.14, 0.04}
+		for s := 0; s < 2; s++ {
+			var r float64
+			switch {
+			case ph < 0.4:
+				r = 1
+			case ph < 0.44:
+				r = -over[s]
+			case ph < 0.48:
+				r = over[s] / 4
+			}
+			f.Sticks[2*s] += r * math.Cos(a)
+			f.Sticks[2*s+1] += r * math.Sin(a)
+		}
 	case device.ScenarioMotion:
 		axis := int(t/2) % 3
 		rate := 90 * math.Sin(math.Mod(t, 2)*math.Pi)

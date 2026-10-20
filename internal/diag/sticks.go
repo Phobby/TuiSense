@@ -36,6 +36,7 @@ const (
 	VerdictFurtherTesting Verdict = "further_testing"
 	VerdictInconclusive   Verdict = "inconclusive"
 	VerdictPossibleIssue  Verdict = "possible_issue" // triggers: e.g. not returning to rest
+	VerdictSnapback       Verdict = "snapback"       // sticks: overshoot past the deadzone after a sudden release
 )
 
 // Label returns the verdict in the active UI language.
@@ -51,6 +52,8 @@ func (v Verdict) Label() string {
 		return i18n.T("Inconclusive")
 	case VerdictPossibleIssue:
 		return i18n.T("Possible issue")
+	case VerdictSnapback:
+		return i18n.T("Noticeable snapback")
 	}
 	return i18n.T("Not tested")
 }
@@ -60,7 +63,7 @@ func (v Verdict) Status() Status {
 	switch v {
 	case VerdictNormal:
 		return Passed
-	case VerdictPossibleDrift, VerdictFurtherTesting, VerdictPossibleIssue:
+	case VerdictPossibleDrift, VerdictFurtherTesting, VerdictPossibleIssue, VerdictSnapback:
 		return Warning
 	case VerdictInconclusive:
 		return Inconclusive

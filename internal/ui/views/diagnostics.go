@@ -233,7 +233,7 @@ func renderDiagnosticsPanel(f *terminal.Frame, area cell.Rect, pc PanelContext) 
 	}
 	switch d.Active {
 	case diag.CatSticks:
-		renderStickDiag(c, d, now)
+		renderStickCategory(c, d, now)
 	case diag.CatButtons:
 		renderButtonDiag(c, d)
 	case diag.CatTriggers:

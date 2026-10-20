@@ -574,3 +574,125 @@ func renderResistance(c *cursor, tt *diag.TriggerTest, now time.Time) {
 		c.pills(i18n.T("Adaptive"), 9, []choice{{ID: "resistance_start", Label: i18n.T("Apply test resistance (5 s)"), OnSelect: func() { tt.StartResistance(time.Now()) }}})
 	}
 }
+
+// ---- Stick category: deadzone test | snapback test -------------------------
+
+// renderStickCategory shows the two stick sub-tests behind a selector. While
+// one of them is measuring, the other cannot be opened.
+func renderStickCategory(c *cursor, d *diag.Session, now time.Time) {
+	snap := d.StickSubTest == diag.StickSubSnapback && d.Snapback != nil
+	busy := d.Sticks.Running() || (d.Snapback != nil && d.Snapback.Running())
+	items := []choice{{ID: "stick_sub_deadzone", Label: i18n.T("Deadzone test"), Selected: !snap}}
+	if d.Snapback != nil {
+		items = append(items, choice{ID: "stick_sub_snapback", Label: i18n.T("Snapback test"), Selected: snap})
+	}
+	if !busy {
+		items[0].OnSelect = func() { d.StickSubTest = diag.StickSubDeadzone }
+		if len(items) > 1 {
+			items[1].OnSelect = func() { d.StickSubTest = diag.StickSubSnapback }
+		}
+	}
+	c.pills("", 0, items)
+	if snap {
+		renderSnapbackDiag(c, d)
+		return
+	}
+	renderStickDiag(c, d, now)
+}
+
+// ---- Snapback ----------------------------------------------------------------
+
+func renderSnapbackDiag(c *cursor, d *diag.Session) {
+	sb := d.Snapback
+	p := c.p()
+	adv := c.s.Mode == state.ModeAdvanced
+	switch {
+	case sb.Running():
+		instruction(c, i18n.T("Push a stick all the way to the edge, then let go instantly. Repeat in different directions (both sticks)."))
+		progressLine(c, i18n.T("Releases"), sb.Progress(), sb.Finish)
+		var parts []string
+		for i := 0; i < 2; i++ {
+			parts = append(parts, i18n.Tf("%s: %d/%d", i18n.T(sb.Layout.StickLabels[i]), len(sb.Events[i]), diag.SnapbackTarget))
+		}
+		c.line(strings.Join(parts, "   "), p.LabelStyle())
+		c.pills("", 0, []choice{{ID: "snap_finish", Label: i18n.T("■ Finish and show the result"), OnSelect: sb.Finish}})
+	case sb.Done():
+		for i := 0; i < 2 && c.ok(); i++ {
+			a := sb.Analyze(i)
+			col := p.FgMuted
+			if a.Events > 0 {
+				col = verdictColor(c, a.Verdict)
+			}
+			c.line("● "+i18n.T(sb.Layout.StickLabels[i])+" — "+a.Verdict.Label(), cellStyle(p.BgPanel, col))
+			c.wrap(a.Headline, p.LabelStyle(), 5)
+			if adv && a.Events > 0 {
+				c.wrap(i18n.Tf("releases %d · max %.1f%% · avg %.1f%% · settle avg %.0f ms / max %.0f ms · %.0f Hz · slow returns ignored %d",
+					a.Events, a.MaxOvershootPct, a.MeanOvershootPct, a.MeanSettleMs, a.MaxSettleMs, a.RateHz, a.SlowReleases), p.ValueStyle(), 3)
+			}
+			limit := 1
+			if adv {
+				limit = 3
+			}
+			for k, e := range a.Explanation {
+				if k >= limit {
+					break
+				}
+				c.wrap("· "+e, p.MutedStyle(), 4)
+			}
+			for _, e := range a.Advice {
+				c.wrap("→ "+e, p.MutedStyle(), 3)
+			}
+		}
+		c.pills("", 0, []choice{{ID: "snap_again", Label: i18n.T("↻ Run the test again"), OnSelect: func() { sb.Start(time.Now()) }}})
+	default:
+		c.wrap(i18n.T("Snapback: when a stick is released suddenly from the edge, its spring can throw it past the center for a moment, so a game briefly sees the opposite direction."), p.LabelStyle(), 6)
+		c.wrap(i18n.Tf("This test measures how far each stick swings past its resting point and how fast it settles. You will release each stick %d times.", diag.SnapbackTarget), p.MutedStyle(), 5)
+		c.pills("", 0, []choice{{ID: "snap_start", Label: i18n.T("▶ Start snapback test"), OnSelect: func() { sb.Start(time.Now()) }}})
+	}
+	renderSnapTraces(c, sb)
+	if !sb.Running() && c.remaining() >= 4 {
+		c.gap()
+		c.line(i18n.T("Deadzone preview"), p.SectionHeaderStyle())
+		var items []choice
+		for _, v := range diag.DeadzonePresets {
+			v := v
+			items = append(items, choice{ID: fmt.Sprintf("snap_dz_%.0f", v), Label: fmt.Sprintf("%.0f%%", v),
+				Selected: d.Sticks.PreviewDeadzone == v, OnSelect: func() { d.Sticks.PreviewDeadzone, sb.PreviewDeadzone = v, v }})
+		}
+		c.pills(i18n.T("Size:"), 6, items)
+		c.wrap(i18n.T("Preview only — does not change game input."), cell.Style{Fg: p.Warning, Bg: p.BgPanel}, 2)
+	}
+}
+
+// renderSnapTraces plots the most recent release of each stick along its push
+// direction: the line falls from the edge and dips below the axis when the
+// stick overshoots (the deadzone preview is drawn as a dotted level).
+func renderSnapTraces(c *cursor, sb *diag.SnapbackTest) {
+	if c.remaining() < 5 {
+		return
+	}
+	p := c.p()
+	c.gap()
+	c.line(i18n.T("Last release (push side up, overshoot below the line)"), p.SectionHeaderStyle())
+	colW := c.r.Width / 2
+	h := uint16(4)
+	top := c.y
+	for i := 0; i < 2; i++ {
+		x := c.r.X + uint16(i)*colW
+		c.f.Buffer.SetStringWithin(x, top, i18n.T(sb.Layout.StickLabels[i]), p.MutedStyle(), colW)
+		evs := sb.Events[i]
+		if len(evs) == 0 {
+			c.f.Buffer.SetStringWithin(x, top+1, i18n.T("no release yet"), p.MutedStyle(), colW)
+			continue
+		}
+		e := evs[len(evs)-1]
+		proj := e.Projection()
+		dz := make([]float64, len(proj))
+		for k := range dz {
+			dz[k] = -sb.PreviewDeadzone / 100
+		}
+		timeSeries(c, fmt.Sprintf("snap_ts_%d", i), cell.NewRect(x, top+1, colW-1, h),
+			[][]float64{dz, proj}, []cell.Color{p.Warning, p.AccentCyan}, true)
+	}
+	c.y = top + 1 + h
+}
