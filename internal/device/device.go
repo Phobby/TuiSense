@@ -20,12 +20,17 @@ const (
 
 // Info describes the dynamic identity and connection metadata of one device instance.
 type Info struct {
-	ID               string
-	Name             string
-	Model            string
-	VendorID         uint16
-	ProductID        uint16
-	FirmwareVersion  string
+	ID        string
+	Name      string
+	Model     string
+	VendorID  uint16
+	ProductID uint16
+	// FirmwareVersion is the user-facing firmware version (for Sony
+	// controllers, the update version that Sony's updater compares).
+	FirmwareVersion string
+	// FirmwareBuild is a separate firmware build identifier when the device
+	// reports one (e.g. the DualSense's 32-bit main firmware version).
+	FirmwareBuild    string
 	HardwareVersion  string
 	MACAddress       string
 	HIDRawPath       string
@@ -122,6 +127,67 @@ type BatteryAttribute struct {
 // additional battery attributes. Only genuinely reported values may be returned.
 type BatteryDetailsProvider interface {
 	BatteryDetails() []BatteryAttribute
+}
+
+// FirmwareIdentity is firmware data a driver read from the device itself, used
+// by read-only update checks. Drivers fill only what they actually read and
+// validated; nothing here is inferred or defaulted.
+type FirmwareIdentity struct {
+	// Read is true when the identity was read from the device and validated.
+	Read bool
+	// Source describes how it was read (e.g. "HID feature report 0x20").
+	Source string
+	// Error explains why it could not be read (when Read is false).
+	Error string
+	// UpdateVersion is the version that the vendor's update metadata compares
+	// against. It is only meaningful when HasUpdateVersion is true.
+	UpdateVersion    uint32
+	HasUpdateVersion bool
+	// Target is the vendor firmware update target, set only when the device
+	// reports it in a documented, verified form ("" = unknown).
+	Target string
+}
+
+// FirmwareIdentityProvider is optionally implemented by devices that can read
+// their firmware identity. Implementations must only read from the device.
+type FirmwareIdentityProvider interface {
+	FirmwareIdentity() FirmwareIdentity
+}
+
+// DetailGroup groups device details for display.
+type DetailGroup string
+
+const (
+	DetailDevice   DetailGroup = "device"
+	DetailFirmware DetailGroup = "firmware"
+	DetailHardware DetailGroup = "hardware"
+	DetailDriver   DetailGroup = "driver"
+)
+
+// Detail is one reading about a device together with where it came from.
+// Drivers only report values they actually read; a value whose meaning is
+// not confirmed by a reliable source is marked Raw and labeled as such.
+type Detail struct {
+	Group DetailGroup
+	Key   string // stable identifier (tests, accessibility)
+	Label string
+	Value string
+	// Origin says where the value was read (e.g. "sysfs firmware_version").
+	Origin string
+	// Note explains the value (its meaning, or why it is unavailable).
+	Note string
+	// Raw marks a value whose meaning is not verified.
+	Raw bool
+	// Unavailable marks a field that could not be read; Value explains why.
+	Unavailable bool
+	// Advanced details are hidden in EZ mode.
+	Advanced bool
+}
+
+// DetailsProvider is optionally implemented by devices that can describe
+// their hardware and firmware in detail. Implementations only read.
+type DetailsProvider interface {
+	Details() []Detail
 }
 
 // InputScenario selects simulated input behavior on mock/test devices so the

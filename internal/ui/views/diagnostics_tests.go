@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"github.com/Phobby/TuiSense/internal/i18n"
 	"math"
+	"strings"
 	"time"
 
 	"github.com/Phobby/TuiSense/internal/device"
@@ -71,7 +72,7 @@ func renderButtonDiag(c *cursor, d *diag.Session) {
 	accent := uiwidgets.AccentColor(d.Ctx.Desc)
 	if target, ok := bt.Prompt(); ok {
 		c.line(i18n.Tf("Press:  %s   (%d of %d)", i18n.T(target.Label), bt.GuidedIdx+1, len(bt.Layout.Buttons)), cell.Style{Fg: p.Warning, Bg: p.BgPanel, Modifier: cell.ModifierBold})
-		c.pills("", 0, []choice{{ID: "buttons_skip", Label: i18n.T("Skip (not working)"), OnSelect: bt.SkipCurrent}})
+		c.pills("", 0, []choice{{ID: "buttons_skip", Label: i18n.T("Skip (not tested)"), OnSelect: bt.SkipCurrent}})
 	} else {
 		c.wrap(i18n.T("Press any button — it lights up here and on the controller."), p.LabelStyle(), 2)
 		c.pills("", 0, []choice{
@@ -110,7 +111,7 @@ func renderButtonDiag(c *cursor, d *diag.Session) {
 			style = cell.Style{Fg: p.BgCanvas, Bg: p.Warning, Modifier: cell.ModifierBold}
 		}
 		rect := cell.NewRect(x, c.y, w, 1)
-		c.f.Buffer.SetStringWithin(x, c.y, label, style, w)
+		copyValue(c.f, rect, c.s, label, strings.TrimSpace(label), style)
 		nodeState := accessibility.NodeState(0)
 		if bt.Pressed.Has(b.ID) {
 			nodeState |= accessibility.StateSelected
@@ -420,7 +421,20 @@ func renderConnectionDiag(c *cursor, d *diag.Session, pc PanelContext, now time.
 	cm := d.Conn
 	p := c.p()
 	adv := c.s.Mode == state.ModeAdvanced
+	renderIdentity(c, c.s, pc.CB)
 	info := d.Ctx.Info
+	if pc.CB.OnRetestMapping != nil {
+		c.pills("", 0, []choice{{ID: "diag_retest_mapping", Label: "Retest Input Mapping", OnSelect: pc.CB.OnRetestMapping}})
+	}
+	for i, name := range d.Ctx.Desc.Inputs.AxisNames {
+		if name != "" {
+			axis := d.Ctx.Desc.Inputs.TriggerAxis(max(0, i-4))
+			if i < 4 {
+				axis = d.Ctx.Desc.Inputs.StickAxis(i)
+			}
+			c.line(fmt.Sprintf("%s: range %.0f…%.0f · center %.1f · inverted %v", name, axis.Min, axis.Max, axis.Center, axis.Invert), p.MutedStyle())
+		}
+	}
 	status := i18n.T("connected")
 	if !info.Connected {
 		status = i18n.T("DISCONNECTED")
@@ -462,7 +476,6 @@ func renderConnectionDiag(c *cursor, d *diag.Session, pc PanelContext, now time.
 	if r, ok := d.Results[diag.CatConnection]; ok {
 		renderResult(c, r, adv)
 	}
-	renderIdentity(c, c.s, pc.CB)
 	renderModeGuide(c, d.Ctx.Desc)
 }
 
@@ -475,6 +488,14 @@ func DiagPrimaryAction(d *diag.Session, now time.Time) {
 	}
 	switch d.Active {
 	case diag.CatSticks:
+		if d.StickSubTest == diag.StickSubCircularity {
+			if d.Sticks.Running() {
+				d.Sticks.Cancel()
+			} else {
+				d.Sticks.StartCircularity(now)
+			}
+			return
+		}
 		if d.StickSubTest == diag.StickSubSnapback && d.Snapback != nil {
 			if d.Snapback.Running() {
 				d.Snapback.Finish()

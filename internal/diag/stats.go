@@ -71,7 +71,11 @@ func (r *Ring) Values() []float64 {
 // Std returns the standard deviation of the window.
 func (r *Ring) Std() float64 {
 	var s AxisStats
-	for _, v := range r.Values() {
+	n := len(r.buf)
+	if !r.full {
+		n = r.next
+	}
+	for _, v := range r.buf[:n] {
 		s.Add(v)
 	}
 	return s.Std()
@@ -82,7 +86,7 @@ func (r *Ring) Reset() { r.next, r.full = 0, false }
 
 // worst returns the most severe status of a set (Failed > Warning > Inconclusive > Passed).
 func worst(statuses ...Status) Status {
-	rank := map[Status]int{Passed: 1, Inconclusive: 2, Warning: 3, Failed: 4}
+	rank := map[Status]int{Passed: 1, Incomplete: 2, Inconclusive: 3, Warning: 4, PossibleIssue: 5, Failed: 6}
 	best := NotTested
 	for _, s := range statuses {
 		if rank[s] > rank[best] {

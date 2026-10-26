@@ -107,13 +107,14 @@ func RenderTriggersPanel(f *terminal.Frame, area cell.Rect, s *state.AppState, d
 		lbl := " " + short + " "
 		mw := uint16(cell.StringWidth(lbl))
 		if mx+mw > inner.X+inner.Width {
-			break
+			mx = inner.X + 6
+			y++
 		}
 		mRect := cell.NewRect(mx, y, mw, 1)
 		st := p.ButtonStyle(activeTrig.Mode == mode)
 		f.Buffer.SetStringWithin(mx, y, lbl, st, mw)
 		targetMode := mode
-		f.RegisterClickHandler(mRect, func(_ driver.MouseEvent) {
+		registerControl(f, mRect, s, "trigger_mode_"+string(mode), short, func(_ driver.MouseEvent) {
 			activeTrig.Mode = targetMode
 			syncAndDispatch()
 		})
@@ -129,12 +130,13 @@ func RenderTriggersPanel(f *terminal.Frame, area cell.Rect, s *state.AppState, d
 			tag := fmt.Sprintf(" [%s] ", i18n.T(preset.Name))
 			tw := uint16(cell.StringWidth(tag))
 			if px+tw > inner.X+inner.Width {
-				break
+				px = inner.X + 9
+				y++
 			}
 			pRect := cell.NewRect(px, y, tw, 1)
 			f.Buffer.SetStringWithin(px, y, tag, cell.Style{Fg: p.AccentCyan, Bg: p.BgElevated}, tw)
 			idx := i
-			f.RegisterClickHandler(pRect, func(_ driver.MouseEvent) {
+			registerControl(f, pRect, s, fmt.Sprintf("trigger_preset_%d", i), i18n.T(preset.Name), func(_ driver.MouseEvent) {
 				*activeTrig = device.BuiltinTriggerPresets[idx].Config
 				s.SyncWidgetsFromConfig()
 				syncAndDispatch()
@@ -156,7 +158,7 @@ func RenderTriggersPanel(f *terminal.Frame, area cell.Rect, s *state.AppState, d
 			return
 		}
 		txt := fmt.Sprintf("%-13s %3d", label, val)
-		f.Buffer.SetStringWithin(inner.X, y, txt, p.LabelStyle(), sliderLabelW)
+		copyValue(f, cell.NewRect(inner.X, y, sliderLabelW, 1), s, txt, fmt.Sprint(val), p.LabelStyle())
 		sl := widgets.Slider{
 			ID:           id,
 			State:        st,
@@ -192,8 +194,9 @@ func RenderTriggersPanel(f *terminal.Frame, area cell.Rect, s *state.AppState, d
 	// Live Force-Curve Braille Graph
 	remainH := int(inner.Y+inner.Height) - int(y)
 	if remainH >= 4 && s.CurveCanvas != nil {
-		f.Buffer.SetStringWithin(inner.X, y, i18n.Tf("Live Force Curve (%s) │ Pull: %3.0f%% │ Resistance: %3.0f%%",
-			i18n.T(string(activeTrig.Mode)), livePull*100, activeTrig.ForceAt(livePull)*100), p.SectionHeaderStyle(), inner.Width)
+		text := i18n.Tf("Live Force Curve (%s) │ Pull: %3.0f%% │ Resistance: %3.0f%%",
+			i18n.T(string(activeTrig.Mode)), livePull*100, activeTrig.ForceAt(livePull)*100)
+		copyValue(f, cell.NewRect(inner.X, y, inner.Width, 1), s, text, text, p.SectionHeaderStyle())
 		y++
 		remainH--
 

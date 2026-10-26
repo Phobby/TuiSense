@@ -3,6 +3,7 @@ package widgets
 import (
 	"fmt"
 	"github.com/Phobby/TuiSense/internal/i18n"
+	"github.com/Phobby/TuiSense/internal/ui/copytext"
 
 	"github.com/Phobby/TuiSense/internal/device"
 	"github.com/Phobby/TuiSense/internal/state"
@@ -134,10 +135,12 @@ func RenderBatteryStatusWidget(f *terminal.Frame, area cell.Rect, s *state.AppSt
 		GaugeStyle: cell.Style{Fg: batColor, Bg: p.BgElevated},
 	}
 	f.RenderWidget(gauge, cell.NewRect(inner.X, batY, gaugeW, 1))
+	labelX := inner.X + (gaugeW-uint16(cell.StringWidth(batLabel)))/2
+	copytext.CopyableText{Text: batLabel, Value: batLabel, Style: cell.Style{Fg: p.FgPrimary, Bg: batColor}}.Render(f, cell.NewRect(labelX, batY, uint16(cell.StringWidth(batLabel)), 1), &s.Copy)
 
 	statusX := inner.X + gaugeW + 2
 	if statusX < inner.X+inner.Width {
-		f.Buffer.SetStringWithin(statusX, batY, chargeTag, cell.Style{Fg: chargeColor, Bg: p.BgPanel, Modifier: cell.ModifierBold}, inner.X+inner.Width-statusX)
+		copytext.CopyableText{Text: chargeTag, Value: chargeTag, Style: cell.Style{Fg: chargeColor, Bg: p.BgPanel, Modifier: cell.ModifierBold}}.Render(f, cell.NewRect(statusX, batY, inner.X+inner.Width-statusX, 1), &s.Copy)
 	}
 
 	// Row 2 (if height permits): Active Profile & Permission indicator

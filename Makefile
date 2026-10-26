@@ -30,7 +30,7 @@ uninstall:
 test:
 	$(GO) test -v ./...
 
-## run: Build and launch TuiSense (auto-detects DualSense hardware with mock fallback)
+## run: Build and launch TuiSense (auto-detects real controller hardware)
 run: build
 	./$(BINARY)
 

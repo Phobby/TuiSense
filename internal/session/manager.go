@@ -43,10 +43,11 @@ type Summary struct {
 }
 
 type entry struct {
-	key    string
-	source device.Source
-	driver device.Driver // nil for virtual devices
-	dev    device.Device
+	key      string
+	endpoint string
+	source   device.Source
+	driver   device.Driver // nil for virtual devices
+	dev      device.Device
 }
 
 // Options configures device attachment policy.
@@ -67,11 +68,12 @@ type Manager struct {
 	logger    *logging.Logger
 	onEvent   func(DeviceEvent)
 	rescan    chan struct{}
+	retest    chan struct{}
 }
 
 // NewManager creates a manager and performs initial discovery synchronously.
 func NewManager(reg *device.Registry, opts Options, logger *logging.Logger, onEvent func(DeviceEvent)) *Manager {
-	m := &Manager{registry: reg, opts: opts, logger: logger, onEvent: onEvent, rescan: make(chan struct{}, 1)}
+	m := &Manager{registry: reg, opts: opts, logger: logger, onEvent: onEvent, rescan: make(chan struct{}, 1), retest: make(chan struct{}, 1)}
 	m.discoverInitial()
 	return m
 }
@@ -102,12 +104,15 @@ func (m *Manager) discoverInitial() {
 				m.logWarn("MANAGER", "%s discovery warning: %v", drv.ID(), err)
 			}
 			for _, c := range cands {
+				if m.findLocked(c.Key) != nil {
+					continue
+				}
 				dev, err := drv.Open(c, m.logger)
 				if err != nil {
 					m.logWarn("MANAGER", "Failed to open %s: %v", c.Label, err)
 					continue
 				}
-				m.entries = append(m.entries, &entry{key: c.Key, source: device.SourceHardware, driver: drv, dev: dev})
+				m.entries = append(m.entries, &entry{key: c.Key, endpoint: c.Endpoint, source: device.SourceHardware, driver: drv, dev: dev})
 				m.logInfo("MANAGER", "Attached %s", c.Label)
 			}
 		}
@@ -303,6 +308,12 @@ func (m *Manager) Start(ctx context.Context) {
 				m.checkHotplug()
 			}
 
+		case <-m.retest:
+			if !m.opts.ForceMock {
+				key := m.ActiveKey()
+				m.detach(key, nil)
+				m.checkHotplug()
+			}
 		case <-m.rescan:
 			if !m.opts.ForceMock {
 				m.checkHotplug()
@@ -342,6 +353,12 @@ func (m *Manager) detach(key string, cause error) {
 	wasActive := m.activeKey == key
 	if removed != nil && wasActive {
 		m.activeKey = ""
+		for _, e := range m.entries {
+			if e.source == device.SourceHardware {
+				m.activeKey = e.key
+				break
+			}
+		}
 	}
 	m.mu.Unlock()
 
@@ -365,9 +382,9 @@ func (m *Manager) checkHotplug() {
 		if err != nil {
 			continue
 		}
-		present := map[string]bool{}
+		present := map[string]string{}
 		for _, c := range cands {
-			present[c.Key] = true
+			present[c.Key] = c.Endpoint
 		}
 
 		// Removals first: a device whose key changed (re-enumerated after an
@@ -377,7 +394,8 @@ func (m *Manager) checkHotplug() {
 		m.mu.RLock()
 		var gone []string
 		for _, e := range m.entries {
-			if e.driver == drv && !present[e.key] {
+			endpoint, exists := present[e.key]
+			if e.driver == drv && (!exists || endpoint != e.endpoint) {
 				gone = append(gone, e.key)
 			}
 		}
@@ -395,7 +413,7 @@ func (m *Manager) checkHotplug() {
 				continue
 			}
 			m.mu.Lock()
-			m.entries = append([]*entry{{key: c.Key, source: device.SourceHardware, driver: drv, dev: dev}}, m.entries...)
+			m.entries = append([]*entry{{key: c.Key, endpoint: c.Endpoint, source: device.SourceHardware, driver: drv, dev: dev}}, m.entries...)
 			// Real hardware takes over from "nothing" or from a fallback mock.
 			takeOver := m.activeKey == "" || (m.autoMock && m.isMockLocked(m.activeKey))
 			if takeOver {
@@ -425,4 +443,12 @@ func (m *Manager) Rescan() {
 func (m *Manager) isMockLocked(key string) bool {
 	e := m.findLocked(key)
 	return e != nil && e.source == device.SourceMock
+}
+
+// RetestMapping schedules a safe close/reopen to re-read kernel capabilities.
+func (m *Manager) RetestMapping() {
+	select {
+	case m.retest <- struct{}{}:
+	default:
+	}
 }

@@ -60,7 +60,7 @@ type ButtonDef struct {
 
 // AxisRange describes the raw value range a device reports for an input.
 // Center is the nominal resting value declared by the driver (for evdev
-// devices it comes from the kernel's absinfo, not from a guess). Invert flips
+// devices it is the midpoint of the kernel's absinfo range, not a calibration). Invert flips
 // the axis direction so that every normalized value follows one convention:
 // sticks report negative X = left and negative Y = up; triggers 0 = released.
 type AxisRange struct {

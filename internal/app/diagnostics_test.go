@@ -19,11 +19,7 @@ func openDiagnostics(t *testing.T, mode state.UXMode) (*Application, *uitest.Pag
 	a := newMockApp(t, mode)
 	a.Opts.ReportDir = t.TempDir()
 	page := uitest.Run(t, 120, 40, a.Draw)
-	label := "Diagnostics"
-	if mode == state.ModeEZ {
-		label = "2 Diagnostics" // EZ has few enough tabs to show hotkeys
-	}
-	page.GetByRole("tab", label).Click()
+	page.Press("2")
 	if a.State.ActivePanel != state.PanelDiagnostics || a.State.Diag == nil {
 		t.Fatalf("Diagnostics tab should open with a session")
 	}
@@ -36,7 +32,8 @@ func TestDiagnosticsAdaptToSelectedController(t *testing.T) {
 		page.Expect(page.GetByID(id)).ToBeVisible()
 	}
 
-	page.GetByRole("button", "Xbox (Test)").Click()
+	page.Press("c")
+	page.GetByID("selector_item_1").Click()
 	d := a.State.Diag
 	if d == nil || d.Ctx.Desc.ModelID != xboxmock.ModelID || !d.Ctx.Simulated {
 		t.Fatalf("diagnostics must switch to the simulated Xbox session")
@@ -50,7 +47,8 @@ func TestDiagnosticsAdaptToSelectedController(t *testing.T) {
 	}
 
 	// Clicking a region on the visual opens its diagnostic test.
-	page.GetByRole("button", "LT").Click()
+	a.State.SelectRegion(device.RegionLeftTrigger)
+	page.Press("tab")
 	if a.State.ActivePanel != state.PanelDiagnostics || d.Active != diag.CatTriggers {
 		t.Fatalf("LT should open trigger diagnostics, got panel=%s active=%s", a.State.ActivePanel, d.Active)
 	}
@@ -144,6 +142,11 @@ func TestReportExportFromDiagnostics(t *testing.T) {
 		a.pumpTelemetry()
 	}
 	page.GetByID("diag_export").Click()
+	deadline := time.Now().Add(3 * time.Second)
+	for a.diagnosticBusy && time.Now().Before(deadline) {
+		a.drainDiagnosticStorage()
+		time.Sleep(time.Millisecond)
+	}
 	entries, _ := os.ReadDir(a.Opts.ReportDir)
 	var jsonFile string
 	for _, e := range entries {
@@ -151,8 +154,8 @@ func TestReportExportFromDiagnostics(t *testing.T) {
 			jsonFile = filepath.Join(a.Opts.ReportDir, e.Name())
 		}
 	}
-	if len(entries) != 2 || jsonFile == "" {
-		t.Fatalf("expected a JSON and a text report, got %d files", len(entries))
+	if len(entries) != 3 || jsonFile == "" {
+		t.Fatalf("expected JSON, Markdown and text reports, got %d files", len(entries))
 	}
 	data, _ := os.ReadFile(jsonFile)
 	out := string(data)
@@ -169,15 +172,15 @@ func TestReportExportFromDiagnostics(t *testing.T) {
 func TestEZDiagnosticsAreGuidedAndPlain(t *testing.T) {
 	a, page := openDiagnostics(t, state.ModeEZ)
 	page.Expect(page.GetByID("diag_run_guided")).ToBeVisible()
-	page.Expect(page.GetByID("diag_export")).Not().ToBeVisible() // export is an Advanced tool
+	page.Expect(page.GetByID("diag_export")).ToBeVisible() // sharing is available in both modes
 	page.GetByID("diag_run_guided").Click()
 	d := a.State.Diag
 	if d.Guided == nil || d.Active != diag.CatConnection {
 		t.Fatalf("guided run should start at the connection step")
 	}
 	page.GetByID("diag_guided_next").Click()
-	if d.Active != diag.CatBattery {
-		t.Fatalf("expected battery as second guided step, got %s", d.Active)
+	if d.Active != diag.CatButtons {
+		t.Fatalf("expected buttons as second guided step, got %s", d.Active)
 	}
 	// Switching mode keeps the diagnostics session and its state.
 	page.Press("e")

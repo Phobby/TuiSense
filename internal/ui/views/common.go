@@ -6,26 +6,19 @@ import (
 
 	"github.com/Phobby/TuiSense/internal/device"
 	"github.com/Phobby/TuiSense/internal/state"
-	uiwidgets "github.com/Phobby/TuiSense/internal/ui/widgets"
 	"github.com/thebanri/limoni/core/accessibility"
 	"github.com/thebanri/limoni/core/cell"
 	"github.com/thebanri/limoni/core/driver"
 	"github.com/thebanri/limoni/core/terminal"
-	"github.com/thebanri/limoni/widgets"
 )
 
 // panelFrame draws a calm inspector card and returns its padded inner area.
 func panelFrame(f *terminal.Frame, area cell.Rect, s *state.AppState, title string) cell.Rect {
-	p := s.Theme
-	f.RenderWidget(widgets.Block{
-		Title:         " " + title + " ",
-		TitleStyle:    cell.Style{Fg: uiwidgets.AccentColor(s.Descriptor), Bg: p.BgPanel, Modifier: cell.ModifierBold},
-		Borders:       widgets.BorderAll,
-		BorderSymbols: widgets.SymbolsRounded,
-		BorderStyle:   p.CardBorder(),
-		Style:         p.PanelStyle(),
-	}, area)
-	return cell.NewRect(area.X+2, area.Y+1, area.Width-4, area.Height-2)
+	if area.Width < 5 || area.Height < 3 {
+		return cell.Rect{}
+	}
+	f.Buffer.SetStringWithin(area.X+2, area.Y, title, s.Theme.SectionHeaderStyle(), area.Width-4)
+	return cell.NewRect(area.X+2, area.Y+2, area.Width-4, area.Height-2)
 }
 
 // supportBanner prints a one-line notice when capability c is limited or
@@ -44,9 +37,9 @@ func supportBanner(f *terminal.Frame, inner cell.Rect, y uint16, s *state.AppSta
 		if reason != "" {
 			msg += " — " + reason
 		}
-		f.Buffer.SetStringWithin(inner.X, y, msg, cell.Style{Fg: p.Warning, Bg: p.BgPanel}, inner.Width)
+		copyValue(f, cell.NewRect(inner.X, y, inner.Width, 1), s, msg, msg, cell.Style{Fg: p.Warning, Bg: p.BgPanel})
 	default:
-		f.Buffer.SetStringWithin(inner.X, y, "✕ "+reason, cell.Style{Fg: p.Warning, Bg: p.BgPanel, Modifier: cell.ModifierBold}, inner.Width)
+		copyValue(f, cell.NewRect(inner.X, y, inner.Width, 1), s, "✕ "+reason, reason, cell.Style{Fg: p.Warning, Bg: p.BgPanel, Modifier: cell.ModifierBold})
 	}
 	f.RegisterAccessibility(accessibility.AccessibilityNode{
 		ID:     "support_banner_" + string(c),
@@ -88,6 +81,17 @@ func pillRow(f *terminal.Frame, x, y, limit uint16, s *state.AppState, label str
 		rect := cell.NewRect(x, y, w, 1)
 		f.Buffer.SetStringWithin(x, y, lbl, p.ButtonStyle(it.Selected), w)
 		if it.OnSelect != nil {
+			if s.Copy.Actions == nil {
+				s.Copy.Actions = make(map[string]func())
+			}
+			s.Copy.Actions[it.ID] = it.OnSelect
+			if f.FocusManager != nil {
+				f.FocusManager.Register(it.ID)
+				f.FocusManager.RegisterBounds(it.ID, rect)
+			}
+			if f.IsFocused(it.ID) {
+				f.Buffer.SetStringWithin(x, y, lbl, p.ButtonFocusedStyle(), w)
+			}
 			fn := it.OnSelect
 			f.RegisterClickHandler(rect, func(_ driver.MouseEvent) { fn() })
 		}
@@ -110,4 +114,29 @@ func nonEmptyStr(v, def string) string {
 		return def
 	}
 	return v
+}
+
+// registerControl gives compact custom controls the same keyboard and mouse action.
+func registerControl(f *terminal.Frame, rect cell.Rect, s *state.AppState, id, label string, fn func(driver.MouseEvent)) {
+	if s.Copy.Actions == nil {
+		s.Copy.Actions = make(map[string]func())
+	}
+	s.Copy.Actions[id] = func() { fn(driver.MouseEvent{Button: driver.MouseLeft, X: rect.X, Y: rect.Y}) }
+	if f.FocusManager != nil {
+		f.FocusManager.Register(id)
+		f.FocusManager.RegisterBounds(id, rect)
+	}
+	f.RegisterClickHandler(rect, func(ev driver.MouseEvent) {
+		if ev.Button == driver.MouseLeft {
+			fn(ev)
+		}
+	})
+	f.RegisterAccessibility(accessibility.AccessibilityNode{ID: id, Role: accessibility.RoleButton, Label: label, Bounds: rect})
+	if f.IsFocused(id) {
+		for x := rect.X; x < rect.X+rect.Width; x++ {
+			v := f.Buffer.CellAt(x, rect.Y)
+			v.Style.Modifier |= cell.ModifierUnderline
+			f.Buffer.SetCell(x, rect.Y, v)
+		}
+	}
 }

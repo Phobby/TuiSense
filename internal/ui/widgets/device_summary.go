@@ -3,6 +3,7 @@ package widgets
 import (
 	"fmt"
 	"github.com/Phobby/TuiSense/internal/i18n"
+	"github.com/Phobby/TuiSense/internal/ui/copytext"
 	"time"
 
 	"github.com/Phobby/TuiSense/internal/device"
@@ -62,10 +63,7 @@ func RenderDeviceSummaryWidget(f *terminal.Frame, area cell.Rect, s *state.AppSt
 	}
 
 	desc := s.Descriptor
-	firmware := "—"
-	if info.FirmwareVersion != "" {
-		firmware = "v" + info.FirmwareVersion
-	}
+	firmware := nonEmpty(info.FirmwareVersion, "—")
 	var rows []kvRow
 	if s.Mode == state.ModeEZ {
 		rows = []kvRow{
@@ -83,7 +81,10 @@ func RenderDeviceSummaryWidget(f *terminal.Frame, area cell.Rect, s *state.AppSt
 			{key: i18n.T("Link"), val: i18n.T(string(info.Connection)), col: p.FgSecondary},
 		}
 		if s.Caps.Supports(device.CapFirmwareInfo) {
-			rows = append(rows, kvRow{key: i18n.T("Firmware"), val: i18n.Tf("%s · HW %s", nonEmpty(info.FirmwareVersion, "—"), nonEmpty(info.HardwareVersion, "—")), col: p.FgSecondary})
+			rows = append(rows, kvRow{key: i18n.T("Firmware"), val: firmware, col: p.FgSecondary})
+			if info.FirmwareBuild != "" {
+				rows = append(rows, kvRow{key: i18n.T("FW build"), val: info.FirmwareBuild, col: p.FgMuted})
+			}
 		}
 		rows = append(rows, kvRow{key: i18n.T("USB ID"), val: fmt.Sprintf("%04X:%04X", info.VendorID, info.ProductID), col: p.FgMuted})
 		if info.MACAddress != "" {
@@ -111,7 +112,7 @@ func RenderDeviceSummaryWidget(f *terminal.Frame, area cell.Rect, s *state.AppSt
 			if i == 0 {
 				valStyle.Modifier |= cell.ModifierBold
 			}
-			f.Buffer.SetStringWithin(inner.X+labelW, y, r.val, valStyle, inner.Width-labelW)
+			copytext.CopyableText{Text: r.val, Value: r.val, Style: valStyle}.Render(f, cell.NewRect(inner.X+labelW, y, inner.Width-labelW, 1), &s.Copy)
 		}
 	}
 

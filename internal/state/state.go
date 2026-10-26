@@ -2,6 +2,7 @@ package state
 
 import (
 	"github.com/Phobby/TuiSense/internal/i18n"
+	"github.com/Phobby/TuiSense/internal/ui/copytext"
 	"sync"
 	"time"
 
@@ -24,15 +25,30 @@ type DeviceChoice struct {
 // AppState holds the complete UI state, active controller snapshot, and reusable
 // Limoni widget states so drawing remains allocation-free and responsive.
 type AppState struct {
-	mu sync.RWMutex
+	DiagnosticDeadzoneSlider *widgets.SliderState
+	DiagnosticsScroll        int
+	DiagnosticsScrollMax     int
+	DiagnosticsScope         string
+	mu                       sync.RWMutex
+	Copy                     copytext.Model
+	IncludeCopyIdentifiers   bool
+	CopyFallbackPath         string
+	ShowCopyFallback         bool
+	CopyStatus               string
+	CopyStatusUntil          time.Time
 
 	// Theme, Mode & Layout
-	Theme        theme.Palette
-	HighContrast bool
-	Mode         UXMode
-	Language     i18n.Lang
-	ActivePanel  PanelID
-	ShowHelp     bool
+	Theme            theme.Palette
+	HighContrast     bool
+	Mode             UXMode
+	Language         i18n.Lang
+	ActivePanel      PanelID
+	ShowHelp         bool
+	HelpScroll       int
+	HelpScrollMax    int
+	PanelScroll      int
+	PanelScrollMax   int
+	PanelScrollScope string
 
 	// Active Device Context (drives visual, info card, panels, and interaction)
 	ActiveDeviceKey    string
@@ -43,6 +59,7 @@ type AppState struct {
 	SelectorIndex      int
 	RegionHint         string        // shown when a region's panel is hidden in the current mode
 	Diag               *diag.Session // diagnostics session of the active device (nil without one)
+	Firmware           FirmwareView  // read-only firmware update check of the active device
 	deviceConfigs      map[string]device.Config
 	activeProfiles     map[string]string // device family -> active profile name
 
@@ -142,12 +159,12 @@ func NewAppState(profileDir string, logger *logging.Logger) *AppState {
 		Caps:             device.NewCapabilitySet(),
 		deviceConfigs:    map[string]device.Config{},
 		activeProfiles:   map[string]string{},
-		SelectedRegion:   device.RegionLight,
+		SelectedRegion:   device.RegionNone,
 		RotX:             -20.0,
 		RotY:             14.0,
 		RotZ:             0.0,
 		Zoom:             1.0,
-		AutoRotate:       true,
+		AutoRotate:       false,
 		AutoRotateSpeed:  1.1,
 		ShadingMode:      "Lambert",
 		Config:           cfg,
@@ -252,6 +269,9 @@ func (s *AppState) SetMode(m UXMode) {
 // cfg is used the first time a key is seen; a nil descriptor key ("") resets
 // to the placeholder (no-controller) context.
 func (s *AppState) ActivateDevice(key string, desc device.Descriptor, caps device.CapabilitySet, info device.Info, tel device.Telemetry, cfg device.Config) {
+	if key != s.ActiveDeviceKey {
+		s.IncludeCopyIdentifiers = false
+	}
 	if s.ActiveDeviceKey != "" {
 		s.deviceConfigs[s.ActiveDeviceKey] = s.Config
 		s.activeProfiles[s.Descriptor.Family] = s.ActiveProfile
@@ -271,12 +291,8 @@ func (s *AppState) ActivateDevice(key string, desc device.Descriptor, caps devic
 		}
 		s.SyncWidgetsFromConfig()
 	}
-	if _, ok := desc.Region(s.SelectedRegion); !ok {
-		s.SelectedRegion = device.RegionNone
-		if len(desc.Regions) > 0 {
-			s.SelectedRegion = desc.Regions[0].ID
-		}
-	}
+	s.SelectedRegion = device.RegionNone
+	s.HoveredRegion = device.RegionNone
 	s.RegionHint = ""
 	s.EnsureActivePanelVisible()
 }
@@ -319,7 +335,7 @@ func (s *AppState) SelectRegion(r device.RegionID) {
 	// In the diagnostics view a region opens its diagnostic test instead.
 	if s.ActivePanel == PanelDiagnostics && s.Diag != nil {
 		if c, ok := diag.CategoryForRegion(string(r), s.Diag.Avail); ok {
-			s.Diag.Active = c
+			s.Diag.Select(c)
 		}
 		return
 	}
@@ -388,4 +404,14 @@ func (s *AppState) SetError(title, msg string) {
 // ClearError clears any active inline error banner.
 func (s *AppState) ClearError() {
 	s.LastError = ""
+}
+
+// IsSimulatedDevice reports the source of the active selection, never its model.
+func (s *AppState) IsSimulatedDevice() bool {
+	for _, d := range s.Devices {
+		if d.Key == s.ActiveDeviceKey {
+			return d.Source != device.SourceHardware
+		}
+	}
+	return false
 }

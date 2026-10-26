@@ -36,7 +36,8 @@ const (
 	sdlDocumentedBCD uint16 = 0x0210 // version in the SDL database entry "MSI GC20 V2"
 )
 
-// ModeGuide is MSI's documented mode table (from the GC20 V2 manual).
+// ModeGuide is verified against https://www.msi.com/faq/6413 and
+// https://download.msi.com/archive/mnu_exe/gear/GC30%2BGC20_manual.pdf.
 var ModeGuide = []string{
 	"Default mode — mode LEDs 1+2 (usually reported by Linux as an XInput/xpad controller)",
 	"Analog mode (DirectInput) — LEDs 1+3: hold the Mode button 3 s from Default mode",
@@ -71,17 +72,17 @@ func Identify(d evdev.InputDevice) (gamepad.Confidence, string) {
 func ModeHint(m gamepad.Mapping, d evdev.InputDevice) string {
 	switch m.Layout {
 	case gamepad.LayoutXInput:
-		return "Default mode (XInput, LEDs 1+2) — inferred from the xpad layout"
+		return "Unverified: Default mode (XInput, LEDs 1+2) — inferred from the xpad layout"
 	case gamepad.LayoutJoystick:
-		return "DirectInput mode (Analog LEDs 1+3 or Digital LEDs 1+4) — inferred; check the LEDs"
+		return "Unverified: DirectInput mode (Analog LEDs 1+3 or Digital LEDs 1+4) — inferred; check the LEDs"
 	}
-	return "HID gamepad mode (possibly Android, LEDs 3+4) — inferred; check the LEDs"
+	return "Unverified: HID gamepad mode (possibly Android, LEDs 3+4) — inferred; check the LEDs"
 }
 
 var buttonLabels = map[device.ButtonID]string{
 	device.ButtonSouth: "A", device.ButtonEast: "B", device.ButtonWest: "X", device.ButtonNorth: "Y",
 	device.ButtonL1: "LB", device.ButtonR1: "RB", device.ButtonL2Digital: "LT", device.ButtonR2Digital: "RT",
-	device.ButtonView: "Back", device.ButtonMenu: "Start", device.ButtonHome: "Guide",
+	device.ButtonView: "Back", device.ButtonMenu: "Start", device.ButtonHome: "Mode",
 	device.ButtonL3: "LS (click)", device.ButtonR3: "RS (click)",
 }
 

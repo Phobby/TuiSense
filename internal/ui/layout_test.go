@@ -18,8 +18,8 @@ func TestStageIsHorizontallyCentered(t *testing.T) {
 		if left != right {
 			t.Errorf("%dx%d: stage not centered (left margin %d, right margin %d)", sz[0], sz[1], left, right)
 		}
-		if l.InspectorArea.Height < 10 || l.BatteryStatusArea.Height == 0 || l.DeviceSummaryArea.Height == 0 {
-			t.Errorf("%dx%d: missing supporting areas: %+v", sz[0], sz[1], l)
+		if l.InspectorArea.Height > 6 || l.BatteryStatusArea.Height != 0 || l.DeviceSummaryArea.Height != 0 {
+			t.Errorf("%dx%d: unexpected permanent side panels: %+v", sz[0], sz[1], l)
 		}
 	}
 }
@@ -35,5 +35,20 @@ func TestCompactLayoutFitsSmallTerminals(t *testing.T) {
 	}
 	if end := l.InspectorArea.Y + l.InspectorArea.Height; end > l.FooterArea.Y {
 		t.Fatalf("inspector overlaps footer")
+	}
+}
+
+func TestDiagnosticsStageStaysCenteredOnCompactScreens(t *testing.T) {
+	for _, size := range [][2]uint16{{80, 24}, {100, 28}, {120, 40}, {170, 46}} {
+		area := cell.NewRect(2, 3, size[0], size[1])
+		layout := ComputeLayout(area, true)
+		left := layout.Stage3DArea.X - area.X
+		right := area.X + area.Width - layout.Stage3DArea.X - layout.Stage3DArea.Width
+		if left != right {
+			t.Fatalf("diagnostics stage must remain centered at %v", size)
+		}
+		if layout.InspectorArea.Y+layout.InspectorArea.Height > layout.FooterArea.Y {
+			t.Fatal("inspector overlaps footer")
+		}
 	}
 }

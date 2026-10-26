@@ -23,6 +23,7 @@ func RenderDeviceInfoPanel(f *terminal.Frame, area cell.Rect, pc PanelContext) {
 
 	inner := panelFrame(f, area, s, i18n.T("Device & Capabilities"))
 	c := newCursor(f, inner, s)
+	renderCopyActions(c, false)
 	c.line(i18n.T("Identity & Transport"), p.SectionHeaderStyle())
 
 	lastSeen := i18n.T("Offline")
@@ -37,7 +38,13 @@ func RenderDeviceInfoPanel(f *terminal.Frame, area cell.Rect, pc PanelContext) {
 		{i18n.T("USB VID / PID:"), fmt.Sprintf("0x%04X : 0x%04X", info.VendorID, info.ProductID)},
 	}
 	if s.Caps.Supports(device.CapFirmwareInfo) {
-		rows = append(rows, row{i18n.T("Firmware / HW:"), i18n.Tf("FW %s / HW %s", info.FirmwareVersion, info.HardwareVersion)})
+		rows = append(rows, row{i18n.T("Firmware:"), nonEmptyStr(info.FirmwareVersion, i18n.T("unknown"))})
+		if info.FirmwareBuild != "" {
+			rows = append(rows, row{i18n.T("FW build:"), info.FirmwareBuild})
+		}
+		if info.HardwareVersion != "" {
+			rows = append(rows, row{i18n.T("HW version:"), info.HardwareVersion + " " + i18n.T("(raw)")})
+		}
 	}
 	if info.MACAddress != "" {
 		rows = append(rows, row{i18n.T("Bluetooth MAC:"), info.MACAddress})
@@ -98,7 +105,7 @@ func RenderDeviceInfoPanel(f *terminal.Frame, area cell.Rect, pc PanelContext) {
 			text += " — " + reason
 		}
 		if inner.Width > bw+1 {
-			f.Buffer.SetStringWithin(inner.X+bw+1, y, text, p.LabelStyle(), inner.Width-bw-1)
+			copyValue(f, cell.NewRect(inner.X+bw+1, y, inner.Width-bw-1, 1), s, text, text, p.LabelStyle())
 		}
 		y++
 	}

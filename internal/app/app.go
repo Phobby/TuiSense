@@ -3,9 +3,9 @@ package app
 import (
 	"context"
 	"fmt"
+	"github.com/Phobby/TuiSense/internal/clipboard"
 	"github.com/Phobby/TuiSense/internal/i18n"
 	"math"
-	"path/filepath"
 	"runtime"
 	"sync"
 	"time"
@@ -15,6 +15,7 @@ import (
 	"github.com/Phobby/TuiSense/internal/diag"
 	"github.com/Phobby/TuiSense/internal/drivers"
 	"github.com/Phobby/TuiSense/internal/drivers/gamepad"
+	"github.com/Phobby/TuiSense/internal/firmware"
 	"github.com/Phobby/TuiSense/internal/logging"
 	"github.com/Phobby/TuiSense/internal/session"
 	"github.com/Phobby/TuiSense/internal/state"
@@ -28,9 +29,10 @@ import (
 
 // Options configures the TuiSense Application instance.
 type Options struct {
+	TestDevices   bool // explicitly expose architecture test devices
 	ForceMock     bool
 	AllowMock     bool
-	NoTestDevices bool   // hide UI/architecture test devices (mock Xbox)
+	NoTestDevices bool   // hide UI/architecture test devices (simulated Xbox and DualSense)
 	ProfileDir    string // default: $XDG_CONFIG_HOME/tuisense/profiles
 	ConfigDir     string // settings.json location; default: $XDG_CONFIG_HOME/tuisense
 	TargetFPS     int
@@ -44,17 +46,28 @@ type Options struct {
 	Version      string
 	// Language forces the UI language ("en"/"tr"); empty = saved choice, then $LANG.
 	Language string
+	// FirmwareProviders overrides the read-only firmware checkers (tests use
+	// mock metadata; nil = Sony's published metadata over HTTPS).
+	FirmwareProviders []firmware.Provider
+	// OpenURL and CopyText override the browser / clipboard adapters (tests).
+	OpenURL   func(url string) error
+	CopyText  func(text string) error
+	Clipboard clipboard.ClipboardService
 }
 
 // Application coordinates AppState, the device session, the dispatcher, and the Limoni render loop.
 type Application struct {
-	State      *state.AppState
-	Logger     *logging.Logger
-	Manager    *session.Manager
-	Dispatcher *session.Dispatcher
-	Prefs      *state.PrefsStore
-	Opts       Options
-	lastFrame  time.Time
+	State             *state.AppState
+	Logger            *logging.Logger
+	Manager           *session.Manager
+	Dispatcher        *session.Dispatcher
+	Prefs             *state.PrefsStore
+	Opts              Options
+	lastFrame         time.Time
+	copyResults       chan copyCompletion
+	copying           bool
+	diagnosticBusy    bool
+	diagnosticResults chan diagnosticCompletion
 
 	eventsMu sync.Mutex
 	events   []session.DeviceEvent
@@ -65,6 +78,14 @@ type Application struct {
 	audioProbeAt time.Time
 	// confirmed holds the user's controller identifications (hardware key → model ID).
 	confirmed map[string]string
+
+	// Firmware runs read-only firmware update checks off the UI goroutine.
+	Firmware    *firmware.Service
+	fwResults   map[string]firmware.Result // latest result per device key
+	fwQueue     []firmware.Result          // finished checks (guarded by eventsMu)
+	fwAutoCheck bool
+	ctx         context.Context
+	started     bool // Run is active (automatic network checks allowed)
 }
 
 // appActuator lets diagnostics drive hardware through the dispatcher and read
@@ -119,6 +140,13 @@ func New(opts Options) *Application {
 		s.AutoRotate = *prefs.AutoRotate
 	}
 	s.RestoreActiveProfiles(prefs.ActiveProfiles)
+	providers := opts.FirmwareProviders
+	if providers == nil {
+		providers = defaultFirmwareProviders(opts.Version)
+	}
+	a.Firmware = firmware.NewService(firmware.NewStore(opts.ConfigDir), providers...)
+	a.fwResults = map[string]firmware.Result{}
+	a.fwAutoCheck = prefs.FirmwareAutoCheck == nil || *prefs.FirmwareAutoCheck
 	a.confirmed = map[string]string{}
 	for k, v := range prefs.ConfirmedModels {
 		a.confirmed[k] = v
@@ -127,7 +155,7 @@ func New(opts Options) *Application {
 
 	reg := opts.Registry
 	if reg == nil {
-		reg = drivers.NewBuiltinRegistry(drivers.RegistryOptions{Hardware: true, TestDevices: !opts.NoTestDevices})
+		reg = drivers.NewBuiltinRegistry(drivers.RegistryOptions{Hardware: true, Mock: opts.ForceMock || opts.AllowMock, TestDevices: opts.TestDevices && !opts.NoTestDevices})
 	}
 
 	a.Manager = session.NewManager(reg, session.Options{
@@ -152,6 +180,9 @@ func New(opts Options) *Application {
 		limoni.Wakeup()
 	})
 
+	a.copyResults = make(chan copyCompletion, 1)
+	a.diagnosticResults = make(chan diagnosticCompletion, 1)
+	s.Copy.OnCopy = a.CopyText
 	a.syncActiveDevice()
 	return a
 }
@@ -173,9 +204,7 @@ func (a *Application) onDeviceEvent(ev session.DeviceEvent) {
 	case session.EventConnected:
 		a.syncActiveDevice()
 		s.ClearError()
-		if s.Toasts != nil && ev.Key == s.ActiveDeviceKey {
-			s.Toasts.Success(i18n.T("Controller Connected"), fmt.Sprintf("%s (%s)", i18n.T(s.Descriptor.ShortName), i18n.T(string(ev.Info.Connection))))
-		}
+
 	case session.EventDisconnected:
 		a.syncActiveDevice()
 		if s.Toasts != nil {
@@ -217,6 +246,7 @@ func (a *Application) syncActiveDevice() {
 			s.Diag.Conn.MarkDisconnected()
 		}
 	}
+	defer a.refreshFirmware()
 	if dev == nil {
 		s.Diag = nil
 		s.ActivateDevice("", device.PlaceholderDescriptor(), device.NewCapabilitySet(),
@@ -232,6 +262,7 @@ func (a *Application) syncActiveDevice() {
 		s.EnsureActivePanelVisible()
 		return
 	}
+	defer a.maybeAutoCheck()
 
 	firstUse := !s.HasDeviceConfig(key)
 	desc := dev.Descriptor()
@@ -301,6 +332,7 @@ func (a *Application) diagSession(key string, dev device.Device) *diag.Session {
 	bat, _ := dev.(device.BatteryDetailsProvider)
 	sess := diag.NewSession(dc, appActuator{a}, sim, bat, a.audioBackendFor(key, dc.Simulated, dc.Caps, dc.Desc), time.Now())
 	sess.OnChange = limoni.Wakeup
+	sess.SoftwareVersion = a.Opts.Version
 	a.diagSessions[key] = sess
 	return sess
 }
@@ -308,6 +340,7 @@ func (a *Application) diagSession(key string, dev device.Device) *diag.Session {
 // tickDiagnostics advances diagnostics timers, stops effects when the user
 // leaves the Diagnostics tab, and re-probes audio while the tab is open.
 func (a *Application) tickDiagnostics(now time.Time) {
+	a.drainDiagnosticStorage()
 	s := a.State
 	if a.prevPanel == state.PanelDiagnostics && s.ActivePanel != state.PanelDiagnostics && s.Diag != nil {
 		s.Diag.Suspend()
@@ -332,26 +365,9 @@ func (a *Application) suspendAllDiagnostics() {
 	}
 }
 
-// ExportDiagnosticsReport writes JSON + text reports for the active device.
+// ExportDiagnosticsReport writes JSON + Markdown reports for the active device.
 func (a *Application) ExportDiagnosticsReport() {
-	s := a.State
-	if s.Diag == nil {
-		return
-	}
-	dir := a.Opts.ReportDir
-	if dir == "" {
-		dir = filepath.Join(system.DataDir(), "reports")
-	}
-	r := diag.BuildReport(s.Diag, a.Opts.Version, false, time.Now())
-	jp, _, err := r.Export(dir)
-	if err != nil {
-		s.SetError(i18n.T("Report Export"), err.Error())
-		return
-	}
-	a.Logger.Info("DIAG", "Report written to %s (+ .txt)", jp)
-	if s.Toasts != nil {
-		s.Toasts.Success(i18n.T("Report saved"), jp)
-	}
+	a.diagnosticStorage("export")
 }
 
 // initialConfig resolves the first config for a device: MAC-bound profile →
@@ -388,6 +404,10 @@ func (a *Application) savePrefs() {
 		HighContrast:   s.HighContrast,
 		AutoRotate:     &auto,
 	}
+	if !a.fwAutoCheck {
+		off := false
+		p.FirmwareAutoCheck = &off
+	}
 	if len(a.confirmed) > 0 {
 		p.ConfirmedModels = a.confirmed
 	}
@@ -410,9 +430,6 @@ func (a *Application) SelectDevice(key string) {
 	}
 	a.syncActiveDevice()
 	a.savePrefs()
-	if a.State.Toasts != nil {
-		a.State.Toasts.Info(i18n.T("Controller"), i18n.Tf("Switched to %s", i18n.T(a.State.Descriptor.DisplayName)))
-	}
 }
 
 // CycleDevice selects the previous/next attached device.
@@ -435,6 +452,7 @@ func (a *Application) SetLanguage(l i18n.Lang) {
 	a.State.Language = l
 	i18n.Set(l)
 	a.savePrefs()
+	a.refreshFirmware()
 	if a.State.Toasts != nil {
 		a.State.Toasts.Info(i18n.T("Language"), l.Name())
 	}
@@ -468,9 +486,6 @@ func (a *Application) SetMode(m state.UXMode) {
 	}
 	a.State.SetMode(m)
 	a.savePrefs()
-	if a.State.Toasts != nil {
-		a.State.Toasts.Info(i18n.T("Mode"), i18n.Tf("%s mode", m.Label()))
-	}
 }
 
 // simulator returns the active device's simulator, enabling the mock DualSense
@@ -492,6 +507,7 @@ func (a *Application) simulator() (device.Simulator, bool) {
 }
 
 func (a *Application) refreshActive() {
+	defer a.refreshFirmware()
 	if dev := a.Manager.Active(); dev != nil {
 		a.State.DeviceInfo = dev.Info()
 		a.State.Telemetry = dev.Telemetry()
@@ -583,16 +599,31 @@ func (a *Application) TestPulse() {
 
 func (a *Application) callbacks() views.Callbacks {
 	return views.Callbacks{
-		OnToggleConnect:    a.ToggleSimulatedConnection,
-		OnCycleTransport:   a.CycleSimulatedTransport,
-		OnTogglePermission: a.ToggleSimulatedPermission,
-		OnSelectDevice:     a.SelectDevice,
-		OnCycleDevice:      a.CycleDevice,
-		OnSetMode:          a.SetMode,
-		OnPrefsChanged:     a.savePrefs,
-		OnExportReport:     a.ExportDiagnosticsReport,
-		OnSetLanguage:      a.SetLanguage,
-		OnConfirmIdentity:  a.ConfirmIdentity,
+		OnToggleConnect:            a.ToggleSimulatedConnection,
+		OnCycleTransport:           a.CycleSimulatedTransport,
+		OnTogglePermission:         a.ToggleSimulatedPermission,
+		OnSelectDevice:             a.SelectDevice,
+		OnCycleDevice:              a.CycleDevice,
+		OnSetMode:                  a.SetMode,
+		OnPrefsChanged:             a.savePrefs,
+		OnExportReport:             a.ExportDiagnosticsReport,
+		OnSaveDiagnosticHistory:    func() { a.diagnosticStorage("save") },
+		OnCompareDiagnosticHistory: func() { a.diagnosticStorage("compare") },
+		OnClearDiagnosticHistory:   func() { a.diagnosticStorage("clear") },
+		OnRetestMapping:            a.RetestInputMapping,
+		OnReviewDiagnosticHistory:  func() { a.diagnosticStorage("review") },
+		OnOlderDiagnosticHistory:   func() { a.diagnosticStorage("older") },
+		OnNewerDiagnosticHistory:   func() { a.diagnosticStorage("newer") },
+		OnSetLanguage:              a.SetLanguage,
+		OnConfirmIdentity:          a.ConfirmIdentity,
+
+		OnCheckFirmware:        a.CheckFirmware,
+		OnSetFirmwareAutoCheck: a.SetFirmwareAutoCheck,
+		OnSetFirmwareSection:   a.SetFirmwareSection,
+		OnSetDetailGroup:       a.SetDetailGroup,
+		OnSelectDetail:         a.SelectDetail,
+		OnOpenLink:             a.OpenOfficialLink,
+		OnCopyLink:             a.CopyOfficialLink,
 	}
 }
 
@@ -600,6 +631,8 @@ func (a *Application) callbacks() views.Callbacks {
 // limoni.RunWithContext and headless uitest.Run.
 func (a *Application) Draw(f *terminal.Frame, ev *driver.Event) bool {
 	a.drainEvents()
+	a.drainFirmware()
+	a.drainCopies()
 
 	now := time.Now()
 	dt := now.Sub(a.lastFrame).Seconds()
@@ -632,6 +665,8 @@ func (a *Application) Draw(f *terminal.Frame, ev *driver.Event) bool {
 func (a *Application) Run(ctx context.Context) error {
 	runCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
+	a.ctx, a.started = runCtx, true
+	a.maybeAutoCheck()
 
 	go a.Manager.Start(runCtx)
 	go a.Dispatcher.Start(runCtx)

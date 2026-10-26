@@ -245,3 +245,77 @@ func TestRescanRunsOnThePollingGoroutine(t *testing.T) {
 		t.Fatal("Rescan should trigger an immediate discovery")
 	}
 }
+
+func TestRetestMappingReopensOnWorker(t *testing.T) {
+	drv := &fakeDriver{}
+	drv.set("hw:retest")
+	m := NewManager(newRegistry(drv), Options{}, nil, nil)
+	original := m.Active()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go m.Start(ctx)
+	m.RetestMapping()
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		if current := m.Active(); current != nil && current != original {
+			return
+		}
+		time.Sleep(time.Millisecond)
+	}
+	t.Fatal("retest must reopen the selected hardware device")
+}
+
+func TestRepeatedDiscoveryKeepsDistinctPhysicalControllers(t *testing.T) {
+	drv := &fakeDriver{}
+	drv.set("physical:1", "physical:1", "physical:2")
+	reg := device.NewRegistry()
+	_ = reg.RegisterDriver(drv)
+	m := NewManager(reg, Options{}, nil, nil)
+	if len(m.Devices()) != 2 {
+		t.Fatalf("duplicate initial discovery: %+v", m.Devices())
+	}
+	m.checkHotplug()
+	m.checkHotplug()
+	if len(m.Devices()) != 2 {
+		t.Fatal("repeated hotplug scan duplicated devices")
+	}
+	if err := m.Select("physical:2"); err != nil {
+		t.Fatal(err)
+	}
+	drv.set("physical:1")
+	m.checkHotplug()
+	if m.ActiveKey() != "physical:1" {
+		t.Fatal("disconnect did not switch to remaining controller")
+	}
+	drv.set()
+	m.checkHotplug()
+	if m.Active() != nil || len(m.Devices()) != 0 {
+		t.Fatal("disconnect left stale hardware")
+	}
+	drv.set("physical:2")
+	m.checkHotplug()
+	if m.ActiveKey() != "physical:2" {
+		t.Fatal("reconnect failed")
+	}
+}
+
+type movingDriver struct {
+	fakeDriver
+	endpoint string
+}
+
+func (d *movingDriver) Discover() ([]device.Candidate, error) {
+	return []device.Candidate{{Key: "stable", Endpoint: d.endpoint}}, nil
+}
+func TestStableIdentityReopensChangedEndpoint(t *testing.T) {
+	drv := &movingDriver{endpoint: "usb"}
+	reg := device.NewRegistry()
+	_ = reg.RegisterDriver(drv)
+	m := NewManager(reg, Options{}, nil, nil)
+	before := m.Active()
+	drv.endpoint = "bluetooth"
+	m.checkHotplug()
+	if m.Active() == before || m.ActiveKey() != "stable" || len(m.Devices()) != 1 {
+		t.Fatal("transport change retained stale backend or duplicated identity")
+	}
+}

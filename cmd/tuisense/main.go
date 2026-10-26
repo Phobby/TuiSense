@@ -24,9 +24,10 @@ func main() {
 	}
 
 	mockFlag := flag.Bool("mock", false, "Launch TuiSense using the interactive mock DualSense controller")
-	noTestDevicesFlag := flag.Bool("no-test-devices", false, "Hide UI/architecture test devices (mock Xbox controller)")
+	testDevicesFlag := flag.Bool("test-devices", false, "Explicitly enable simulated architecture test devices")
+	noTestDevicesFlag := flag.Bool("no-test-devices", false, "Hide UI/architecture test devices (simulated Xbox and DualSense)")
 	configDirFlag := flag.String("config-dir", "", "Custom directory for settings.json (default: $XDG_CONFIG_HOME/tuisense)")
-	noMockFlag := flag.Bool("no-mock", false, "Launch with real DualSense hardware detection only (disable mock fallback)")
+	noMockFlag := flag.Bool("no-mock", false, "Compatibility option: real hardware is already the default")
 	noMockFallbackFlag := flag.Bool("no-mock-fallback", false, "Alias for --no-mock")
 	fpsFlag := flag.Int("fps", 30, "Target animation frame rate (15..120)")
 	profileDirFlag := flag.String("profile-dir", "", "Custom directory for controller profiles (default: $XDG_CONFIG_HOME/tuisense/profiles)")
@@ -41,8 +42,8 @@ func main() {
 		fmt.Fprintf(out, "  tuisense debug devices|inputs   Controller identification reports (see `tuisense debug`)\n\n")
 		fmt.Fprintf(out, "Options:\n")
 		fmt.Fprintf(out, "  --mock             Launch using the interactive mock DualSense controller\n")
-		fmt.Fprintf(out, "  --no-mock          Launch with real hardware detection only (no mock fallback)\n")
-		fmt.Fprintf(out, "  --no-test-devices  Hide the mock Xbox test controller from the device selector\n")
+		fmt.Fprintf(out, "  --no-mock          Compatibility option: real hardware is already the default\n")
+		fmt.Fprintf(out, "  --test-devices     Explicitly enable simulated test controllers\n")
 		fmt.Fprintf(out, "  --config-dir <p>   Custom directory for settings.json (mode, last device)\n")
 		fmt.Fprintf(out, "  --fps <int>        Target animation and telemetry frame rate (default: 30)\n")
 		fmt.Fprintf(out, "  --profile-dir <p>  Custom directory for saving/loading JSON profiles\n")
@@ -74,7 +75,8 @@ func main() {
 
 	application := app.New(app.Options{
 		ForceMock:     *mockFlag,
-		AllowMock:     !disableMockFallback,
+		TestDevices:   *testDevicesFlag,
+		AllowMock:     *mockFlag && !disableMockFallback,
 		NoTestDevices: *noTestDevicesFlag,
 		ProfileDir:    *profileDirFlag,
 		ConfigDir:     *configDirFlag,

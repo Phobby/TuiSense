@@ -39,6 +39,9 @@ func NewBatteryMonitor(step int, provider device.BatteryDetailsProvider) *Batter
 
 // Feed records the reported level; observations are appended on change only.
 func (b *BatteryMonitor) Feed(tel device.Telemetry, now time.Time) {
+	if tel.BatteryPercent < 0 || tel.BatteryPercent > 100 {
+		return
+	}
 	b.samples++
 	b.Percent, b.Charging, b.Full = tel.BatteryPercent, tel.Charging, tel.FullyCharged
 	n := len(b.Observations)
@@ -185,6 +188,9 @@ func (c *ConnMonitor) MarkDisconnected() {
 func (c *ConnMonitor) Result(now time.Time, simulated bool) *Result {
 	if c.Observed(now) < 3*time.Second || !c.seen {
 		return nil
+	}
+	if !c.Info.EventDriven && (len(c.window) == 0 || c.window[len(c.window)-1].rx == 0) {
+		return &Result{Category: CatConnection, Status: Inconclusive, Simulated: simulated, At: now, Summary: i18n.T("No input reports were observed; connection continuity and sampling frequency are unavailable."), Limitations: []string{i18n.T("A connected device entry alone does not verify an input stream. Keep the device connected and repeat the test.")}}
 	}
 	res := &Result{Category: CatConnection, Simulated: simulated, At: now}
 	res.Measurements = []Measurement{

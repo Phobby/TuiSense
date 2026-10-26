@@ -15,7 +15,7 @@ func TestLanguageSwitchFromSettingsPersists(t *testing.T) {
 	a.State.SetMode(state.ModeEZ)
 	page := uitest.Run(t, 120, 40, a.Draw)
 
-	page.Press("7") // EZ: 1 Home … 7 Settings
+	page.Press("5") // Stable application settings shortcut.
 	if a.State.ActivePanel != state.PanelSettings {
 		t.Fatalf("expected settings panel, got %s", a.State.ActivePanel)
 	}
@@ -47,6 +47,6 @@ func TestAdvancedSettingsAlsoOfferLanguage(t *testing.T) {
 	page := uitest.Run(t, 120, 40, a.Draw)
 	a.State.ActivePanel = state.PanelSettings
 	page.GetByID("settings_lang_tr").Click()
-	page.Expect(page.GetByRole("tab", "Ayarlar")).ToBeVisible()
-	page.Expect(page.GetByRole("tab", "Tanılama")).ToBeVisible()
+	page.Expect(page.GetByRole("tab", "5 Cihaz / Ayarlar")).ToBeVisible()
+	page.Expect(page.GetByRole("tab", "2 Tanılama")).ToBeVisible()
 }

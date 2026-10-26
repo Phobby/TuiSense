@@ -94,13 +94,17 @@ func (t *HapticTest) Tick(now time.Time) {
 	if t.Running == nil || t.act == nil {
 		return
 	}
-	level := HapticIntensities[t.Intensity].Level
+	level := HapticIntensities[min(max(t.Intensity, 0), len(HapticIntensities)-1)].Level
 	elapsed := now.Sub(t.started)
+	if elapsed >= t.Running.Total {
+		t.Stop()
+		return
+	}
 	for t.next < len(t.Running.steps) && t.Running.steps[t.next].at <= elapsed {
 		s := t.Running.steps[t.next]
 		switch {
 		case s.restore:
-			t.act.Dispatch(device.Command{Type: device.CmdSetHaptics, Config: t.act.CurrentConfig()})
+			t.stopMotors()
 		case s.triggers:
 			cfg := t.act.CurrentConfig()
 			cfg.Haptics.LeftTriggerMotor, cfg.Haptics.RightTriggerMotor = s.left*level, s.right*level
@@ -123,7 +127,7 @@ func (t *HapticTest) Stop() {
 	}
 	t.Running = nil
 	if t.act != nil {
-		t.act.Dispatch(device.Command{Type: device.CmdSetHaptics, Config: t.act.CurrentConfig()})
+		t.stopMotors()
 	}
 }
 
@@ -158,4 +162,14 @@ func (t *HapticTest) Result(now time.Time, simulated bool) *Result {
 		i18n.T("Test pulses are bounded to ≤ 0.35 s at ≤ 90% strength."),
 	}
 	return res
+}
+
+func (t *HapticTest) stopMotors() {
+	if t.act == nil {
+		return
+	}
+	cfg := t.act.CurrentConfig()
+	cfg.Haptics.LeftMotor, cfg.Haptics.RightMotor = 0, 0
+	cfg.Haptics.LeftTriggerMotor, cfg.Haptics.RightTriggerMotor = 0, 0
+	t.act.Dispatch(device.Command{Type: device.CmdSetHaptics, Config: cfg})
 }

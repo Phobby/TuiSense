@@ -372,6 +372,14 @@ func (b *Backend) ExecuteCommand(_ context.Context, cmd device.Command) error {
 	switch cmd.Type {
 	case device.CmdPulseHaptics:
 		return b.pulseLocked(cmd)
+	case device.CmdSetHaptics:
+		// A diagnostic cancellation must stop an in-flight kernel effect now.
+		if b.effectID >= 0 && b.dev != nil {
+			if err := b.dev.PlayEffect(b.effectID, false); err != nil {
+				return fmt.Errorf("stop rumble effect: %w", err)
+			}
+			b.stopAt = time.Time{}
+		}
 	case device.CmdApplyFullConfig:
 		b.cfg = cmd.Config
 	}

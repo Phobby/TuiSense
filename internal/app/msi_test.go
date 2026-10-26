@@ -103,10 +103,13 @@ func TestMSIControllerUIIsCapabilityDriven(t *testing.T) {
 	page.Expect(page.GetByRole("tab", "2 Diagnostics")).ToBeVisible()
 	for _, p := range a.State.VisiblePanels() {
 		switch p.Spec.ID {
-		case state.PanelOverview, state.PanelDiagnostics, state.PanelDevice, state.PanelLogs, state.PanelSettings:
+		case state.PanelOverview, state.PanelDiagnostics, state.PanelDevice, state.PanelLogs, state.PanelSettings, state.PanelFirmware:
 		default:
 			t.Fatalf("panel %s has no real functionality on the GC20 V2", p.Spec.ID)
 		}
+	}
+	if a.State.Firmware.Supported {
+		t.Fatal("the GC20 V2 must not offer a firmware update check")
 	}
 	page.GetByRole("tab", "2 Diagnostics").Click()
 	d := a.State.Diag

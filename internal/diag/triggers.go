@@ -44,6 +44,7 @@ const (
 
 // TriggerLive is the real-time view of one trigger.
 type TriggerLive struct {
+	Valid     bool
 	Raw, Norm float64 // Norm: 0 = released, 1 = fully pressed
 	Min, Max  float64 // raw extremes since the view opened
 	History   *Ring   // normalized travel for graphs
@@ -71,36 +72,47 @@ type Check struct {
 
 // TriggerAnalysis is the interpreted result for one trigger.
 type TriggerAnalysis struct {
-	Verdict     Verdict
-	Headline    string
-	Checks      []Check
-	Explanation []string
-	Advice      []string
-	Kind        device.TriggerKind
+	IncompleteTest             bool
+	RestSamples, ReturnSamples int
+	RestRaw, MinRaw, MaxRaw    float64
+	Verdict                    Verdict
+	Headline                   string
+	Checks                     []Check
+	Explanation                []string
+	Advice                     []string
+	Kind                       device.TriggerKind
 
 	RestPct, RestNoisePct, ReturnPct float64
 	MaxPct, CoveragePct, MaxJumpPct  float64
+	SampleCount                      int
+	EffectiveRangePct                float64
 	SampleRateHz                     float64
 	Detected, FullRange, Returned    bool
 }
 
 // Status returns the health status of the analysis.
-func (a TriggerAnalysis) Status() Status { return a.Verdict.Status() }
+func (a TriggerAnalysis) Status() Status {
+	if a.IncompleteTest {
+		return Incomplete
+	}
+	return a.Verdict.Status()
+}
 
 type triggerTrack struct {
-	restA, restB AxisStats
-	rate         rateCounter
-	max          float64
-	reachedAt    time.Time
-	pressed      bool // digital: a press was seen in the press step
-	released     bool // digital: released again after the press
-	bins         [triggerBins]bool
-	slowPeak     bool
-	slowDone     bool
-	maxJump      float64
-	prev         float64
-	havePrev     bool
-	moved        bool
+	restA, restB         AxisStats
+	rawRest, rawObserved AxisStats
+	rate                 rateCounter
+	max                  float64
+	reachedAt            time.Time
+	pressed              bool // digital: a press was seen in the press step
+	released             bool // digital: released again after the press
+	bins                 [triggerBins]bool
+	slowPeak             bool
+	slowDone             bool
+	maxJump              float64
+	prev                 float64
+	havePrev             bool
+	moved                bool
 }
 
 // Actuator lets diagnostics drive hardware through the app's dispatcher. Tests
@@ -234,18 +246,24 @@ func (t *TriggerTest) feedSample(s device.RawSample) {
 	for i := 0; i < 2; i++ {
 		l := &t.Live[i]
 		l.Raw, l.Norm = raw[i], v[i]
+		l.Valid = true
 		l.Min, l.Max = math.Min(l.Min, raw[i]), math.Max(l.Max, raw[i])
 		tr := &t.track[i]
 		own := (i == 0 && (t.Step == TriggerPressL || t.Step == TriggerSlowL)) || (i == 1 && (t.Step == TriggerPressR || t.Step == TriggerSlowR))
+		if t.Running() {
+			tr.rate.add(s)
+		}
 		switch t.Step {
 		case TriggerRest:
 			if settled {
 				tr.restA.Add(v[i])
-				tr.rate.add(s)
+				tr.rawRest.Add(raw[i])
+				tr.rawObserved.Add(raw[i])
 			}
 		case TriggerReturn:
 			if settled {
 				tr.restB.Add(v[i])
+				tr.rawObserved.Add(raw[i])
 			}
 		case TriggerPressL, TriggerPressR, TriggerSlowL, TriggerSlowR:
 			if v[i] > triggerMoved {
@@ -255,7 +273,7 @@ func (t *TriggerTest) feedSample(s device.RawSample) {
 				break
 			}
 			tr.max = math.Max(tr.max, v[i])
-			tr.rate.add(s)
+			tr.rawObserved.Add(raw[i])
 			full := triggerFull
 			if t.Kind == device.TriggerSharedAxis {
 				full = triggerSharedFull
@@ -414,10 +432,14 @@ func (t *TriggerTest) kindLabel() string {
 func (t *TriggerTest) analyze(i int) TriggerAnalysis {
 	tr := t.track[i]
 	name := t.Layout.TriggerLabels[i]
-	a := TriggerAnalysis{Kind: t.Kind, SampleRateHz: tr.rate.Hz()}
+	a := TriggerAnalysis{Kind: t.Kind, SampleRateHz: tr.rate.Hz(), RestSamples: tr.restA.N, ReturnSamples: tr.restB.N}
 	a.RestPct, a.RestNoisePct = 100*tr.restA.Mean(), 100*tr.restA.Std()
 	a.ReturnPct = 100 * tr.restB.Mean()
+	a.RestRaw = tr.rawRest.Mean()
+	a.MinRaw, a.MaxRaw = tr.rawObserved.Min, tr.rawObserved.Max
 	a.MaxPct = 100 * tr.max
+	a.SampleCount = tr.rate.n
+	a.EffectiveRangePct = math.Max(0, a.MaxPct-a.RestPct)
 	covered := 0
 	for _, b := range tr.bins {
 		if b {
@@ -472,18 +494,26 @@ func (t *TriggerTest) analyze(i int) TriggerAnalysis {
 		a.Explanation = append(a.Explanation, i18n.T("Expected: close to 0% when released. Possible causes are debris, a weak return spring or calibration — or a finger resting on the trigger."))
 		a.Advice = append(a.Advice, i18n.T("Make sure nothing touches the triggers and repeat the test."))
 	case !a.Detected:
+		a.IncompleteTest = a.SampleCount > 0
 		a.Verdict = VerdictInconclusive
 		a.Headline = i18n.Tf("Test incomplete: no movement was detected from %s.", name)
 		a.Explanation = append(a.Explanation, i18n.T("This does not necessarily indicate a hardware problem. If the trigger never responds, the controller may be in an input mode that reports it differently."))
 		a.Advice = append(a.Advice, repeat)
 	case t.Kind == device.TriggerDigital && !tr.released:
+		a.IncompleteTest = a.SampleCount > 0
 		a.Verdict = VerdictInconclusive
 		a.Headline = i18n.Tf("Test incomplete: a full press and release of %s was not observed.", name)
 		a.Advice = append(a.Advice, repeat)
 	case t.Kind != device.TriggerDigital && !a.FullRange:
+		a.IncompleteTest = a.SampleCount > 0
 		a.Verdict = VerdictInconclusive
 		a.Headline = i18n.Tf("Test incomplete: %s reached %.0f%% of its expected range during this test.", name, a.MaxPct)
 		a.Explanation = append(a.Explanation, i18n.T("This does not necessarily indicate a hardware problem. Try pressing the trigger fully and running the test again."))
+		a.Advice = append(a.Advice, repeat)
+	case t.Kind == device.TriggerAnalog && !tr.slowDone && !restElevated && !returnElevated:
+		a.IncompleteTest = true
+		a.Verdict = VerdictInconclusive
+		a.Headline = i18n.Tf("Test incomplete: slow press and release of %s was not observed.", name)
 		a.Advice = append(a.Advice, repeat)
 	case restElevated || returnElevated || a.RestNoisePct > 100*triggerNoiseLimit || (tr.restB.N > 0 && !a.Returned):
 		a.Verdict = VerdictFurtherTesting
@@ -558,12 +588,21 @@ func (t *TriggerTest) Result(now time.Time, simulated bool) *Result {
 			res.Details = append(res.Details, a.Headline)
 			res.Details = append(res.Details, a.Explanation...)
 			res.Details = append(res.Details, a.Advice...)
+			if a.RestSamples == 0 || a.ReturnSamples == 0 {
+				st = append(st, Inconclusive)
+				res.Measurements = append(res.Measurements, Measurement{lbl + " samples", float64(a.SampleCount), ""})
+				res.Details = append(res.Details, lbl+": baseline unavailable; resting or return samples did not arrive.")
+				continue
+			}
 			res.Measurements = append(res.Measurements,
+				Measurement{i18n.Tf("%s samples", lbl), float64(a.SampleCount), ""},
 				Measurement{i18n.Tf("%s resting value", lbl), a.RestPct, "%"},
 				Measurement{i18n.Tf("%s resting noise σ", lbl), a.RestNoisePct, "%"},
 				Measurement{i18n.Tf("%s value after release", lbl), a.ReturnPct, "%"},
 			)
 			if t.Kind != device.TriggerDigital {
+				res.Measurements = append(res.Measurements, Measurement{i18n.Tf("%s effective range", lbl), a.EffectiveRangePct, "%"})
+				res.Measurements = append(res.Measurements, Measurement{lbl + " resting raw", a.RestRaw, "counts"}, Measurement{lbl + " minimum raw", a.MinRaw, "counts"}, Measurement{lbl + " maximum raw", a.MaxRaw, "counts"})
 				res.Measurements = append(res.Measurements, Measurement{i18n.Tf("%s max travel", lbl), a.MaxPct, "%"})
 			}
 			if t.Kind == device.TriggerAnalog {
@@ -596,7 +635,7 @@ func (t *TriggerTest) Result(now time.Time, simulated bool) *Result {
 	switch {
 	case len(issues) > 0:
 		res.Summary = i18n.Tf("Possible trigger issue: %s — see details.", strings.Join(issues, ", "))
-	case res.Status == Inconclusive:
+	case res.Status == Inconclusive || res.Status == Incomplete:
 		res.Summary = i18n.T("Test incomplete — press each trigger fully when asked and repeat.")
 	case len(retest) > 0:
 		res.Summary = i18n.Tf("Further testing recommended: %s.", strings.Join(retest, ", "))
@@ -611,7 +650,14 @@ func (t *TriggerTest) Result(now time.Time, simulated bool) *Result {
 	}
 	res.Limitations = []string{
 		i18n.T("\"Test incomplete\" means the expected input was not observed — not that the trigger is broken."),
-		i18n.T("Thresholds (95% for a full press, 5% for rest) are interpretation heuristics, not manufacturer specifications."),
+	}
+	switch t.Kind {
+	case device.TriggerDigital:
+		res.Limitations = append(res.Limitations, i18n.T("Digital triggers are tested as buttons; analog range and smoothness are not measured."))
+	case device.TriggerSharedAxis:
+		res.Limitations = append(res.Limitations, i18n.T("Shared-axis completion uses 90% of one half-range, an execution heuristic rather than a manufacturer limit."))
+	default:
+		res.Limitations = append(res.Limitations, i18n.T("Thresholds (95% for a full press, 5% for rest) are interpretation heuristics, not manufacturer specifications."))
 	}
 	if t.ResistanceSupported {
 		res.Limitations = append(res.Limitations, i18n.T("Adaptive resistance can only be confirmed by feel; the controller reports no force data."))

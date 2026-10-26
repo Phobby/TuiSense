@@ -1,7 +1,10 @@
 package views
 
 import (
+	"fmt"
 	"github.com/Phobby/TuiSense/internal/i18n"
+	"github.com/Phobby/TuiSense/internal/ui/copytext"
+	"github.com/thebanri/limoni/core/driver"
 
 	"github.com/Phobby/TuiSense/internal/state"
 	"github.com/thebanri/limoni/core/cell"
@@ -27,12 +30,12 @@ func RenderLogsPanel(f *terminal.Frame, area cell.Rect, s *state.AppState) {
 
 	if y < inner.Y+inner.Height {
 		inLine := i18n.Tf("IN  [%s]: %s", s.DeviceInfo.InputMode, nonEmptyStr(tel.LastInputHex, "--"))
-		f.Buffer.SetStringWithin(inner.X, y, inLine, cell.Style{Fg: p.AccentCyan, Bg: p.BgElevated}, inner.Width)
+		copyValue(f, cell.NewRect(inner.X, y, inner.Width, 1), s, inLine, inLine, cell.Style{Fg: p.AccentCyan, Bg: p.BgElevated})
 		y++
 	}
 	if y < inner.Y+inner.Height {
 		outLine := i18n.Tf("OUT [%s]: %s", s.DeviceInfo.OutputMode, nonEmptyStr(tel.LastOutputHex, "--"))
-		f.Buffer.SetStringWithin(inner.X, y, outLine, cell.Style{Fg: p.AccentPurple, Bg: p.BgElevated}, inner.Width)
+		copyValue(f, cell.NewRect(inner.X, y, inner.Width, 1), s, outLine, outLine, cell.Style{Fg: p.AccentPurple, Bg: p.BgElevated})
 		y += 2
 	}
 
@@ -47,5 +50,37 @@ func RenderLogsPanel(f *terminal.Frame, area cell.Rect, s *state.AppState) {
 			Style:       p.PanelStyle(),
 		}
 		f.RenderWidget(lv, cell.NewRect(inner.X, y, inner.Width, uint16(remainH)))
+		widest := s.Logger.Len()
+		if widest > 0 {
+			widest = s.Logger.LineNumber(widest - 1)
+		}
+		gutter := uint16(len(fmt.Sprint(widest)) + 1)
+		if gutter >= inner.Width {
+			gutter = 0
+		}
+		if inner.Width > gutter {
+			for row := 0; row < remainH; row++ {
+				index := s.LogViewState.Offset + row
+				if index >= s.Logger.Len() {
+					break
+				}
+				full := s.Logger.Line(index)
+				display := full
+				offset := s.LogViewState.HOffset
+				for len(display) > 0 && offset > 0 {
+					r := []rune(display)
+					display = string(r[1:])
+					offset -= cell.StringWidth(string(r[0]))
+				}
+				copytext.CopyableText{Text: display, Value: full, Style: p.LabelStyle(), Overlay: true, OnScroll: func(ev driver.MouseEvent) {
+					if ev.Button == driver.MouseScrollUp {
+						s.LogViewState.Offset = max(0, s.LogViewState.Offset-1)
+					} else {
+						s.LogViewState.Offset = min(max(0, s.Logger.Len()-remainH), s.LogViewState.Offset+1)
+					}
+					s.LogViewState.Follow = false
+				}}.Render(f, cell.NewRect(inner.X+gutter, y+uint16(row), inner.Width-gutter, 1), &s.Copy)
+			}
+		}
 	}
 }

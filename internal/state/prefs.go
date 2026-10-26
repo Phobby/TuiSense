@@ -15,6 +15,8 @@ type Preferences struct {
 	ActiveProfiles map[string]string `json:"active_profiles,omitempty"` // device family -> profile name
 	HighContrast   bool              `json:"high_contrast,omitempty"`
 	AutoRotate     *bool             `json:"auto_rotate,omitempty"`
+	// FirmwareAutoCheck enables the daily read-only firmware check (default on).
+	FirmwareAutoCheck *bool `json:"firmware_auto_check,omitempty"`
 	// ConfirmedModels remembers the user's controller identifications:
 	// non-unique hardware key "vid:pid:version" → model ID.
 	ConfirmedModels map[string]string `json:"confirmed_models,omitempty"`

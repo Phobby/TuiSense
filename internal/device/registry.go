@@ -11,9 +11,10 @@ import (
 // Candidate is a physical device found by a driver's discovery scan.
 // Key must be stable for as long as the device stays attached (e.g. a hidraw path).
 type Candidate struct {
-	Key     string
-	Label   string
-	Payload any // driver-private discovery data handed back to Open
+	Key      string
+	Endpoint string // changes when a stable physical identity moves to another node
+	Label    string
+	Payload  any // driver-private discovery data handed back to Open
 }
 
 // Driver discovers and opens real hardware for one controller family.

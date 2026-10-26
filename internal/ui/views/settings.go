@@ -107,7 +107,10 @@ func RenderSettingsPanel(f *terminal.Frame, area cell.Rect, s *state.AppState, s
 		y += 2
 	}
 
-	// 2. Interactive Hardware Simulator (for testing hot-plug, transport, and udev permissions)
+	// Simulation controls only belong to an explicitly selected virtual device.
+	if !s.IsSimulatedDevice() {
+		return
+	}
 	if y < inner.Y+inner.Height {
 		f.Buffer.SetStringWithin(inner.X, y, i18n.T("Simulator (mock & test devices)"), p.SectionHeaderStyle(), inner.Width)
 		y++

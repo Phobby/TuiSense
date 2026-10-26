@@ -57,6 +57,7 @@ func (mm ModeMask) Includes(m UXMode) bool {
 type PanelID string
 
 const (
+	PanelCustomize   PanelID = "customize"
 	PanelOverview    PanelID = "overview"
 	PanelDiagnostics PanelID = "diagnostics"
 	PanelTriggers    PanelID = "triggers"
@@ -82,6 +83,9 @@ type PanelSpec struct {
 	// Feature, when set, is additionally required (e.g. configurable motors).
 	Feature device.Feature
 	Modes   ModeMask
+	// NeedsDevice hides an otherwise ungated panel when no controller is
+	// attached (an empty capability set).
+	NeedsDevice bool
 }
 
 // PanelCatalog is the single source of truth for panel availability. The UI
@@ -89,6 +93,7 @@ type PanelSpec struct {
 // active device's capabilities and the UX mode.
 var PanelCatalog = []PanelSpec{
 	{ID: PanelOverview, Title: "Overview", EZTitle: "Home", Modes: InBoth},
+	{ID: PanelCustomize, Title: "Customize", Modes: InBoth, NeedsDevice: true},
 	{ID: PanelDiagnostics, Title: "Diagnostics", EZTitle: "Diagnostics", Capability: device.CapDiagnostics, Modes: InBoth},
 	{ID: PanelLighting, Title: "Lighting", EZTitle: "Lights", Capability: device.CapLighting, Modes: InBoth},
 	{ID: PanelHaptics, Title: "Haptics", EZTitle: "Vibration", Capability: device.CapHaptics, Feature: device.FeatMotorConfig, Modes: InBoth},
@@ -98,9 +103,12 @@ var PanelCatalog = []PanelSpec{
 	{ID: PanelAudio, Title: "Audio", Capability: device.CapAudio, Modes: InAdvanced},
 	{ID: PanelProfiles, Title: "Profiles", EZTitle: "Profiles", Capability: device.CapProfiles, Modes: InBoth},
 	{ID: PanelDevice, Title: "Device", Capability: device.CapConnection, Modes: InAdvanced},
-	{ID: PanelFirmware, Title: "Firmware", Capability: device.CapFirmwareUpdate, Modes: InAdvanced},
 	{ID: PanelLogs, Title: "Logs", Capability: device.CapDiagnostics, Modes: InAdvanced},
 	{ID: PanelSettings, Title: "Settings", EZTitle: "Settings", Modes: InBoth},
+	// Last, so adding it did not shift the existing number hotkeys.
+	// Device details and the read-only firmware check (the check itself is
+	// shown only where a provider supports it).
+	{ID: PanelFirmware, Title: "Device Details", EZTitle: "Device Details", Modes: InBoth, NeedsDevice: true},
 }
 
 // PanelEntry is a visible panel with its resolved support level and hotkey.
@@ -128,6 +136,9 @@ func VisiblePanels(caps device.CapabilitySet, mode UXMode) []PanelEntry {
 		if !spec.Modes.Includes(mode) {
 			continue
 		}
+		if spec.NeedsDevice && len(caps) == 0 {
+			continue
+		}
 		support := device.Full
 		if spec.Capability != "" {
 			support = caps.Level(spec.Capability)
@@ -144,6 +155,22 @@ func VisiblePanels(caps device.CapabilitySet, mode UXMode) []PanelEntry {
 		}
 		out = append(out, e)
 	}
+	hasCustomize := false
+	for _, e := range out {
+		if e.Spec.ID != PanelCustomize && PrimaryPanel(e.Spec.ID) == PanelCustomize {
+			hasCustomize = true
+		}
+	}
+	if !hasCustomize {
+		filtered := out[:0]
+		for _, e := range out {
+			if e.Spec.ID != PanelCustomize {
+				filtered = append(filtered, e)
+			}
+		}
+		out = filtered
+	}
+
 	return out
 }
 
@@ -165,4 +192,29 @@ func PanelVisible(panels []PanelEntry, id PanelID) bool {
 		}
 	}
 	return false
+}
+
+// PrimaryPanel groups capabilities without removing their individual views.
+func PrimaryPanel(id PanelID) PanelID {
+	switch id {
+	case PanelLighting, PanelHaptics, PanelTriggers, PanelSticks, PanelMotion, PanelAudio, PanelCustomize:
+		return PanelCustomize
+	case PanelDevice, PanelFirmware, PanelLogs, PanelSettings:
+		return PanelSettings
+	default:
+		return id
+	}
+}
+
+// PrimaryPanels provides stable shortcuts regardless of controller capabilities.
+func (s *AppState) PrimaryPanels() []PanelEntry {
+	ids := []PanelID{PanelOverview, PanelDiagnostics, PanelCustomize, PanelProfiles, PanelSettings}
+	titles := []string{"Home", "Diagnostics", "Customize", "Profiles", "Device / Settings"}
+	var out []PanelEntry
+	for i, id := range ids {
+		if PanelVisible(s.VisiblePanels(), id) {
+			out = append(out, PanelEntry{Spec: PanelSpec{ID: id, Title: titles[i]}, Hotkey: rune('1' + i)})
+		}
+	}
+	return out
 }

@@ -53,70 +53,20 @@ func ComputeLayout(total cell.Rect, tallInspector bool) DashboardLayout {
 		return DashboardLayout{Kind: LayoutCompact, InspectorArea: total, Compact: true}
 	}
 
-	footerH := uint16(2)
-	if total.Height < 30 {
-		footerH = 1
+	footer := cell.NewRect(total.X, total.Y+total.Height-1, total.Width, 1)
+	bodyY, bodyH := total.Y+3, total.Height-4
+	kind := LayoutStacked
+	if total.Width < 100 {
+		kind = LayoutCompact
 	}
-	header := cell.NewRect(total.X, total.Y, total.Width, 1)
-	tabs := cell.NewRect(total.X, total.Y+1, total.Width, 1)
-	footer := cell.NewRect(total.X, total.Y+total.Height-footerH, total.Width, footerH)
-
-	bodyY := total.Y + 3 // header + tabs + one spacer row
-	bodyH := total.Height - 3 - footerH
-	l := DashboardLayout{HeaderArea: header, TabsArea: tabs, FooterArea: footer}
-
-	switch {
-	case total.Width >= 150 && bodyH >= 22:
-		l.Kind = LayoutWide
-		side := clampU16(total.Width*30/100, 46, 64)
-		center := total.Width - 2*side
-		leftX := total.X
-		centerX := total.X + side
-		rightX := centerX + center
-
-		l.Stage3DArea = cell.NewRect(centerX, bodyY, center, bodyH)
-
-		statusH := uint16(5)
-		l.BatteryStatusArea = cell.NewRect(rightX, bodyY, side, statusH)
-		l.InspectorArea = cell.NewRect(rightX, bodyY+statusH, side, bodyH-statusH)
-
-		infoH := clampU16(bodyH/2, 9, 13)
-		l.DeviceSummaryArea = cell.NewRect(leftX, bodyY, side, infoH)
-		l.TelemetryArea = cell.NewRect(leftX, bodyY+infoH, side, bodyH-infoH)
-
-	case total.Width >= 96 && bodyH >= 30:
-		l.Kind = LayoutStacked
-		side := clampU16(total.Width*24/100, 28, 40)
-		center := total.Width - 2*side
-		topH := bodyH * 58 / 100
-		if tallInspector {
-			topH = bodyH * 42 / 100
-		}
-		if topH < 13 {
-			topH = 13
-		}
-		l.BatteryStatusArea = cell.NewRect(total.X, bodyY, side, 5)
-		l.TelemetryArea = cell.NewRect(total.X, bodyY+5, side, topH-5)
-		l.Stage3DArea = cell.NewRect(total.X+side, bodyY, center, topH)
-		l.DeviceSummaryArea = cell.NewRect(total.X+side+center, bodyY, side, topH)
-		l.InspectorArea = cell.NewRect(total.X, bodyY+topH, total.Width, bodyH-topH)
-
-	default:
-		l.Kind = LayoutCompact
-		l.Compact = true
-		leftW := total.Width * 46 / 100
-		if leftW < 34 && total.Width >= 72 {
-			leftW = 34
-		}
-		rightW := total.Width - leftW
-		rightX := total.X + leftW
-		l.Stage3DArea = cell.NewRect(total.X, bodyY, leftW, bodyH)
-		statusH := uint16(5)
-		if bodyH < 24 {
-			statusH = 4
-		}
-		l.BatteryStatusArea = cell.NewRect(rightX, bodyY, rightW, statusH)
-		l.InspectorArea = cell.NewRect(rightX, bodyY+statusH, rightW, bodyH-statusH)
+	inspectorH := uint16(6)
+	if tallInspector {
+		inspectorH = bodyH - min(uint16(8), bodyH/3)
 	}
-	return l
+	stageH := bodyH - inspectorH
+	return DashboardLayout{Kind: kind, Compact: kind == LayoutCompact,
+		HeaderArea:    cell.NewRect(total.X, total.Y, total.Width, 1),
+		TabsArea:      cell.NewRect(total.X, total.Y+1, total.Width, 1),
+		Stage3DArea:   cell.NewRect(total.X, bodyY, total.Width, stageH),
+		InspectorArea: cell.NewRect(total.X, bodyY+stageH, total.Width, inspectorH), FooterArea: footer}
 }

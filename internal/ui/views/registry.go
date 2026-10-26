@@ -24,8 +24,15 @@ type Callbacks struct {
 	// OnPrefsChanged persists preferences (e.g. after a profile is applied).
 	OnPrefsChanged func()
 
-	// OnExportReport writes a diagnostics report (JSON + text).
-	OnExportReport func()
+	// OnExportReport writes a diagnostics report (JSON + Markdown).
+	OnExportReport             func()
+	OnSaveDiagnosticHistory    func()
+	OnCompareDiagnosticHistory func()
+	OnClearDiagnosticHistory   func()
+	OnRetestMapping            func()
+	OnReviewDiagnosticHistory  func()
+	OnOlderDiagnosticHistory   func()
+	OnNewerDiagnosticHistory   func()
 
 	// OnSetLanguage switches and persists the UI language.
 	OnSetLanguage func(i18n.Lang)
@@ -33,6 +40,16 @@ type Callbacks struct {
 	// OnConfirmIdentity remembers the user's model choice for a hardware key
 	// (modelID "" forgets it) and re-opens the device with that model.
 	OnConfirmIdentity func(hwKey, modelID string)
+
+	// Read-only firmware update check. OnOpenLink only opens a web page;
+	// nothing in TuiSense installs firmware.
+	OnCheckFirmware        func()
+	OnSetFirmwareAutoCheck func(bool)
+	OnSetFirmwareSection   func(state.FirmwareSection)
+	OnSetDetailGroup       func(device.DetailGroup)
+	OnSelectDetail         func(key string)
+	OnOpenLink             func(url string)
+	OnCopyLink             func(url string)
 }
 
 // PanelContext is passed to every panel renderer.
@@ -68,7 +85,8 @@ type PanelView struct {
 // panelViews maps each state.PanelCatalog entry to its renderers. Which panels
 // are reachable is decided by the catalog (capabilities × mode), not here.
 var panelViews = map[state.PanelID]PanelView{
-	state.PanelOverview: {EZ: renderEZHome, Advanced: renderOverviewInspector},
+	state.PanelOverview:  {EZ: renderHome, Advanced: renderHome},
+	state.PanelCustomize: {EZ: renderCustomize, Advanced: renderCustomize},
 	// Diagnostics uses one renderer that adapts every section to the mode
 	// (guided + plain language in EZ; raw values, graphs, statistics in Advanced).
 	state.PanelDiagnostics: {EZ: renderDiagnosticsPanel, Advanced: renderDiagnosticsPanel},
@@ -90,7 +108,7 @@ var panelViews = map[state.PanelID]PanelView{
 	state.PanelAudio:    {Advanced: renderAudioPanel},
 	state.PanelProfiles: {EZ: renderEZProfiles, Advanced: renderProfilesPanel},
 	state.PanelDevice:   {Advanced: RenderDeviceInfoPanel},
-	state.PanelFirmware: {Advanced: renderFirmwarePanel},
+	state.PanelFirmware: {EZ: renderEZFirmware, Advanced: renderFirmwarePanel},
 	state.PanelSettings: {EZ: renderEZSettings, Advanced: func(f *terminal.Frame, a cell.Rect, pc PanelContext) {
 		RenderSettingsPanel(f, a, pc.S, pc.CB)
 	}},
@@ -125,5 +143,10 @@ func RenderPanel(f *terminal.Frame, area cell.Rect, pc PanelContext) {
 	if pc.S.Mode == state.ModeEZ && v.EZ != nil {
 		r = v.EZ
 	}
-	r(f, area, pc)
+	if area.Height < 32 && pc.S.ActivePanel != state.PanelDiagnostics && pc.S.ActivePanel != state.PanelOverview && pc.S.ActivePanel != state.PanelLogs {
+		renderPanelViewport(f, area, pc, r)
+	} else {
+		pc.S.PanelScrollMax = 0
+		r(f, area, pc)
+	}
 }

@@ -5,7 +5,7 @@ import "math"
 // DeadzonePresets are the preview sizes offered in the UI (percent of stick
 // travel). They are illustrations, not hardware standards: every game picks
 // its own deadzone.
-var DeadzonePresets = []float64{0, 3, 5, 8, 10, 15, 20}
+var DeadzonePresets = []float64{0, 3, 5, 8, 10, 15, 20, 25}
 
 // DefaultPreviewDeadzone is the preview deadzone selected initially.
 const DefaultPreviewDeadzone = 8.0
@@ -44,3 +44,17 @@ func PreviewDeadzone(n [2]float64, sizePct float64) DeadzonePreview {
 // FilteredBy reports whether a constant offset of offsetPct would be hidden
 // by a deadzone of sizePct.
 func FilteredBy(offsetPct, sizePct float64) bool { return offsetPct <= sizePct }
+
+// PreviewAxialDeadzone filters and rescales each axis independently. This is
+// a software illustration and never changes controller or game configuration.
+func PreviewAxialDeadzone(n [2]float64, sizePct float64) DeadzonePreview {
+	p := DeadzonePreview{SizePct: sizePct, Raw: n, RawPct: 100 * math.Hypot(n[0], n[1])}
+	dz := math.Max(0, math.Min(sizePct/100, .99))
+	for i, v := range n {
+		if math.Abs(v) > dz {
+			p.Effective[i] = math.Copysign((math.Min(1, math.Abs(v))-dz)/(1-dz), v)
+		}
+	}
+	p.Ignored = p.RawPct > 0 && p.Effective == [2]float64{}
+	return p
+}

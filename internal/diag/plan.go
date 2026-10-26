@@ -40,6 +40,8 @@ func Plan(dc DeviceContext) map[Category]Availability {
 		}
 	}
 
+	need(CatDeadzone, in.HasSticks() && caps.Supports(device.CapSticks), "This controller exposes no stick input for a deadzone preview.")
+	need(CatFirmware, caps.Supports(device.CapFirmwareInfo), "Firmware information is not exposed by this controller.")
 	need(CatSticks, in.HasSticks() && caps.Supports(device.CapSticks), i18n.T("This controller has no analog sticks."))
 	need(CatButtons, len(in.Buttons) > 0, i18n.T("No buttons are declared for this controller."))
 	need(CatTriggers, in.HasTriggers(), i18n.T("This controller has no analog triggers."))
@@ -87,6 +89,20 @@ func Plan(dc DeviceContext) map[Category]Availability {
 		for c, a := range out {
 			if a.Status == NotTested && c != CatConnection {
 				set(c, Unavailable, i18n.T("Controller is disconnected."))
+			}
+		}
+	}
+	if out[CatSticks].Available() {
+		for i := 0; i < 4; i++ {
+			if !in.StickAxis(i).Valid() {
+				set(CatSticks, Unavailable, "Axis mapping unavailable: a declared stick range is invalid.")
+			}
+		}
+	}
+	if out[CatTriggers].Available() && in.TriggerKind != device.TriggerDigital {
+		for i := 0; i < 2; i++ {
+			if !in.TriggerAxis(i).Valid() {
+				set(CatTriggers, Unavailable, "Axis mapping unavailable: a declared trigger range is invalid.")
 			}
 		}
 	}

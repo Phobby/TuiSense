@@ -12,6 +12,7 @@ import (
 	"github.com/Phobby/TuiSense/internal/state"
 	uiwidgets "github.com/Phobby/TuiSense/internal/ui/widgets"
 	"github.com/thebanri/limoni/core/cell"
+	"github.com/thebanri/limoni/widgets"
 )
 
 // Analog diagnostics (sticks, deadzone preview, triggers). Measurements and
@@ -205,7 +206,10 @@ func renderStickScopes(c *cursor, st *diag.StickTest, adv bool) {
 	}
 	info := func(i int) []infoLine {
 		l := st.Live[i]
-		dz := diag.PreviewDeadzone(l.Norm, st.PreviewDeadzone)
+		dz := st.Preview(l.Norm)
+		if !l.Valid {
+			return []infoLine{{i18n.T("Unavailable"), p.MutedStyle()}}
+		}
 		if !adv {
 			state := i18n.T("● at rest")
 			if dz.RawPct > 10 {
@@ -251,7 +255,7 @@ func renderStickScopes(c *cursor, st *diag.StickTest, adv bool) {
 		}
 		n := min(len(lines), max(c.remaining()-int(scopeH)-1, 0))
 		for k := 0; k < n; k++ {
-			c.f.Buffer.SetStringWithin(x, top+1+scopeH+uint16(k), lines[k].text, lines[k].style, colW-1)
+			copyValue(c.f, cell.NewRect(x, top+1+scopeH+uint16(k), colW-1, 1), c.s, lines[k].text, cleanCopyText(lines[k].text), lines[k].style)
 		}
 		below = max(below, n)
 	}
@@ -278,7 +282,13 @@ func drawStickScope(c *cursor, area cell.Rect, st *diag.StickTest, i int, adv bo
 	for a := 0.0; a < 2*math.Pi; a += 0.05 {
 		plot(math.Cos(a), math.Sin(a), rim)
 		if r := st.PreviewDeadzone / 100; r > 0 {
-			plot(r*math.Cos(a), r*math.Sin(a), dzStyle)
+			if st.AxialPreview {
+				x, y := math.Cos(a), math.Sin(a)
+				scale := r / math.Max(math.Abs(x), math.Abs(y))
+				plot(scale*x, scale*y, dzStyle)
+			} else {
+				plot(r*math.Cos(a), r*math.Sin(a), dzStyle)
+			}
 		}
 		sec := int(a/(2*math.Pi)*16) % 16
 		if r := tr.Sector[sec]; r >= 0.3 {
@@ -294,9 +304,17 @@ func drawStickScope(c *cursor, area cell.Rect, st *diag.StickTest, i int, adv bo
 	for _, pt := range st.Live[i].Trail {
 		plot(pt[0], pt[1], trail)
 	}
+	if st.Analysis[i].RestA.N > 0 {
+		center := st.Analysis[i].RestA.Mean
+		plot(center[0], center[1], cell.Style{Fg: p.AccentPink, Bg: p.BgPanel})
+	}
 	n := st.Live[i].Norm
-	if adv {
-		eff := diag.PreviewDeadzone(n, st.PreviewDeadzone).Effective
+	if !st.Live[i].Valid {
+		c.f.RenderWidget(cv, area)
+		return
+	}
+	{
+		eff := st.Preview(n).Effective
 		plot(eff[0], eff[1], cell.Style{Fg: p.Success, Bg: p.BgPanel, Modifier: cell.ModifierBold})
 	}
 	dot := cell.Style{Fg: p.AccentCyan, Bg: p.BgPanel, Modifier: cell.ModifierBold}
@@ -323,13 +341,34 @@ func renderDeadzonePreview(c *cursor, st *diag.StickTest, adv bool) {
 		items = append(items, choice{ID: fmt.Sprintf("dz_preview_%.0f", v), Label: fmt.Sprintf("%.0f%%", v),
 			Selected: st.PreviewDeadzone == v, OnSelect: func() { st.PreviewDeadzone = v }})
 	}
+	if c.s.DiagnosticDeadzoneSlider == nil {
+		c.s.DiagnosticDeadzoneSlider = widgets.NewSliderState(int(st.PreviewDeadzone))
+	}
+	c.s.DiagnosticDeadzoneSlider.Value = int(st.PreviewDeadzone)
+	if c.ok() {
+		c.f.RenderWidget(widgets.Slider{ID: "diag_deadzone_slider", State: c.s.DiagnosticDeadzoneSlider, Min: 0, Max: 25,
+			TrackStyle: p.MutedStyle(), FilledStyle: cell.Style{Fg: p.Warning, Bg: p.BgPanel}, ThumbStyle: p.ValueStyle(),
+			OnChange: func(v int) { st.PreviewDeadzone = float64(v) }}, cell.NewRect(c.r.X, c.y, c.r.Width, 1))
+		c.y++
+	}
 	c.pills(i18n.T("Size:"), 6, items)
+	c.pills("", 0, []choice{
+		{ID: "dz_radial", Label: "Radial", Selected: !st.AxialPreview, OnSelect: func() { st.AxialPreview = false }},
+		{ID: "dz_axial", Label: "Axial", Selected: st.AxialPreview, OnSelect: func() { st.AxialPreview = true }},
+		{ID: "dz_less", Label: "−1%", OnSelect: func() { st.PreviewDeadzone = math.Max(0, st.PreviewDeadzone-1) }},
+		{ID: "dz_more", Label: "+1%", OnSelect: func() { st.PreviewDeadzone = math.Min(25, st.PreviewDeadzone+1) }},
+	})
+	c.line(fmt.Sprintf("%.0f%% · RAW cyan · FILTERED green · resting center pink", st.PreviewDeadzone), p.MutedStyle())
 	c.wrap(i18n.T("Preview only — does not change game input."), cell.Style{Fg: p.Warning, Bg: p.BgPanel}, 2)
 	if !adv {
 		c.wrap(i18n.T("A deadzone ignores small movements near the center of an analog stick. Increasing it can hide unwanted movement, but also reduces precision."), p.MutedStyle(), 5)
 	}
 	for i := 0; i < 2 && c.ok(); i++ {
-		dz := diag.PreviewDeadzone(st.Live[i].Norm, st.PreviewDeadzone)
+		if !st.Live[i].Valid {
+			c.line(i18n.T("Unavailable"), p.MutedStyle())
+			continue
+		}
+		dz := st.Preview(st.Live[i].Norm)
 		eff := 100 * math.Hypot(dz.Effective[0], dz.Effective[1])
 		lbl := i18n.T(st.Layout.StickLabels[i])
 		var text string
@@ -487,7 +526,10 @@ func renderTriggerDiag(c *cursor, d *diag.Session, now time.Time) {
 	for i := 0; i < 2 && c.ok(); i++ {
 		l := tt.Live[i]
 		val := fmt.Sprintf("%3.0f%%", 100*l.Norm)
-		if adv {
+		if !l.Valid {
+			val = i18n.T("Unavailable")
+		}
+		if adv && l.Valid {
 			val += i18n.Tf(" raw %.0f", l.Raw)
 		}
 		col := accent
@@ -580,12 +622,21 @@ func renderResistance(c *cursor, tt *diag.TriggerTest, now time.Time) {
 // renderStickCategory shows the two stick sub-tests behind a selector. While
 // one of them is measuring, the other cannot be opened.
 func renderStickCategory(c *cursor, d *diag.Session, now time.Time) {
+	if d.StickSubTest == diag.StickSubCircularity {
+		renderCircularity(c, d, now)
+		return
+	}
 	snap := d.StickSubTest == diag.StickSubSnapback && d.Snapback != nil
 	busy := d.Sticks.Running() || (d.Snapback != nil && d.Snapback.Running())
 	items := []choice{{ID: "stick_sub_deadzone", Label: i18n.T("Deadzone test"), Selected: !snap}}
 	if d.Snapback != nil {
 		items = append(items, choice{ID: "stick_sub_snapback", Label: i18n.T("Snapback test"), Selected: snap})
 	}
+	items = append(items, choice{ID: "stick_sub_circularity", Label: "Circularity", OnSelect: func() {
+		if !busy {
+			d.StickSubTest = diag.StickSubCircularity
+		}
+	}})
 	if !busy {
 		items[0].OnSelect = func() { d.StickSubTest = diag.StickSubDeadzone }
 		if len(items) > 1 {
@@ -617,6 +668,7 @@ func renderSnapbackDiag(c *cursor, d *diag.Session) {
 		c.line(strings.Join(parts, "   "), p.LabelStyle())
 		c.pills("", 0, []choice{{ID: "snap_finish", Label: i18n.T("■ Finish and show the result"), OnSelect: sb.Finish}})
 	case sb.Done():
+		c.pills("", 0, []choice{{ID: "snap_again", Label: i18n.T("↻ Run the test again"), OnSelect: func() { sb.Start(time.Now()) }}})
 		for i := 0; i < 2 && c.ok(); i++ {
 			a := sb.Analyze(i)
 			col := p.FgMuted
@@ -643,7 +695,7 @@ func renderSnapbackDiag(c *cursor, d *diag.Session) {
 				c.wrap("→ "+e, p.MutedStyle(), 3)
 			}
 		}
-		c.pills("", 0, []choice{{ID: "snap_again", Label: i18n.T("↻ Run the test again"), OnSelect: func() { sb.Start(time.Now()) }}})
+
 	default:
 		c.wrap(i18n.T("Snapback: when a stick is released suddenly from the edge, its spring can throw it past the center for a moment, so a game briefly sees the opposite direction."), p.LabelStyle(), 6)
 		c.wrap(i18n.Tf("This test measures how far each stick swings past its resting point and how fast it settles. You will release each stick %d times.", diag.SnapbackTarget), p.MutedStyle(), 5)
@@ -682,7 +734,7 @@ func renderSnapTraces(c *cursor, sb *diag.SnapbackTest) {
 		c.f.Buffer.SetStringWithin(x, top, i18n.T(sb.Layout.StickLabels[i]), p.MutedStyle(), colW)
 		evs := sb.Events[i]
 		if len(evs) == 0 {
-			c.f.Buffer.SetStringWithin(x, top+1, i18n.T("no release yet"), p.MutedStyle(), colW)
+			copyValue(c.f, cell.NewRect(x, top+1, colW, 1), c.s, i18n.T("no release yet"), i18n.T("no release yet"), p.MutedStyle())
 			continue
 		}
 		e := evs[len(evs)-1]
@@ -695,4 +747,21 @@ func renderSnapTraces(c *cursor, sb *diag.SnapbackTest) {
 			[][]float64{dz, proj}, []cell.Color{p.Warning, p.AccentCyan}, true)
 	}
 	c.y = top + 1 + h
+}
+
+func renderCircularity(c *cursor, d *diag.Session, now time.Time) {
+	st := d.Sticks
+	c.pills("", 0, []choice{{ID: "circle_back", Label: "‹ Stick analyzer", OnSelect: func() { st.Cancel(); d.StickSubTest = diag.StickSubDeadzone }}})
+	instruction(c, "Rotate both sticks slowly around the full outer edge. Gate shapes differ between controllers.")
+	if st.Step == diag.StickRotate {
+		progressLine(c, "Coverage", st.Progress(now), st.Cancel)
+	} else {
+		c.pills("", 0, []choice{{ID: "circle_start", Label: "Start circularity test", OnSelect: func() { st.StartCircularity(time.Now()) }}})
+	}
+	renderStickScopes(c, st, c.s.Mode == state.ModeAdvanced)
+	for i, tr := range st.Travel {
+		v := tr.Circularity()
+		c.wrap(fmt.Sprintf("%s: coverage %d/16 · radius mean %.1f%% · spread %.1f%% · σ %.1f%% · directional asymmetry %.1f%%", st.Layout.StickLabels[i], v.Covered, v.MeanRadiusPct, v.RadiusSpreadPct, v.RadiusStdPct, v.AsymmetryPct), c.p().ValueStyle(), 3)
+	}
+	c.wrap("Observed envelope only. Low coverage means incomplete movement; a noncircular path does not prove a defect.", c.p().MutedStyle(), 3)
 }

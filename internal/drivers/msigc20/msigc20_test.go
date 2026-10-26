@@ -45,7 +45,7 @@ func TestDescriptorShowsOnlyRealHardware(t *testing.T) {
 	if d.ModelID != ModelID || d.Family == "xbox" || d.VisualID != "msi_gc20" || d.Brand != "MSI" {
 		t.Fatalf("unexpected MSI descriptor %+v", d)
 	}
-	for _, c := range []device.Capability{device.CapAdaptiveTriggers, device.CapLighting, device.CapMotion, device.CapAudio, device.CapBattery, device.CapProfiles, device.CapFirmwareInfo} {
+	for _, c := range []device.Capability{device.CapAdaptiveTriggers, device.CapLighting, device.CapMotion, device.CapAudio, device.CapBattery, device.CapProfiles, device.CapFirmwareInfo, device.CapFirmwareCheck, device.CapFirmwareUpdate} {
 		if d.Capabilities.Supports(c) {
 			t.Fatalf("GC20 V2 must not claim %s", c)
 		}

@@ -23,11 +23,13 @@ const (
 	Unsupported
 	Unavailable
 	Inconclusive
+	Incomplete
+	PossibleIssue
 )
 
 // String returns the stable English status code (used in JSON reports).
 func (s Status) String() string {
-	return [...]string{"Not tested", "Testing", "Passed", "Warning", "Failed", "Unsupported", "Unavailable", "Inconclusive"}[s]
+	return [...]string{"Not tested", "Testing", "Passed", "Warning", "Failed", "Unsupported", "Unavailable", "Inconclusive", "Incomplete", "Possible Issue"}[s]
 }
 
 // Label returns the status in the active UI language.
@@ -35,7 +37,7 @@ func (s Status) Label() string { return i18n.T(s.String()) }
 
 // Icon returns a compact glyph for the status.
 func (s Status) Icon() string {
-	return [...]string{"○", "◌", "✓", "!", "✕", "–", "⊘", "?"}[s]
+	return [...]string{"○", "◌", "✓", "!", "✕", "–", "⊘", "?", "…", "!"}[s]
 }
 
 // MarshalText makes statuses readable in JSON reports.
@@ -45,27 +47,36 @@ func (s Status) MarshalText() ([]byte, error) { return []byte(s.String()), nil }
 type Category string
 
 const (
-	CatSticks     Category = "sticks"
-	CatButtons    Category = "buttons"
-	CatTriggers   Category = "triggers"
-	CatAudioIn    Category = "audio_input"
-	CatAudioOut   Category = "audio_output"
-	CatMotion     Category = "motion"
-	CatTouchpad   Category = "touchpad"
-	CatHaptics    Category = "haptics"
-	CatBattery    Category = "battery"
-	CatConnection Category = "connection"
+	CatHealthReport Category = "health_report"
+	CatDeadzone     Category = "deadzone"
+	CatFirmware     Category = "firmware"
+	CatSticks       Category = "sticks"
+	CatButtons      Category = "buttons"
+	CatTriggers     Category = "triggers"
+	CatAudioIn      Category = "audio_input"
+	CatAudioOut     Category = "audio_output"
+	CatMotion       Category = "motion"
+	CatTouchpad     Category = "touchpad"
+	CatHaptics      Category = "haptics"
+	CatBattery      Category = "battery"
+	CatConnection   Category = "connection"
 )
 
 // AllCategories is the canonical display order.
 var AllCategories = []Category{
 	CatSticks, CatButtons, CatTriggers, CatAudioIn, CatAudioOut,
-	CatMotion, CatTouchpad, CatHaptics, CatBattery, CatConnection,
+	CatMotion, CatTouchpad, CatHaptics, CatBattery, CatConnection, CatDeadzone, CatFirmware,
 }
 
 // Label returns the display name.
 func (c Category) Label() string {
 	switch c {
+	case CatHealthReport:
+		return "Health Report"
+	case CatDeadzone:
+		return "Deadzone"
+	case CatFirmware:
+		return "Firmware Information"
 	case CatSticks:
 		return i18n.T("Analog sticks")
 	case CatButtons:
@@ -152,4 +163,36 @@ func CategoryForRegion(region string, avail map[Category]Availability) (Category
 		return pick(CatMotion)
 	}
 	return "", false
+}
+
+// CopyText includes the whole result, including reliability limitations.
+func (r Result) CopyText() string {
+	text := r.Status.String() + " — " + r.Summary + "\n" + r.At.Format(time.RFC3339)
+	if r.UserConfirmed {
+		text += "\nUser confirmed; not an instrument measurement."
+	}
+	if r.Simulated {
+		text += "\nSIMULATED: not a hardware observation."
+	}
+	for _, d := range r.Details {
+		text += "\n" + d
+	}
+	for _, m := range r.Measurements {
+		text += "\n" + m.String()
+	}
+	for _, l := range r.Limitations {
+		text += "\nLimitation: " + l
+	}
+	return text
+}
+
+// UnmarshalText restores stable status codes in local snapshots and reports.
+func (s *Status) UnmarshalText(text []byte) error {
+	for candidate := NotTested; candidate <= PossibleIssue; candidate++ {
+		if candidate.String() == string(text) {
+			*s = candidate
+			return nil
+		}
+	}
+	return fmt.Errorf("unknown diagnostic status %q", text)
 }

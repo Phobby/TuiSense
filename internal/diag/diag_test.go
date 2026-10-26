@@ -51,7 +51,7 @@ func TestButtonGuidedAndLatchedPresses(t *testing.T) {
 		t.Fatalf("guided run should be complete")
 	}
 	res := bt.Result(now, true)
-	if res == nil || res.Status != Warning || !strings.Contains(strings.Join(res.Details, " "), "Y") {
+	if res == nil || res.Status != Incomplete || !strings.Contains(strings.Join(res.Details, " "), "Y") {
 		t.Fatalf("skipped button must be reported, got %+v", res)
 	}
 	if bt.Counts[device.ButtonSouth] != 1 {
@@ -273,8 +273,8 @@ func TestSessionStatusesAndGuidedRun(t *testing.T) {
 	for s.Guided != nil {
 		s.NextGuided()
 	}
-	if s.Active != "" {
-		t.Fatalf("finished guided run should return to the summary")
+	if s.Active != CatHealthReport || s.FinalReport == nil {
+		t.Fatalf("finished guided run should display a health report")
 	}
 	// Nothing was measured: nothing may be marked passed.
 	for _, c := range AllCategories {
@@ -318,7 +318,7 @@ func TestReportContentAndPrivacy(t *testing.T) {
 		t.Fatal(err)
 	}
 	txt, _ := os.ReadFile(tp)
-	if _, err := os.Stat(jp); err != nil || !strings.Contains(string(txt), "Analog sticks") {
+	if _, err := os.Stat(jp); err != nil || !strings.Contains(string(txt), "Analog çubuklar") {
 		t.Fatalf("export should write JSON and text reports")
 	}
 }

@@ -2,6 +2,7 @@ package diag
 
 import (
 	"math"
+	"sort"
 	"strings"
 	"time"
 
@@ -99,6 +100,7 @@ var StickDurations = []time.Duration{2 * time.Second, 3 * time.Second, 5 * time.
 
 // StickLive is the real-time view of one stick.
 type StickLive struct {
+	Valid    bool
 	Raw      [2]float64 // raw counts (X, Y)
 	Norm     [2]float64 // normalized [-1, 1] with the device's own range; no deadzone
 	Min, Max [2]float64 // raw extremes since reset
@@ -121,6 +123,8 @@ type restStats struct {
 	Half       [2][2]AxisStats // [half][axis] normalized, for stability
 	mid        time.Time
 	rate       rateCounter
+	deviations [4096]float64 // bounded window for the median
+	deviationN int
 }
 
 func (r *restStats) add(s device.RawSample, raw, n [2]float64) {
@@ -128,7 +132,10 @@ func (r *restStats) add(s device.RawSample, raw, n [2]float64) {
 	r.Y.Add(n[1])
 	r.RawX.Add(raw[0])
 	r.RawY.Add(raw[1])
-	r.Dev.Add(math.Hypot(n[0], n[1]))
+	dev := math.Hypot(n[0], n[1])
+	r.Dev.Add(dev)
+	r.deviations[r.deviationN%len(r.deviations)] = dev
+	r.deviationN++
 	h := 0
 	if !s.At.Before(r.mid) {
 		h = 1
@@ -140,17 +147,18 @@ func (r *restStats) add(s device.RawSample, raw, n [2]float64) {
 
 // RestSummary is one resting measurement in human terms (all % of travel).
 type RestSummary struct {
-	N          int
-	RateHz     float64
-	Mean       [2]float64 // normalized mean position
-	OffsetPct  float64    // distance of the mean from the nominal center
-	OffsetRaw  float64    // the same in raw counts
-	AvgDevPct  float64    // average distance of individual samples
-	MaxDevPct  float64
-	NoisePct   float64 // larger of the X/Y standard deviations
-	NoiseRaw   float64
-	P2PPct     float64 // largest X/Y peak-to-peak
-	StableDiff float64 // shift of the mean between the first and second half
+	N            int
+	RateHz       float64
+	Mean         [2]float64 // normalized mean position
+	OffsetPct    float64    // distance of the mean from the nominal center
+	OffsetRaw    float64    // the same in raw counts
+	AvgDevPct    float64    // average distance of individual samples
+	MedianDevPct float64
+	MaxDevPct    float64
+	NoisePct     float64 // larger of the X/Y standard deviations
+	NoiseRaw     float64
+	P2PPct       float64 // largest X/Y peak-to-peak
+	StableDiff   float64 // shift of the mean between the first and second half
 }
 
 func summarizeRest(r restStats, l device.InputLayout, stick int) RestSummary {
@@ -164,6 +172,12 @@ func summarizeRest(r restStats, l device.InputLayout, stick int) RestSummary {
 	s.OffsetRaw = math.Hypot(r.RawX.Mean()-ax.Center, r.RawY.Mean()-ay.Center)
 	s.AvgDevPct = 100 * r.Dev.Mean()
 	s.MaxDevPct = 100 * r.Dev.Max
+	count := min(r.deviationN, len(r.deviations))
+	if count > 0 {
+		values := append([]float64(nil), r.deviations[:count]...)
+		sort.Float64s(values)
+		s.MedianDevPct = 50 * (values[(count-1)/2] + values[count/2])
+	}
 	s.NoisePct = 100 * math.Max(r.X.Std(), r.Y.Std())
 	s.NoiseRaw = math.Max(r.RawX.Std(), r.RawY.Std())
 	s.P2PPct = 100 * math.Max(r.X.PeakToPeak(), r.Y.PeakToPeak())
@@ -241,8 +255,10 @@ func (a StickAnalysis) Status() Status { return a.Verdict.Status() }
 type StickTest struct {
 	Layout          device.InputLayout
 	Duration        time.Duration // resting measurement length (after settling)
-	PreviewDeadzone float64       // deadzone preview size in %, never applied to input
-	SourceNote      string        // set by the session, e.g. event-driven input caveat
+	CircularityOnly bool
+	AxialPreview    bool
+	PreviewDeadzone float64 // deadzone preview size in %, never applied to input
+	SourceNote      string  // set by the session, e.g. event-driven input caveat
 
 	Step      StickStep
 	StepStart time.Time
@@ -329,6 +345,7 @@ func (t *StickTest) feedSample(s device.RawSample) {
 		n := t.Normalize(i, raw)
 		l := &t.Live[i]
 		l.Raw, l.Norm = raw, n
+		l.Valid = true
 		for a := range raw {
 			l.Min[a] = math.Min(l.Min[a], raw[a])
 			l.Max[a] = math.Max(l.Max[a], raw[a])
@@ -375,6 +392,11 @@ func (t *StickTest) Tick(now time.Time) {
 			t.setScenario(device.ScenarioDemo)
 		}
 	case StickUp, StickDown, StickLeft, StickRight, StickRotate:
+		if t.CircularityOnly && (!now.Before(t.StepEnd) || t.stepReached()) {
+			t.Step = StickDone
+			t.setScenario(device.ScenarioDemo)
+			return
+		}
 		reached := t.stepReached()
 		if reached || !now.Before(t.StepEnd) {
 			if t.Step == StickRotate {
@@ -415,6 +437,7 @@ func (t *StickTest) advanceMovement(now time.Time) {
 
 // Start begins step 1: the user has released both sticks.
 func (t *StickTest) Start(now time.Time) {
+	t.CircularityOnly = false
 	t.Rest, t.Rest2 = [2]restStats{}, [2]restStats{}
 	t.Travel = [2]TravelStats{}
 	t.Analysis = [2]StickAnalysis{}
@@ -614,7 +637,7 @@ func (t *StickTest) analyze(i int, final bool) StickAnalysis {
 	case VerdictPossibleDrift:
 		a.Explanation = append(a.Explanation, i18n.T("This is not proof of a hardware defect: dirt, a slightly worn sensor or calibration differences can cause it."))
 		a.Advice = append(a.Advice,
-			i18n.T("Repeat the test a few times. If the result stays the same and games show unwanted movement, cleaning, recalibration or repair may help."))
+			i18n.T("Repeat the test under the same conditions. If unwanted movement persists in games, seek device-specific support."))
 	case VerdictFurtherTesting:
 		a.Advice = append(a.Advice, i18n.T("Run the test again; a result that changes between runs is not a reliable sign of a fault."))
 	}
@@ -658,6 +681,22 @@ func (t *StickTest) Preliminary() bool {
 
 // Result combines both sticks into a category result (nil before step 1 ends).
 func (t *StickTest) Result(now time.Time, simulated bool) *Result {
+	if t.CircularityOnly {
+		if t.Step != StickDone {
+			return nil
+		}
+		r := &Result{Category: CatSticks, Status: Passed, Simulated: simulated, At: now, Summary: "Circularity envelope recorded; shape is descriptive, not a hardware fault score."}
+		for i, tr := range t.Travel {
+			v := tr.Circularity()
+			if v.Covered < rimSectorsGoal {
+				r.Status = Incomplete
+			}
+			name := t.Layout.StickLabels[i]
+			r.Measurements = append(r.Measurements, Measurement{name + " circularity coverage", float64(v.Covered), "of 16"}, Measurement{name + " radius spread", v.RadiusSpreadPct, "%"}, Measurement{name + " radius standard deviation", v.RadiusStdPct, "%"}, Measurement{name + " range asymmetry", v.AsymmetryPct, "%"})
+		}
+		r.Limitations = []string{"Coverage counts 16 sectors reached at 70% of declared travel; 14 sectors is a completion heuristic, not a hardware specification.", "Square and other gate shapes are valid. Incomplete travel cannot establish a fault."}
+		return r
+	}
 	if t.Step != StickExplain && t.Step != StickDone {
 		return nil
 	}
@@ -677,10 +716,16 @@ func (t *StickTest) Result(now time.Time, simulated bool) *Result {
 		res.Details = append(res.Details, a.Explanation...)
 		res.Details = append(res.Details, a.Advice...)
 		ra := a.RestA
+		if ra.N == 0 {
+			res.Measurements = append(res.Measurements, Measurement{lbl + " samples", 0, ""})
+			res.Details = append(res.Details, lbl+": resting measurements unavailable; no samples arrived.")
+			continue
+		}
 		res.Measurements = append(res.Measurements,
 			Measurement{i18n.Tf("%s center offset", lbl), ra.OffsetPct, i18n.T("% of travel")},
 			Measurement{i18n.Tf("%s center offset (raw)", lbl), ra.OffsetRaw, i18n.T("counts")},
 			Measurement{i18n.Tf("%s average resting deviation", lbl), ra.AvgDevPct, i18n.T("% of travel")},
+			Measurement{i18n.Tf("%s median resting deviation (bounded window)", lbl), ra.MedianDevPct, i18n.T("% of travel")},
 			Measurement{i18n.Tf("%s maximum resting deviation", lbl), ra.MaxDevPct, i18n.T("% of travel")},
 			Measurement{i18n.Tf("%s noise σ", lbl), ra.NoisePct, i18n.T("% of travel")},
 			Measurement{i18n.Tf("%s noise σ (raw)", lbl), ra.NoiseRaw, i18n.T("counts")},
@@ -703,6 +748,9 @@ func (t *StickTest) Result(now time.Time, simulated bool) *Result {
 		}
 	}
 	res.Status = worst(st...)
+	if res.Status == Passed && !t.Preliminary() && (!t.RotateOK || len(t.Analysis[0].Missed) > 0 || len(t.Analysis[1].Missed) > 0) {
+		res.Status = Incomplete
+	}
 	switch {
 	case len(drift) > 0:
 		res.Summary = i18n.Tf("Possible drift: %s. Not a confirmed hardware fault.", strings.Join(drift, ", "))
@@ -710,6 +758,8 @@ func (t *StickTest) Result(now time.Time, simulated bool) *Result {
 		res.Summary = i18n.T("Inconclusive — repeat the test without touching the sticks.")
 	case len(retest) > 0:
 		res.Summary = i18n.Tf("Further testing recommended: %s.", strings.Join(retest, ", "))
+	case res.Status == Incomplete:
+		res.Summary = i18n.T("Resting measurements completed; movement coverage is incomplete. Repeat the movement test.")
 	case t.Preliminary():
 		res.Summary = i18n.T("Both sticks rest close to the center (movement step not run).")
 	default:
@@ -726,4 +776,41 @@ func (t *StickTest) Result(now time.Time, simulated bool) *Result {
 		res.Limitations = append(res.Limitations, t.SourceNote)
 	}
 	return res
+}
+
+// Preview returns the selected simulation. No hardware configuration is written.
+func (t *StickTest) Preview(n [2]float64) DeadzonePreview {
+	if t.AxialPreview {
+		return PreviewAxialDeadzone(n, t.PreviewDeadzone)
+	}
+	return PreviewDeadzone(n, t.PreviewDeadzone)
+}
+
+// Circularity describes the observed sector envelope, without imposing a
+// circular gate on devices that intentionally use square or other gates.
+type Circularity struct {
+	Covered                                                    int
+	MeanRadiusPct, RadiusStdPct, RadiusSpreadPct, AsymmetryPct float64
+}
+
+func (t TravelStats) Circularity() Circularity {
+	var radii AxisStats
+	for _, r := range t.Sector {
+		if r >= rimRadius {
+			radii.Add(100 * r)
+		}
+	}
+	c := Circularity{Covered: radii.N, MeanRadiusPct: radii.Mean(), RadiusStdPct: radii.Std(), RadiusSpreadPct: radii.PeakToPeak()}
+	c.AsymmetryPct = 100 * math.Max(math.Abs(t.Reach[DirLeft]-t.Reach[DirRight]), math.Abs(t.Reach[DirUp]-t.Reach[DirDown]))
+	return c
+}
+
+// StartCircularity collects the movement envelope without a resting drift test.
+func (t *StickTest) StartCircularity(now time.Time) {
+	t.Start(now)
+	t.CircularityOnly = true
+	t.Step = StickRotate
+	t.StepStart = now
+	t.StepEnd = now.Add(rotateTimeout)
+	t.setScenario(device.ScenarioMove)
 }

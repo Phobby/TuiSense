@@ -2,6 +2,7 @@ package diag
 
 import (
 	"github.com/Phobby/TuiSense/internal/i18n"
+	"reflect"
 	"time"
 
 	"github.com/Phobby/TuiSense/internal/audio"
@@ -10,8 +11,8 @@ import (
 
 // GuidedOrder is the order of the guided health check.
 var GuidedOrder = []Category{
-	CatConnection, CatBattery, CatSticks, CatButtons, CatTriggers,
-	CatTouchpad, CatMotion, CatHaptics, CatAudioIn, CatAudioOut,
+	CatConnection, CatButtons, CatSticks, CatTriggers, CatHaptics,
+	CatTouchpad, CatMotion, CatBattery, CatAudioIn, CatAudioOut,
 }
 
 // Guided is a step-by-step run through every available category.
@@ -32,26 +33,37 @@ func (g *Guided) Current() (Category, bool) {
 // UI goroutine except the audio tests' internal capture/playback goroutines,
 // which synchronize themselves and report through OnChange.
 type Session struct {
-	Ctx     DeviceContext
-	Avail   map[Category]Availability
-	Results map[Category]Result
-	Active  Category // "" = health summary
+	ReportGeneration    uint64
+	Attempted           map[Category]bool
+	ShowTestReport      bool
+	ShowTechnicalReport bool
+	ExpandedReport      Category
+	HistoryIndex        int
+	SoftwareVersion     string
+	FinalReport         *Report
+	PreviousReport      *Report
+	Ctx                 DeviceContext
+	Avail               map[Category]Availability
+	Results             map[Category]Result
+	Active              Category // "" = health summary
 
 	Sticks   *StickTest
 	Snapback *SnapbackTest
 	// StickSubTest selects the view inside the stick category:
 	// StickSubDeadzone (drift / deadzone test) or StickSubSnapback.
-	StickSubTest string
-	Buttons      *ButtonTest
-	Triggers     *TriggerTest
-	Touch        *TouchTest
-	Motion       *MotionTest
-	Haptics      *HapticTest
-	Battery      *BatteryMonitor
-	Conn         *ConnMonitor
-	Mic          *MicTest
-	Speaker      *SpeakerTest
-	Guided       *Guided
+	StickSubTest   string
+	Buttons        *ButtonTest
+	Triggers       *TriggerTest
+	Touch          *TouchTest
+	Motion         *MotionTest
+	Haptics        *HapticTest
+	Battery        *BatteryMonitor
+	Conn           *ConnMonitor
+	Mic            *MicTest
+	Speaker        *SpeakerTest
+	Guided         *Guided
+	Events         []Event
+	HistorySummary []string
 
 	Backend  audio.Backend
 	OnChange func()
@@ -61,7 +73,7 @@ type Session struct {
 
 // NewSession creates the diagnostics session for a device.
 func NewSession(dc DeviceContext, act Actuator, sim device.ScenarioSimulator, battery device.BatteryDetailsProvider, backend audio.Backend, now time.Time) *Session {
-	s := &Session{Ctx: dc, Results: map[Category]Result{}, act: act, sim: sim, Backend: backend}
+	s := &Session{Attempted: map[Category]bool{}, Ctx: dc, Results: map[Category]Result{}, act: act, sim: sim, Backend: backend}
 	in := dc.Desc.Inputs
 	scn := s.setScenario
 	if in.HasSticks() {
@@ -110,6 +122,30 @@ func (s *Session) changed() {
 // SetContext re-plans availability (connection/transport/audio changes) and
 // (re)creates audio tests for the controller's own endpoint.
 func (s *Session) SetContext(dc DeviceContext) {
+	if !reflect.DeepEqual(s.Ctx.Desc.Inputs, dc.Desc.Inputs) || !reflect.DeepEqual(s.Ctx.Caps, dc.Caps) || s.Ctx.Simulated != dc.Simulated || s.Ctx.Desc.ModelID != dc.Desc.ModelID {
+		s.Suspend()
+		var battery device.BatteryDetailsProvider
+		if s.Battery != nil {
+			battery = s.Battery.provider
+		}
+		onChange := s.OnChange
+		version := s.SoftwareVersion
+		*s = *NewSession(dc, s.act, s.sim, battery, s.Backend, time.Now())
+		s.OnChange = onChange
+		s.SoftwareVersion = version
+		if s.Mic != nil {
+			s.Mic.OnChange = s.changed
+		}
+		if s.Speaker != nil {
+			s.Speaker.OnChange = s.changed
+		}
+		s.record("mapping", "Input mapping or capabilities changed; previous measurements were cleared.", time.Now())
+		return
+	}
+	if s.Ctx.Info.Connected && !dc.Info.Connected {
+		s.Suspend()
+	}
+
 	prevEP, prevFound := s.Ctx.Audio.Endpoint, s.Ctx.Audio.Found
 	s.Ctx = dc
 	s.Avail = Plan(dc)
@@ -193,10 +229,29 @@ func (s *Session) Tick(now time.Time) {
 
 // collect refreshes results from every test that has produced one.
 func (s *Session) collect(now time.Time) {
+	if s.Attempted == nil {
+		s.Attempted = map[Category]bool{}
+	}
 	sim := s.Ctx.Simulated
+	for _, c := range AllCategories {
+		if s.Running(c) {
+			s.Attempted[c] = true
+			s.FinalReport = nil
+			delete(s.Results, c)
+		}
+	}
 	put := func(r *Result) {
 		if r != nil {
+			s.Attempted[r.Category] = true
+			if previous, ok := s.Results[r.Category]; ok {
+				old := previous
+				old.At = r.At
+				if reflect.DeepEqual(old, *r) {
+					return
+				}
+			}
 			s.Results[r.Category] = *r
+			s.record(string(r.Category), r.Status.String()+": "+r.Summary, now)
 		}
 	}
 	if s.Sticks != nil {
@@ -286,10 +341,18 @@ func (s *Session) Status(c Category) Status {
 	if a, ok := s.Avail[c]; ok && !a.Available() {
 		return a.Status
 	}
+	if observed := s.reportObservation(c, time.Now()); observed != nil {
+		return observed.Status
+	}
 	if s.Running(c) {
 		return Testing
 	}
 	if r, ok := s.Results[c]; ok {
+		if c == CatSticks && r.Status == Passed && s.Sticks != nil {
+			if s.Sticks.CircularityOnly || s.Sticks.Preliminary() || !s.Sticks.Analysis[0].HasRestB || !s.Sticks.Analysis[1].HasRestB {
+				return Incomplete
+			}
+		}
 		return r.Status
 	}
 	return NotTested
@@ -311,6 +374,14 @@ func (s *Session) Visible() []Category {
 // restored, audio stopped, recordings discarded. Called when leaving the
 // diagnostics view, switching devices, disconnecting, or quitting.
 func (s *Session) Suspend() {
+	if s.Attempted == nil {
+		s.Attempted = map[Category]bool{}
+	}
+	for _, category := range AllCategories {
+		if s.Running(category) {
+			s.Attempted[category] = true
+		}
+	}
 	if s.Sticks != nil {
 		s.Sticks.Cancel()
 	}
@@ -347,12 +418,23 @@ func (s *Session) Reset(now time.Time) {
 	if s.Battery != nil {
 		battery = s.Battery.provider
 	}
+	version := s.SoftwareVersion
 	*s = *NewSession(s.Ctx, act, sim, battery, backend, now)
+	s.SoftwareVersion = version
 	s.OnChange = onChange
+	if s.Mic != nil {
+		s.Mic.OnChange = s.changed
+	}
+	if s.Speaker != nil {
+		s.Speaker.OnChange = s.changed
+	}
 }
 
 // StartGuided begins the guided health check over available categories.
 func (s *Session) StartGuided() {
+	s.FinalReport = nil
+	s.PreviousReport = nil
+	s.Suspend()
 	g := &Guided{}
 	for _, c := range GuidedOrder {
 		if s.Avail[c].Available() {
@@ -370,13 +452,14 @@ func (s *Session) NextGuided() {
 	if s.Guided == nil {
 		return
 	}
+	s.collect(time.Now())
 	s.Suspend()
 	s.Guided.Idx++
 	if c, ok := s.Guided.Current(); ok {
 		s.Active = c
 	} else {
 		s.Guided = nil
-		s.Active = ""
+		s.GenerateHealthReport(time.Now())
 	}
 }
 
@@ -388,8 +471,9 @@ func (s *Session) StopGuided() {
 
 // Sub-tests of the stick category.
 const (
-	StickSubDeadzone = "deadzone"
-	StickSubSnapback = "snapback"
+	StickSubDeadzone    = "deadzone"
+	StickSubCircularity = "circularity"
+	StickSubSnapback    = "snapback"
 )
 
 // mergeStickResults combines the deadzone/drift and snapback results into
@@ -411,4 +495,87 @@ func mergeStickResults(drift, snap *Result) *Result {
 		r.At = snap.At
 	}
 	return &r
+}
+
+// Event is a timestamped observation; the session keeps at most 100 entries.
+type Event struct {
+	At       time.Time `json:"at"`
+	Category string    `json:"category"`
+	Message  string    `json:"message"`
+}
+
+func (s *Session) record(category, message string, now time.Time) {
+	if len(s.Events) == 100 {
+		copy(s.Events, s.Events[1:])
+		s.Events = s.Events[:99]
+	}
+	s.Events = append(s.Events, Event{now, category, message})
+}
+
+// Select stops active effects before navigating between diagnostic categories.
+func (s *Session) Select(c Category) {
+	if s.Active == c {
+		return
+	}
+	s.Suspend()
+	s.ShowTestReport = false
+	s.ShowTechnicalReport = false
+	s.ExpandedReport = ""
+	s.Active = c
+}
+
+// GenerateHealthReport captures a partial or completed immutable report. It does
+// not actuate hardware or write files. Navigation owns any effect cancellation.
+func (s *Session) GenerateHealthReport(now time.Time) {
+	s.ShowTechnicalReport = false
+	s.ReportGeneration++
+	s.HistoryIndex = 0
+	s.ExpandedReport = ""
+	s.collect(now)
+	report := BuildReport(s, s.SoftwareVersion, false, now)
+	s.FinalReport = &report
+	s.PreviousReport = nil
+	s.Active = CatHealthReport
+}
+
+// ReportSnapshot uses the displayed frozen report on report/history screens.
+// Other tabs build a bounded read-only snapshot of current measurements.
+func (s *Session) ReportSnapshot(now time.Time) Report {
+	if s.Active == CatHealthReport {
+		if s.PreviousReport != nil {
+			return *s.PreviousReport
+		}
+		if s.FinalReport != nil {
+			return *s.FinalReport
+		}
+	}
+	return BuildReport(s, s.SoftwareVersion, false, now)
+}
+
+func (s *Session) reportObservation(category Category, now time.Time) *Result {
+	switch category {
+	case CatFirmware:
+		if s.Ctx.Info.FirmwareVersion == "" {
+			return nil
+		}
+		return &Result{Category: category, Status: Passed, Summary: "Firmware information was reported: " + s.Ctx.Info.FirmwareVersion, Details: []string{"This is metadata observation, not a firmware integrity or update test."}, Simulated: s.Ctx.Simulated, At: now}
+	case CatDeadzone:
+		if s.Sticks == nil || !s.Sticks.Live[0].Valid || !s.Sticks.Live[1].Valid {
+			return nil
+		}
+		t := s.Sticks
+		kind := "radial"
+		if t.AxialPreview {
+			kind = "axial"
+		}
+		r := &Result{Category: category, Status: Inconclusive, Summary: "Live " + kind + " deadzone simulation recorded; game input is unchanged.", Simulated: s.Ctx.Simulated, At: now, Limitations: []string{"Preview only. This observation does not calibrate hardware or prove hardware health."}}
+		r.Measurements = append(r.Measurements, Measurement{"Preview deadzone", t.PreviewDeadzone, "%"})
+		for i, live := range t.Live {
+			preview := t.Preview(live.Norm)
+			name := t.Layout.StickLabels[i]
+			r.Measurements = append(r.Measurements, Measurement{name + " raw X", live.Raw[0], "counts"}, Measurement{name + " raw Y", live.Raw[1], "counts"}, Measurement{name + " normalized X", live.Norm[0], ""}, Measurement{name + " normalized Y", live.Norm[1], ""}, Measurement{name + " filtered X", preview.Effective[0], ""}, Measurement{name + " filtered Y", preview.Effective[1], ""})
+		}
+		return r
+	}
+	return nil
 }

@@ -31,10 +31,22 @@ type MockBackend struct {
 	scenario    device.InputScenario
 	scenarioAt  time.Time
 	pressCounts uint64
+
+	fwIdentity device.FirmwareIdentity
+	details    []device.Detail
 }
 
 // NewMockBackend constructs a simulated DualSense controller initialized with realistic telemetry.
 func NewMockBackend(logger *logging.Logger) *MockBackend {
+	return newMockBackend(logger, false)
+}
+
+// NewTestBackend creates an independently selectable, fully simulated DualSense.
+func NewTestBackend(logger *logging.Logger) *MockBackend {
+	return newMockBackend(logger, true)
+}
+
+func newMockBackend(logger *logging.Logger, testDevice bool) *MockBackend {
 	now := time.Now()
 	cfg := device.DefaultConfig()
 	// Give the mock controller an expressive default adaptive trigger setup
@@ -42,6 +54,10 @@ func NewMockBackend(logger *logging.Logger) *MockBackend {
 	cfg.RightTrigger = device.BuiltinTriggerPresets[2].Config // Crisp Pistol Break
 
 	desc := Descriptor()
+	if testDevice {
+		desc.ShortName = "DualSense (Test)"
+		desc.DisplayName = "Sony DualSense (Test)"
+	}
 	m := &MockBackend{
 		desc:       desc,
 		startedAt:  now,
@@ -62,9 +78,10 @@ func NewMockBackend(logger *logging.Logger) *MockBackend {
 			Model:            "DualSense Wireless Controller (CFI-ZCT1W)",
 			VendorID:         system.SonyVendorID,
 			ProductID:        system.DualSenseProductID,
-			FirmwareVersion:  "0458",
-			HardwareVersion:  "0311",
-			MACAddress:       "E8:47:3A:91:C2:0B",
+			FirmwareVersion:  "0x0630",
+			FirmwareBuild:    "0x0110002A",
+			HardwareVersion:  "0x00000311",
+			MACAddress:       "02:00:00:00:00:02",
 			HIDRawPath:       "/dev/hidraw0 (simulated)",
 			InputDevicePath:  "/dev/input/event19 (simulated)",
 			SysfsPath:        "/sys/class/hidraw/hidraw0",
@@ -82,6 +99,25 @@ func NewMockBackend(logger *logging.Logger) *MockBackend {
 		},
 	}
 
+	if testDevice {
+		m.info.ID = "test-dualsense-0"
+		m.info.Name = desc.DisplayName
+		m.info.Model = desc.DisplayName
+		m.info.MACAddress = "02:00:00:00:00:01"
+		m.info.HIDRawPath = "DualSense test device (simulated)"
+		m.info.InputDevicePath = "DualSense test input (simulated)"
+		m.info.SysfsPath = ""
+	}
+	fi := FirmwareInfo{BuildDate: "Jun  5 2024", BuildTime: "11:24:13", HardwareInfo: 0x00000311, FirmwareVersion: 0x0110002A, UpdateVersion: 0x0630}
+	m.fwIdentity = fi.Identity()
+	m.fwIdentity.Source = "Simulated Firmware Info report (mock device)"
+	m.details = BuildDetails(DetailsInput{
+		Info: m.info, Firmware: &fi, FirmwareSource: "simulated report 0x20", Simulated: true,
+		Sysfs: system.HIDSysfsInfo{Found: true, Driver: "playstation", Name: m.info.Name, Attrs: map[string]string{
+			SysfsFirmwareVersion: "0x0110002a", SysfsHardwareVersion: "0x00000311",
+		}},
+	})
+
 	pkt := BuildOutputReport(cfg, m.info.Connection, 0)
 	m.tel.LastOutputHex = FormatHexPreview(pkt)
 	m.tel.LastInputHex = "01 80 80 80 80 00 00 00 00 00 00 00 00 00 00 00"
@@ -89,6 +125,27 @@ func NewMockBackend(logger *logging.Logger) *MockBackend {
 }
 
 func (m *MockBackend) Descriptor() device.Descriptor { return m.desc }
+
+// FirmwareIdentity returns the simulated firmware identity.
+func (m *MockBackend) FirmwareIdentity() device.FirmwareIdentity {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.fwIdentity
+}
+
+// Details returns the simulated identification data.
+func (m *MockBackend) Details() []device.Detail {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.details
+}
+
+// SetFirmwareIdentity replaces the simulated firmware identity (tests).
+func (m *MockBackend) SetFirmwareIdentity(id device.FirmwareIdentity) {
+	m.mu.Lock()
+	m.fwIdentity = id
+	m.mu.Unlock()
+}
 
 func (m *MockBackend) Capabilities() device.CapabilitySet {
 	m.mu.RLock()

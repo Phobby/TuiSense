@@ -82,13 +82,14 @@ func RenderLightingPanel(f *terminal.Frame, area cell.Rect, s *state.AppState, d
 			pill := fmt.Sprintf(" ● %s ", i18n.T(sw.Name))
 			pw := uint16(cell.StringWidth(pill))
 			if sx+pw > inner.X+inner.Width {
-				break
+				sx = inner.X + 10
+				y++
 			}
 			sRect := cell.NewRect(sx, y, pw, 1)
 			col := cell.NewColorRGB(sw.R, sw.G, sw.B)
 			f.Buffer.SetStringWithin(sx, y, pill, cell.Style{Fg: col, Bg: p.BgElevated, Modifier: cell.ModifierBold}, pw)
 			r, g, b := sw.R, sw.G, sw.B
-			f.RegisterClickHandler(sRect, func(_ driver.MouseEvent) {
+			registerControl(f, sRect, s, "swatch_"+sw.Name, i18n.T(sw.Name), func(_ driver.MouseEvent) {
 				s.Config.Lighting.Enabled = true
 				s.Config.Lighting.Animation = device.AnimSolid
 				s.Config.Lighting.Red, s.Config.Lighting.Green, s.Config.Lighting.Blue = r, g, b
@@ -109,12 +110,13 @@ func RenderLightingPanel(f *terminal.Frame, area cell.Rect, s *state.AppState, d
 			lbl := " " + i18n.T(lvl.String()) + " "
 			lw := uint16(cell.StringWidth(lbl))
 			if bx+lw > inner.X+inner.Width {
-				break
+				bx = inner.X + 12
+				y++
 			}
 			bRect := cell.NewRect(bx, y, lw, 1)
 			f.Buffer.SetStringWithin(bx, y, lbl, p.ButtonStyle(s.Config.Lighting.Brightness == lvl), lw)
 			targetLvl := lvl
-			f.RegisterClickHandler(bRect, func(_ driver.MouseEvent) {
+			registerControl(f, bRect, s, fmt.Sprintf("brightness_%d", lvl), lbl, func(_ driver.MouseEvent) {
 				s.Config.Lighting.Brightness = targetLvl
 				sendLighting()
 			})
@@ -131,12 +133,13 @@ func RenderLightingPanel(f *terminal.Frame, area cell.Rect, s *state.AppState, d
 			lbl := " " + i18n.T(string(anim)) + " "
 			aw := uint16(cell.StringWidth(lbl))
 			if ax+aw > inner.X+inner.Width {
-				break
+				ax = inner.X + 12
+				y++
 			}
 			aRect := cell.NewRect(ax, y, aw, 1)
 			f.Buffer.SetStringWithin(ax, y, lbl, p.ButtonStyle(s.Config.Lighting.Animation == anim), aw)
 			targetAnim := anim
-			f.RegisterClickHandler(aRect, func(_ driver.MouseEvent) {
+			registerControl(f, aRect, s, "animation_"+string(anim), lbl, func(_ driver.MouseEvent) {
 				s.Config.Lighting.Animation = targetAnim
 				s.Config.Lighting.Enabled = targetAnim != device.AnimOff
 				sendLighting()
@@ -164,12 +167,13 @@ func RenderLightingPanel(f *terminal.Frame, area cell.Rect, s *state.AppState, d
 		for _, m := range masks {
 			mw := uint16(cell.StringWidth(m.str))
 			if px+mw > inner.X+inner.Width {
-				break
+				px = inner.X + 12
+				y++
 			}
 			pRect := cell.NewRect(px, y, mw, 1)
 			f.Buffer.SetStringWithin(px, y, m.str, p.ButtonStyle(s.Config.Lighting.PlayerMask == m.mask), mw)
 			targetNum, targetMask := m.num, m.mask
-			f.RegisterClickHandler(pRect, func(_ driver.MouseEvent) {
+			registerControl(f, pRect, s, fmt.Sprintf("player_%d", m.num), m.str, func(_ driver.MouseEvent) {
 				s.Config.Lighting.PlayerNumber = targetNum
 				s.Config.Lighting.PlayerMask = targetMask
 				sendLighting()

@@ -25,8 +25,11 @@ const (
 	CapProfiles         Capability = "profiles"
 	CapDiagnostics      Capability = "diagnostics"
 	CapFirmwareUpdate   Capability = "firmware_update"
-	CapRemapping        Capability = "remapping"
-	CapCalibration      Capability = "calibration"
+	// CapFirmwareCheck is a read-only comparison of the installed firmware
+	// with the vendor's published metadata. It never installs anything.
+	CapFirmwareCheck Capability = "firmware_check"
+	CapRemapping     Capability = "remapping"
+	CapCalibration   Capability = "calibration"
 )
 
 // AllCapabilities lists every known capability in canonical display order.
@@ -43,6 +46,7 @@ var AllCapabilities = []Capability{
 	CapProfiles,
 	CapDiagnostics,
 	CapFirmwareUpdate,
+	CapFirmwareCheck,
 	CapRemapping,
 	CapCalibration,
 }
@@ -74,6 +78,8 @@ func (c Capability) Label() string {
 		return i18n.T("Diagnostics")
 	case CapFirmwareUpdate:
 		return i18n.T("Firmware Update")
+	case CapFirmwareCheck:
+		return i18n.T("Firmware Update Check")
 	case CapRemapping:
 		return i18n.T("Remapping")
 	case CapCalibration:

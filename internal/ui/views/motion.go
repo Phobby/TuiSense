@@ -98,7 +98,7 @@ func RenderMotionPanel(f *terminal.Frame, area cell.Rect, s *state.AppState) {
 		}
 		norm := math.Min(1.0, math.Max(0.0, (val+maxAbs)/(2.0*maxAbs)))
 		lbl := fmt.Sprintf("%-11s %+6.1f%s", name, val, unit)
-		f.Buffer.SetStringWithin(inner.X, y, lbl, p.LabelStyle(), labelW)
+		copyValue(f, cell.NewRect(inner.X, y, labelW, 1), s, lbl, fmt.Sprintf("%+.1f%s", val, unit), p.LabelStyle())
 		lg := widgets.LineGauge{
 			ID:            id,
 			Ratio:         norm,

@@ -94,3 +94,13 @@ func Has(lang Lang, s string) bool {
 	_, ok := turkish[s]
 	return ok
 }
+
+// Translate selects a language without changing the global UI locale.
+func Translate(lang Lang, s string) string {
+	if lang == Turkish {
+		if translated, ok := turkish[s]; ok {
+			return translated
+		}
+	}
+	return s
+}

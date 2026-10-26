@@ -4,7 +4,6 @@ package dualsense
 
 import (
 	"context"
-	"encoding/binary"
 	"errors"
 	"fmt"
 	"os"
@@ -36,6 +35,9 @@ type LinuxBackend struct {
 	haveSeq        bool
 	droppedReports uint64
 	readErrors     uint64
+
+	fwIdentity device.FirmwareIdentity
+	details    []device.Detail
 }
 
 // OpenLinuxBackend opens a discovered DualSense hidraw node, queries firmware/pairing
@@ -59,8 +61,6 @@ func OpenLinuxBackend(dev system.DiscoveredDevice, logger *logging.Logger) (*Lin
 		Model:            dev.Model,
 		VendorID:         dev.VendorID,
 		ProductID:        dev.ProductID,
-		FirmwareVersion:  "0458",
-		HardwareVersion:  "0311",
 		MACAddress:       dev.MACAddress,
 		HIDRawPath:       dev.HIDRawPath,
 		InputDevicePath:  dev.InputDevicePath,
@@ -100,9 +100,7 @@ func OpenLinuxBackend(dev system.DiscoveredDevice, logger *logging.Logger) (*Lin
 		file:           f,
 		logger:         logger,
 		tel: device.Telemetry{
-			BatteryPercent: 80,
-			Charging:       dev.Connection == device.ConnUSB,
-			UpdatedAt:      time.Now(),
+			BatteryPercent: -1, // unknown until a real HID report or sysfs sample arrives
 		},
 	}
 
@@ -111,42 +109,56 @@ func OpenLinuxBackend(dev system.DiscoveredDevice, logger *logging.Logger) (*Lin
 		b.tel.Charging = dev.SysfsCharging
 	}
 
+	var fi *FirmwareInfo
+	fwErr := "the hidraw node could not be opened"
 	if f != nil {
-		b.queryFeatureReports()
+		fi, fwErr = b.queryFeatureReports()
 	}
+	if fi != nil {
+		b.fwIdentity = fi.Identity()
+	} else {
+		b.fwIdentity = device.FirmwareIdentity{Source: "HID feature report 0x20", Error: fwErr}
+		if logger != nil {
+			logger.Warn("FIRMWARE", "%s", fwErr)
+		}
+	}
+
+	// The kernel's own copy of the firmware words is available in sysfs even
+	// when the hidraw node is not readable.
+	sys := system.ReadHIDSysfs(dev.SysfsPath, SysfsFirmwareVersion, SysfsHardwareVersion)
+	b.info.KernelDriver = sys.Driver
+	b.applyVersions(fi, sys)
+	b.details = BuildDetails(DetailsInput{Info: b.info, Sysfs: sys, Firmware: fi, FirmwareErr: fwErr})
 
 	return b, nil
 }
 
-// queryFeatureReports attempts HIDIOCGFEATURE ioctls for Firmware Info (0x20) and Pairing/MAC (0x09).
-func (b *LinuxBackend) queryFeatureReports() {
-	if b.file == nil {
-		return
-	}
+// queryFeatureReports issues HIDIOCGFEATURE (GET_FEATURE) for Firmware Info
+// (0x20) and, when the MAC is unknown, Pairing Info (0x09). These are the
+// same reads the kernel driver performs when the controller connects; they
+// change nothing on the controller. No feature report is ever sent.
+func (b *LinuxBackend) queryFeatureReports() (*FirmwareInfo, string) {
 	// Use the raw fd via SyscallConn: calling File.Fd() would switch the file
 	// to blocking mode and break the non-blocking report drain in Poll.
 	rc, err := b.file.SyscallConn()
 	if err != nil {
-		return
+		return nil, fmt.Sprintf("the hidraw node is not usable: %v", err)
 	}
 	var fd uintptr
 	_ = rc.Control(func(raw uintptr) { fd = raw })
 
-	// Feature Report 0x20 (Firmware version)
+	var fi *FirmwareInfo
+	fwErr := ""
 	var fwBuf [FeatureFirmwareSize]byte
 	fwBuf[0] = FeatureFirmwareReport
-	if err := hidGetFeature(fd, fwBuf[:]); err == nil {
-		hwVer := binary.LittleEndian.Uint32(fwBuf[24:28])
-		fwVer := binary.LittleEndian.Uint32(fwBuf[28:32])
-		if fwVer > 0 {
-			b.info.FirmwareVersion = fmt.Sprintf("%08X", fwVer)
-		}
-		if hwVer > 0 {
-			b.info.HardwareVersion = fmt.Sprintf("%04X", hwVer&0xFFFF)
-		}
+	if err := hidGetFeature(fd, fwBuf[:]); err != nil {
+		fwErr = fmt.Sprintf("feature report 0x20 could not be read: %v", err)
+	} else if parsed, err := ParseFirmwareInfo(fwBuf[:], b.info.Connection == device.ConnBluetooth); err != nil {
+		fwErr = err.Error()
+	} else {
+		fi = &parsed
 	}
 
-	// Feature Report 0x09 (Bluetooth MAC address if not already known via sysfs)
 	if b.info.MACAddress == "" {
 		var macBuf [FeaturePairingSize]byte
 		macBuf[0] = FeaturePairingReport
@@ -155,6 +167,12 @@ func (b *LinuxBackend) queryFeatureReports() {
 				macBuf[6], macBuf[5], macBuf[4], macBuf[3], macBuf[2], macBuf[1])
 		}
 	}
+	return fi, fwErr
+}
+
+// applyVersions fills the summary version fields from what was read.
+func (b *LinuxBackend) applyVersions(fi *FirmwareInfo, sys system.HIDSysfsInfo) {
+	b.info.FirmwareVersion, b.info.FirmwareBuild, b.info.HardwareVersion = versionStrings(fi, sys)
 }
 
 // hidGetFeature issues a Linux HIDIOCGFEATURE(len) ioctl on a hidraw file descriptor.
@@ -169,6 +187,20 @@ func hidGetFeature(fd uintptr, buf []byte) error {
 }
 
 func (b *LinuxBackend) Descriptor() device.Descriptor { return b.desc }
+
+// FirmwareIdentity returns the firmware data read when the device was opened.
+func (b *LinuxBackend) FirmwareIdentity() device.FirmwareIdentity {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+	return b.fwIdentity
+}
+
+// Details returns the identification data read when the device was opened.
+func (b *LinuxBackend) Details() []device.Detail {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+	return b.details
+}
 
 func (b *LinuxBackend) Capabilities() device.CapabilitySet {
 	b.mu.RLock()
@@ -428,6 +460,8 @@ func (b *LinuxBackend) Close() error {
 }
 
 var (
-	_ device.Device                 = (*LinuxBackend)(nil)
-	_ device.BatteryDetailsProvider = (*LinuxBackend)(nil)
+	_ device.Device                   = (*LinuxBackend)(nil)
+	_ device.BatteryDetailsProvider   = (*LinuxBackend)(nil)
+	_ device.FirmwareIdentityProvider = (*LinuxBackend)(nil)
+	_ device.DetailsProvider          = (*LinuxBackend)(nil)
 )

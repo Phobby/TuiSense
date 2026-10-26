@@ -31,7 +31,7 @@ func renderAudioPanel(f *terminal.Frame, area cell.Rect, pc PanelContext) {
 		if y >= inner.Y+inner.Height {
 			return
 		}
-		f.Buffer.SetStringWithin(inner.X, y, fmt.Sprintf("%-14s%3d%%", label, *val), p.LabelStyle(), labelW)
+		copyValue(f, cell.NewRect(inner.X, y, labelW, 1), s, fmt.Sprintf("%-14s%3d%%", label, *val), fmt.Sprintf("%d%%", *val), p.LabelStyle())
 		f.RenderWidget(widgets.Slider{
 			ID:           id,
 			State:        st,
@@ -76,42 +76,5 @@ func renderAudioPanel(f *terminal.Frame, area cell.Rect, pc PanelContext) {
 			})
 		}
 		pillRow(f, inner.X, y, inner.X+inner.Width, s, i18n.T("Mute LED:"), 11, items)
-	}
-}
-
-// renderFirmwarePanel shows firmware identity and the (simulated) update check.
-// It is only reachable for devices declaring CapFirmwareUpdate.
-func renderFirmwarePanel(f *terminal.Frame, area cell.Rect, pc PanelContext) {
-	s := pc.S
-	p := s.Theme
-	inner := panelFrame(f, area, s, i18n.T("Firmware"))
-	y := supportBanner(f, inner, inner.Y, s, device.CapFirmwareUpdate)
-	y++
-
-	rows := [][2]string{
-		{i18n.T("Installed"), nonEmptyStr(s.DeviceInfo.FirmwareVersion, "unknown")},
-		{i18n.T("Hardware"), nonEmptyStr(s.DeviceInfo.HardwareVersion, "unknown")},
-		{i18n.T("Model"), s.Descriptor.DisplayName},
-	}
-	for _, r := range rows {
-		if y >= inner.Y+inner.Height {
-			return
-		}
-		f.Buffer.SetStringWithin(inner.X, y, r[0], p.MutedStyle(), 12)
-		f.Buffer.SetStringWithin(inner.X+12, y, r[1], p.ValueStyle(), inner.Width-12)
-		y++
-	}
-	y++
-	if y < inner.Y+inner.Height {
-		pillRow(f, inner.X, y, inner.X+inner.Width, s, "", 0, []choice{{
-			ID:    "btn_firmware_check",
-			Label: i18n.T("⟳ Check for updates"),
-			OnSelect: func() {
-				if s.Toasts != nil {
-					s.Toasts.Info(i18n.T("Firmware"), i18n.Tf("%s firmware %s is up to date (simulated check).",
-						s.Descriptor.ShortName, s.DeviceInfo.FirmwareVersion))
-				}
-			},
-		}})
 	}
 }

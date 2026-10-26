@@ -22,7 +22,7 @@ func TestBuiltinRegistryContents(t *testing.T) {
 	if keys["mock:dualsense"] != device.SourceMock || keys["test:xbox"] != device.SourceTest {
 		t.Fatalf("unexpected virtual devices: %v", keys)
 	}
-	if len(NewBuiltinRegistry(RegistryOptions{}).Virtuals()) != 1 {
+	if len(NewBuiltinRegistry(RegistryOptions{}).Virtuals()) != 0 {
 		t.Fatalf("test devices must be optional")
 	}
 }
@@ -122,5 +122,24 @@ func TestMSIIsRealHardwareAndIsolatedFromXboxMock(t *testing.T) {
 	}
 	if len(NewBuiltinRegistry(RegistryOptions{TestDevices: true}).Drivers()) != 0 {
 		t.Fatal("hardware drivers must be optional (tests run without touching devices)")
+	}
+}
+
+func TestExplicitDualSenseTestDeviceIsOptionalAndSimulated(t *testing.T) {
+	registry := NewBuiltinRegistry(RegistryOptions{TestDevices: true})
+	virtual, ok := registry.Virtual("test:dualsense")
+	if !ok || virtual.Source != device.SourceTest || !virtual.AutoAttach {
+		t.Fatal("DualSense test device must be explicitly registered and auto-attached")
+	}
+	controller := virtual.New(nil)
+	defer controller.Close()
+	if controller.Descriptor().ShortName != "DualSense (Test)" || controller.Descriptor().VisualID != "dualsense" {
+		t.Fatal("test device must use original DualSense visual and a clear test label")
+	}
+	if _, ok := controller.(device.ScenarioSimulator); !ok {
+		t.Fatal("test device must support simulated diagnostic input")
+	}
+	if _, ok := NewBuiltinRegistry(RegistryOptions{}).Virtual("test:dualsense"); ok {
+		t.Fatal("test device must respect disabled test devices")
 	}
 }

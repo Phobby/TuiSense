@@ -25,8 +25,8 @@ func TestVisiblePanelsAreCapabilityDriven(t *testing.T) {
 			t.Errorf("DualSense Advanced should show %s", id)
 		}
 	}
-	if _, ok := ds[PanelFirmware]; ok {
-		t.Errorf("DualSense declares no firmware update support; panel must be hidden")
+	if e, ok := ds[PanelFirmware]; !ok || e.Support != device.Full {
+		t.Errorf("DualSense Advanced should show the Device Details panel")
 	}
 
 	xb := panelIDs(VisiblePanels(xboxmock.Descriptor().Capabilities, ModeAdvanced))
@@ -38,8 +38,13 @@ func TestVisiblePanelsAreCapabilityDriven(t *testing.T) {
 	if e, ok := xb[PanelLighting]; !ok || e.Support != device.Limited {
 		t.Errorf("Xbox lighting should be visible and Limited, got %+v ok=%v", e, ok)
 	}
-	if e, ok := xb[PanelFirmware]; !ok || e.Support != device.Limited {
-		t.Errorf("Xbox firmware panel should be visible and Limited")
+	// Device details exist for every controller; the firmware check inside
+	// the panel is offered only by a provider (see app tests).
+	if _, ok := xb[PanelFirmware]; !ok {
+		t.Errorf("every attached controller should offer Device Details")
+	}
+	if _, ok := panelIDs(VisiblePanels(device.CapabilitySet{}, ModeAdvanced))[PanelFirmware]; ok {
+		t.Errorf("Device Details must be hidden without a controller")
 	}
 }
 
@@ -51,10 +56,13 @@ func TestEZModeIsGenuinelySmaller(t *testing.T) {
 		t.Fatalf("EZ should expose fewer panels (%d) than Advanced (%d)", len(ez), len(adv))
 	}
 	ids := panelIDs(ez)
-	for _, id := range []PanelID{PanelSticks, PanelMotion, PanelAudio, PanelDevice, PanelLogs, PanelFirmware} {
+	for _, id := range []PanelID{PanelSticks, PanelMotion, PanelAudio, PanelDevice, PanelLogs} {
 		if _, ok := ids[id]; ok {
 			t.Errorf("EZ mode should hide %s", id)
 		}
+	}
+	if _, ok := ids[PanelFirmware]; !ok {
+		t.Errorf("EZ mode should offer the simple Device Details panel")
 	}
 	for i, e := range ez {
 		if want := []rune("1234567890")[i]; e.Hotkey != want {

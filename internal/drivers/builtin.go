@@ -12,8 +12,9 @@ import (
 
 // RegistryOptions selects which built-ins are registered.
 type RegistryOptions struct {
+	Mock        bool // register the explicit demo factory
 	Hardware    bool // register real hardware drivers
-	TestDevices bool // register UI/architecture test devices (mock Xbox)
+	TestDevices bool // register UI/architecture test devices (simulated Xbox and DualSense)
 }
 
 // NewBuiltinRegistry returns a registry containing TuiSense's built-in drivers.
@@ -25,11 +26,13 @@ func NewBuiltinRegistry(opts RegistryOptions) *device.Registry {
 		// controllers that have no dedicated protocol driver.
 		_ = r.RegisterDriver(gamepad.NewDriver(msigc20.Model()))
 	}
-	// The simulated DualSense is always registered; the session decides
-	// whether to attach it (forced --mock, or fallback when no hardware).
-	_ = r.RegisterVirtual(dualsense.MockVirtual())
+	// Virtual factories are absent from normal startup.
+	if opts.Mock || opts.TestDevices {
+		_ = r.RegisterVirtual(dualsense.MockVirtual())
+	}
 	if opts.TestDevices {
 		_ = r.RegisterVirtual(xboxmock.Virtual())
+		_ = r.RegisterVirtual(dualsense.TestVirtual())
 	}
 	return r
 }

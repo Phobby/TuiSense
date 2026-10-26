@@ -57,9 +57,16 @@ func (d *Driver) Scan() ([]Discovered, error) {
 		return nil, err
 	}
 	var out []Discovered
+	seen := map[string]bool{}
 	for _, dev := range devs {
 		if !dev.IsGamepad() || excludedVendors[dev.Vendor] || (dev.Virtual() && !d.IncludeVirtual) {
 			continue
+		}
+		if dev.SysfsPath != "" {
+			if seen[dev.SysfsPath] {
+				continue
+			}
+			seen[dev.SysfsPath] = true
 		}
 		out = append(out, Discovered{Dev: dev, Resolution: Resolve(d.models, dev)})
 	}

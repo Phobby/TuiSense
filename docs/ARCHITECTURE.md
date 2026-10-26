@@ -18,7 +18,7 @@ descriptor — never by editing the UI core.
 flowchart TD
     subgraph UI["internal/ui — presentation"]
         Layout["layout.go — responsive solver (centered stage)"]
-        Stage["widgets/controller3d.go — stage, region pills, picking, device switcher"]
+        Stage["widgets/controller3d.go — centered stage, contextual hover, projected picking"]
         Visual["visual/ — per-family 3D models (dualsense, xbox, generic)"]
         Views["views/ — dashboard, panel view registry, EZ + Advanced renderers"]
     end
@@ -105,7 +105,7 @@ internal/
 type Capability string        // battery, connection, firmware_info, haptics,
                               // adaptive_triggers, lighting, sticks, motion,
                               // audio, profiles, diagnostics, firmware_update,
-                              // remapping, calibration
+                              // firmware_check, remapping, calibration
 type Feature string           // fine-grained: lightbar_rgb, player_leds, mic_led,
                               // led_brightness, dual_motors, trigger_motors, speaker, ...
 type Support int              // Unsupported | Limited | Full
@@ -175,8 +175,8 @@ type VirtualDevice struct {           // mock or test device factory
 | Entry               | Kind            | Attached when                                      |
 |---------------------|-----------------|----------------------------------------------------|
 | `dualsense` driver  | hardware        | every discovered hidraw node (unless `--mock`)     |
-| `mock:dualsense`    | `SourceMock`    | `--mock`, or no hardware and mock fallback allowed |
-| `test:xbox`         | `SourceTest`    | always (unless `--no-test-devices`); never auto-selected |
+| `mock:dualsense`    | `SourceMock`    | explicit `--mock` (internal tests may opt into fallback) |
+| `test:xbox`         | `SourceTest`    | explicit `--test-devices`; never auto-selected |
 
 ### Selection policy (`session.Manager`)
 
@@ -242,7 +242,7 @@ Compact (80×24): stage left, status + inspector right.
 | Audio     | `audio`              | —                          | ✓ |
 | Profiles  | `profiles`           | one-click list             | save/load/delete/bind |
 | Device    | `firmware_info`      | —                          | identity + capability matrix |
-| Firmware  | `firmware_update`    | —                          | ✓ (simulated for the test device) |
+| Device Details | — (any controller) | device info, firmware version/target/status, check, how to update | + build, driver, per-target comparison, metadata source, every raw reading with its origin |
 | Logs      | `diagnostics`        | —                          | ✓ |
 | Settings  | —                    | mode, rotation, contrast   | + 3D options, simulator |
 
@@ -282,7 +282,8 @@ for its family → `Descriptor.DefaultProfile` → `Descriptor.DefaultConfig()`.
 
 | File | Content |
 |------|---------|
-| `$XDG_CONFIG_HOME/tuisense/settings.json` | `mode`, `last_device`, `active_profiles` (per family), `high_contrast`, `auto_rotate` |
+| `$XDG_CONFIG_HOME/tuisense/settings.json` | `mode`, `last_device`, `active_profiles` (per family), `high_contrast`, `auto_rotate`, `firmware_auto_check` |
+| `$XDG_CONFIG_HOME/tuisense/firmware.json` | last successful firmware check per controller (time, status, versions, last notified version) |
 | `$XDG_CONFIG_HOME/tuisense/profiles/*.json` | profiles (`family: ""` = universal) |
 | `$XDG_CONFIG_HOME/tuisense/profiles/_bindings.json` | MAC → profile |
 
@@ -318,6 +319,11 @@ Windows HID/SetupAPI, or hidapi) only needs to produce `Candidate`s and an
 | Centered layout, compact fit | `internal/ui/layout_test.go` |
 | End-to-end headless UI (device switching, selector modal, modes, persistence, no-controller fallback, 3D render) | `internal/app/app_test.go` |
 | DualSense HID protocol | `internal/drivers/dualsense/protocol_test.go` |
+| Firmware report 0x20 decoding, BT CRC, no invented values | `internal/drivers/dualsense/firmware_test.go` |
+| Device details: real BT report fixture, firmware vs hardware separation, unknown target, USB hint, permission/sysfs fallback, sysfs mismatch | `internal/drivers/dualsense/details_test.go`, `internal/system/hidsysfs_test.go`, `internal/device/details_test.go` |
+| Metadata parsing, malformed/changed responses, HTTPS-only fetch, timeout, offline, target comparison, unknown revisions, wrong mappings | `internal/firmware/sony/*_test.go` |
+| Service: no/multiple controllers, unsupported devices (MSI, Xbox), persistence, one notification per version, timeout | `internal/firmware/service_test.go` |
+| Device Details UI: non-blocking check, EZ/Advanced sections, status rendering, controller switching, stale results, official links only, notification, auto-check policy | `internal/app/firmware_test.go` |
 
 Integration tests inject a registry without hardware drivers and temporary
 config/profile directories, so they never touch real devices or user files.
@@ -509,6 +515,102 @@ internal/debugcmd/          `tuisense debug devices|inputs [--watch N]`
   drives discovery, absinfo, events, samples and FF upload/play/erase. It is a
   kernel-interface test, not a test of the physical controller.
 
+## 11b. Firmware update checker (read-only)
+
+```text
+internal/firmware/          Service, Subject, Result/Status, Store (firmware.json), Provider interface
+internal/firmware/sony/     Sony metadata fetcher + validator, DualSense target table, official guide
+internal/drivers/dualsense/firmware.go   Feature report 0x20 decoder → device.FirmwareIdentity
+internal/drivers/dualsense/details.go    report 0x20 + sysfs → []device.Detail (with origin, raw flags)
+internal/system/hidsysfs.go              plain-file sysfs reader (uevent, driver, driver attributes)
+internal/device/details.go               device.DetailsProvider fallback built from device.Info
+internal/ui/views/firmware.go            Device Details panel (overview, guide, links, advanced details)
+```
+
+**Strictly read-only.** TuiSense never enters bootloader/update mode, never
+transfers, erases, flashes or downgrades firmware, never downloads firmware
+images, and never runs third-party flashing tools. The only network request is
+an HTTPS GET of Sony's metadata file; the only device access is the
+`HIDIOCGFEATURE` read of report `0x20` that the driver already performs when it
+opens the controller.
+
+**Panel and capability gate.** The *Device Details* panel (key `F`) is shown
+for every attached controller. Its Overview lists device information and the
+firmware state; Advanced mode adds *Advanced details*, where every reading is
+listed per group (Device / Firmware / Hardware / Linux driver) and the selected
+one is explained with its origin and meaning. The update check, guide and
+official links appear only when the device declares `firmware_check`
+(DualSense / DualSense Edge) *and* a provider handles it
+(`Service.ProviderFor`). The MSI Force GC20 V2, generic evdev pads and the Xbox
+test device show details from `device.Info` only (`device.BasicDetails`).
+
+**Components.** `device.DetailsProvider` (device information, per-value
+origin), `device.FirmwareIdentityProvider` (the version a checker compares),
+`firmware.Service` + `firmware.Provider` (the update checker), and the view.
+A future Xbox/8BitDo driver implements the first two interfaces and, if its
+vendor publishes metadata, a provider — nothing in the core changes.
+
+**Where DualSense values come from.** Two read-only sources, both on USB and
+Bluetooth:
+
+| Field | Source | Meaning |
+|---|---|---|
+| Firmware version (e.g. `0x0630`) | report `0x20` bytes 44–45 | update version; what Sony's metadata lists (kernel: "feature version") |
+| Firmware build (e.g. `0x0110002A`) | report `0x20` bytes 28–31 = sysfs `firmware_version` | main firmware word; not compared with Sony's metadata |
+| Build date | report `0x20` bytes 1–19 | ASCII, shown only if well-formed |
+| Hardware version (raw, e.g. `0x00000413`) | report `0x20` bytes 24–27 = sysfs `hardware_version` | encoding undocumented; does not identify the target |
+| fw_type, sw_series, component versions, update image info, device info | report `0x20` (dualsensectl layout) | raw, Advanced only, never used for decisions |
+| Firmware target, board revision | — | **Unknown**: not reported in any documented field |
+| Kernel driver, HID name, sysfs attributes, kernel release | sysfs, `/proc` | Linux facts |
+
+The report is fetched with `HIDIOCGFEATURE` (GET_FEATURE) only — the same read
+the kernel performs at connect time; no feature or output report is sent for
+discovery. Bluetooth reads must pass the report's CRC32 (seed `0xA3`). If the
+report cannot be read, sysfs still provides the build and hardware words; on
+Bluetooth the panel suggests USB, and without hidraw access it explains the
+permission problem. Nothing is defaulted. A reconnect (e.g. Bluetooth → USB)
+re-opens the device and re-reads everything; a check result made over another
+connection or for another installed version is discarded.
+
+`sw_series` reads `0x0004` on a tested CFI-ZCT1 controller, matching one of
+Sony's target IDs, but no source documents that link, so it is not used.
+
+**Metadata.** `https://fwupdater.dl.playstation.net/fwupdater/info.json`
+(undocumented, used by Sony's "Firmware updater for DualSense"). It lists one
+latest version per *firmware target*: `FwUpdate<target>LatestVersion`. The
+fetcher enforces HTTPS (also on redirects), a 10 s HTTP timeout (15 s per
+check), a 64 KiB body limit, strict JSON and `0x`-hex validation, and caches a
+good response for 10 minutes so several controllers share one request.
+
+**Targets.** Sony does not document the mapping, and the controller does not
+report its target. Community reports associate PID `0CE6` (DualSense) with
+`0004`, `000B`, `000E` (by internal board revision) and PID `0DF2` (Edge) with
+`0044`. A result is only claimed when it holds for **every** target of the
+product:
+
+| Installed vs. latest of all candidate targets | Status |
+|---|---|
+| ≥ every target | Up to date |
+| < every target | Update available (version or range shown) |
+| in between | Unable to verify (explains which targets disagree) |
+| a candidate target missing / unknown target in metadata | Unable to verify |
+| unknown Sony PID | Unsupported device revision |
+| server unreachable / timeout | Network error |
+| HTTP error, malformed body | Metadata unavailable |
+
+**Async + persistence.** `Service.Start` runs on a goroutine; results are
+queued and applied on the render goroutine (`drainFirmware`), so the Limoni
+loop never blocks. Successful checks are stored per controller (VID:PID:MAC)
+in `$XDG_CONFIG_HOME/tuisense/firmware.json` with the time, result and the last
+*notified* version, so an available update produces one non-intrusive toast per
+version. The daily automatic check (setting in Advanced → Device Details → Advanced details → Firmware)
+runs only for real hardware.
+
+**Official guidance.** The panel explains Sony's two documented methods
+(PlayStation Accessories on Windows, PS5), states that no official Linux or
+browser updater exists, and offers *Open web page* / *Copy link* for Sony's
+pages only — clearly labeled as opening instructions, not updating.
+
 ## 12. Internationalization
 
 `internal/i18n` translates the UI at render time. English source strings are
@@ -536,7 +638,55 @@ capability notes) is translated where it is displayed, so drivers stay plain dat
    `gamepad.Model` matchers; confirm the MSI GC20 V2 DirectInput/Android
    layouts on hardware and add their observed IDs.
 4. **Cross-platform adapters** — hidapi-based transport for macOS/Windows.
-5. **Advanced capabilities** — remapping editor, stick calibration, firmware
-   update flow (with explicit safety confirmations), DualSense Edge slots.
+5. **Advanced capabilities** — remapping editor, stick calibration, DualSense
+   Edge slots. (Firmware *installation* is intentionally out of scope; see §11b.)
 6. **Plugins** — out-of-process drivers speaking a small JSON-RPC protocol,
    registered as `Driver`s.
+
+### Shared copy and clipboard infrastructure
+
+`internal/ui/copytext.CopyableText` separates display text from exact clipboard
+payloads and registers clipped line hitboxes, semantic hover targets,
+accessibility nodes and Limoni focus bounds. `copytext.Model` keeps only the last
+rendered actions. Its device/panel/category scope prevents stale keyboard targets
+from activating after navigation. Modals disable background copy targets. Log
+copy targets forward wheel navigation to the existing LogView state.
+
+View cursors use this component for values and whole wrapped/truncated messages;
+firmware detail labels retain their explanation selection action. Device summary,
+battery status, technical sensor readings, logs and inline errors use the same
+component. `views.BuildClipboardReport` renders current device and diagnostic
+state without synthesizing missing measurements. An allowlist limits default
+provider details to known nonunique facts, while known unique values and MACs
+embedded in explanations/logs are redacted. Identifier inclusion is an explicit
+in-memory choice reset when switching devices. Audio data and raw HID packets
+are excluded from bulk reports.
+
+`internal/clipboard.ClipboardService` returns an `Outcome` distinguishing native
+utility success from an unacknowledged OSC 52 request. Platform selection is
+independent of drivers, firmware services and diagnostic engines. Programs are
+invoked directly with fixed arguments; payloads are passed through standard
+input. Each native attempt has a deadline. OSC 52 requires explicit opt-in,
+uses base64, supports tmux passthrough, and enforces a payload limit without
+silently truncating. GUI tools are skipped over SSH. `Application.CopyText` runs
+the service off the render loop and delivers completion through a channel;
+feedback and state changes occur only on the UI goroutine. At most one operation
+is in flight. Failures produce a private exact-text fallback file and an
+accessible modal, without asserting clipboard success.
+
+
+## Minimal navigation and device visibility
+
+The primary destinations are stable (Home, Diagnostics, Customize, Profiles,
+Device / Settings). `PrimaryPanel` groups the capability-filtered catalog without
+removing individual renderers. Secondary navigation wraps; short forms use a
+viewport with translated mouse and keyboard targets. Help owns its scroll state
+and captures shortcuts while open. Only `? Help` persists below the content.
+
+Normal application construction does not register virtual factories. `--mock`
+registers the demo factory, while `--test-devices` explicitly registers the
+architecture fixtures. Tests can still inject a custom registry. DualSense
+identity uses a validated unique address (hashed), or a resolved physical sysfs
+ancestor, with a node-path fallback. A candidate's endpoint is separate from its
+identity: transport/node changes reopen the backend under the same stable key.
+Model names and VID/PID pairs are never used to merge physical devices.

@@ -1,6 +1,7 @@
 package views
 
 import (
+	"fmt"
 	"github.com/Phobby/TuiSense/internal/i18n"
 	"math"
 
@@ -120,7 +121,7 @@ func RenderSticksPanel(f *terminal.Frame, area cell.Rect, s *state.AppState) {
 
 	// Inner Deadzone (0..40%)
 	if y < inner.Y+inner.Height {
-		f.Buffer.SetStringWithin(inner.X, y, i18n.Tf("Inner Deadzone: %2d%%", activeStick.InnerDeadzone), p.LabelStyle(), labelW)
+		copyValue(f, cell.NewRect(inner.X, y, labelW, 1), s, i18n.Tf("Inner Deadzone: %2d%%", activeStick.InnerDeadzone), fmt.Sprintf("%d%%", activeStick.InnerDeadzone), p.LabelStyle())
 		f.RenderWidget(widgets.Slider{
 			ID:           "slider_" + prefix + "_inner_dz",
 			State:        inSlider,
@@ -140,7 +141,7 @@ func RenderSticksPanel(f *terminal.Frame, area cell.Rect, s *state.AppState) {
 
 	// Outer Threshold (70..100%)
 	if y < inner.Y+inner.Height {
-		f.Buffer.SetStringWithin(inner.X, y, i18n.Tf("Outer Max Zone:%3d%%", activeStick.OuterDeadzone), p.LabelStyle(), labelW)
+		copyValue(f, cell.NewRect(inner.X, y, labelW, 1), s, i18n.Tf("Outer Max Zone:%3d%%", activeStick.OuterDeadzone), fmt.Sprintf("%d%%", activeStick.OuterDeadzone), p.LabelStyle())
 		f.RenderWidget(widgets.Slider{
 			ID:           "slider_" + prefix + "_outer_dz",
 			State:        outSlider,
@@ -160,7 +161,7 @@ func RenderSticksPanel(f *terminal.Frame, area cell.Rect, s *state.AppState) {
 
 	// Sensitivity (50..150%)
 	if y < inner.Y+inner.Height {
-		f.Buffer.SetStringWithin(inner.X, y, i18n.Tf("Sensitivity:   %3d%%", activeStick.Sensitivity), p.LabelStyle(), labelW)
+		copyValue(f, cell.NewRect(inner.X, y, labelW, 1), s, i18n.Tf("Sensitivity:   %3d%%", activeStick.Sensitivity), fmt.Sprintf("%d%%", activeStick.Sensitivity), p.LabelStyle())
 		f.RenderWidget(widgets.Slider{
 			ID:           "slider_" + prefix + "_sens",
 			State:        sensSlider,
@@ -185,8 +186,9 @@ func RenderSticksPanel(f *terminal.Frame, area cell.Rect, s *state.AppState) {
 		mappedY := device.ApplyStickCurve(rawY, *activeStick)
 		driftMag := math.Hypot(rawX, rawY) * 100.0
 
-		f.Buffer.SetStringWithin(inner.X, y, i18n.Tf("2D Stick Scope │ Raw:(%+.2f,%+.2f) → Out:(%+.2f,%+.2f) │ Deflection:%4.1f%%",
-			rawX, rawY, mappedX, mappedY, driftMag), p.SectionHeaderStyle(), inner.Width)
+		text := i18n.Tf("2D Stick Scope │ Raw:(%+.2f,%+.2f) → Out:(%+.2f,%+.2f) │ Deflection:%4.1f%%",
+			rawX, rawY, mappedX, mappedY, driftMag)
+		copyValue(f, cell.NewRect(inner.X, y, inner.Width, 1), s, text, text, p.SectionHeaderStyle())
 		y++
 		remainH--
 

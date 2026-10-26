@@ -1,7 +1,6 @@
 package widgets
 
 import (
-	"fmt"
 	"github.com/Phobby/TuiSense/internal/i18n"
 	"math"
 
@@ -30,46 +29,20 @@ type StageCallbacks struct {
 }
 
 // RenderControllerStage draws the centered controller visual — the focal point
-// of TuiSense — with its title, region callouts, picking, and device switcher.
+// of TuiSense — with projected picking and a single contextual region label.
 // Everything shown is derived from the active device's Descriptor.
 func RenderControllerStage(f *terminal.Frame, area cell.Rect, s *state.AppState, cb StageCallbacks) {
-	if area.Width < 20 || area.Height < 10 {
+	if area.Width < 20 || area.Height < 6 {
 		return
 	}
 	p := s.Theme
 	accent := AccentColor(s.Descriptor)
 
-	// Row 0: centered device title + source tag (click opens the device selector)
-	title := i18n.T(s.Descriptor.DisplayName)
-	tag := sourceTag(s)
-	titleW := uint16(cell.StringWidth(title) + cell.StringWidth(tag) + 1)
-	tx := area.X
-	if titleW < area.Width {
-		tx = area.X + (area.Width-titleW)/2
+	if s.ActiveDeviceKey == "" {
+		renderEmptyBanner(f, area, s)
+		return
 	}
-	w := f.Buffer.SetStringWithin(tx, area.Y, title, cell.Style{Fg: p.FgPrimary, Bg: p.BgCanvas, Modifier: cell.ModifierBold}, area.Width-(tx-area.X))
-	if tag != "" && tx+w+1 < area.X+area.Width {
-		f.Buffer.SetStringWithin(tx+w+1, area.Y, tag, cell.Style{Fg: p.BgCanvas, Bg: accent, Modifier: cell.ModifierBold}, area.X+area.Width-tx-w-1)
-	}
-	if cb.OnOpenSelector != nil {
-		f.RegisterClickHandler(cell.NewRect(tx, area.Y, min(titleW, area.Width), 1), func(_ driver.MouseEvent) { cb.OnOpenSelector() })
-	}
-
-	top := area.Y + 1
-	if s.Mode == state.ModeAdvanced && area.Height >= 16 {
-		renderStageToolbar(f, cell.NewRect(area.X+2, top, area.Width-4, 1), s)
-		top++
-	}
-
-	// Bottom rows: region description + device switcher
-	footerRows := uint16(2)
-	viewH := area.Y + area.Height - footerRows - top
-	if viewH < 6 {
-		footerRows = 0
-		viewH = area.Y + area.Height - top
-	}
-	viewArea := cell.NewRect(area.X+1, top, area.Width-2, viewH)
-
+	viewArea := cell.NewRect(area.X+1, area.Y, area.Width-2, area.Height-1)
 	v := visual.Lookup(s.Descriptor.VisualID)
 	model, faceColors := v.Build(visual.Context{
 		Palette:   p,
@@ -129,38 +102,18 @@ func RenderControllerStage(f *terminal.Frame, area cell.Rect, s *state.AppState,
 
 	// Must match Viewer3D's internal projection so mouse picking is 1:1.
 	projScale := float64(viewArea.Height) * 4.0 * 0.40 * viewerScale
-	register3DStageMouse(f, viewArea, s, v.Anchors(), rotX, rotY, rotZ, dist, projScale, cb.OnSelectRegion)
-	renderRegionHotspotPills(f, viewArea, s, accent, cb.OnSelectRegion)
-
-	if !s.DeviceInfo.Connected {
-		renderEmptyBanner(f, viewArea, s)
+	if !s.ShowHelp && !s.ShowDeviceSelector && !s.ShowCopyFallback {
+		register3DStageMouse(f, viewArea, s, v.Anchors(), rotX, rotY, rotZ, dist, projScale, cb.OnSelectRegion)
 	}
 
-	if footerRows == 2 {
-		y := area.Y + area.Height - 2
-		line := ""
-		if r, ok := s.Descriptor.Region(s.SelectedRegion); ok {
-			line = "● " + i18n.T(r.Label) + " — " + i18n.T(r.Description)
-		} else if s.DeviceInfo.Connected {
-			line = i18n.T("Select a highlighted region to configure it")
-		}
-		renderCentered(f, cell.NewRect(area.X+1, y, area.Width-2, 1), line, cell.Style{Fg: p.FgSecondary, Bg: p.BgCanvas})
-		renderDeviceSwitcher(f, cell.NewRect(area.X, y+1, area.Width, 1), s, accent, cb)
+	region := s.SelectedRegion
+	if s.HoveredRegion != device.RegionNone {
+		region = s.HoveredRegion
 	}
-}
+	if r, ok := s.Descriptor.Region(region); ok {
+		renderCentered(f, cell.NewRect(area.X, area.Y+area.Height-1, area.Width, 1), i18n.T(r.Label), p.MutedStyle())
+	}
 
-func sourceTag(s *state.AppState) string {
-	for _, d := range s.Devices {
-		if d.Key == s.ActiveDeviceKey {
-			switch d.Source {
-			case device.SourceMock:
-				return i18n.T(" MOCK ")
-			case device.SourceTest:
-				return i18n.T(" TEST ")
-			}
-		}
-	}
-	return ""
 }
 
 func renderCentered(f *terminal.Frame, area cell.Rect, text string, st cell.Style) {
@@ -173,158 +126,12 @@ func renderCentered(f *terminal.Frame, area cell.Rect, text string, st cell.Styl
 }
 
 func renderEmptyBanner(f *terminal.Frame, viewArea cell.Rect, s *state.AppState) {
-	if viewArea.Height < 8 || viewArea.Width < 36 {
-		return
+	y := viewArea.Y + viewArea.Height/2
+	renderCentered(f, cell.NewRect(viewArea.X, y, viewArea.Width, 1), i18n.T("No controller connected"), s.Theme.ValueStyle())
+	if y+2 < viewArea.Y+viewArea.Height {
+		renderCentered(f, cell.NewRect(viewArea.X, y+2, viewArea.Width, 1), i18n.T("Connect a supported controller to get started."), s.Theme.MutedStyle())
 	}
-	p := s.Theme
-	bw := min(viewArea.Width-6, uint16(50))
-	bh := uint16(5)
-	bx := viewArea.X + (viewArea.Width-bw)/2
-	by := viewArea.Y + (viewArea.Height-bh)/2
-	f.RenderWidget(widgets.Block{
-		Title:         i18n.T(" NO CONTROLLER CONNECTED "),
-		Borders:       widgets.BorderAll,
-		BorderSymbols: widgets.SymbolsRounded,
-		BorderStyle:   cell.Style{Fg: p.Warning, Bg: p.BgElevated},
-		TitleStyle:    cell.Style{Fg: p.Warning, Bg: p.BgElevated, Modifier: cell.ModifierBold},
-		Style:         cell.Style{Fg: p.FgPrimary, Bg: p.BgElevated},
-	}, cell.NewRect(bx, by, bw, bh))
-	f.Buffer.SetStringWithin(bx+2, by+1, i18n.T("Connect a controller via USB or Bluetooth."), cell.Style{Fg: p.FgPrimary, Bg: p.BgElevated}, bw-4)
-	f.Buffer.SetStringWithin(bx+2, by+2, i18n.T("Hot-plug detection is active."), cell.Style{Fg: p.FgSecondary, Bg: p.BgElevated}, bw-4)
-	f.Buffer.SetStringWithin(bx+2, by+3, i18n.T("[D] simulate  ·  [C] choose another device"), cell.Style{Fg: p.AccentCyan, Bg: p.BgElevated}, bw-4)
-	f.RegisterAccessibility(accessibility.AccessibilityNode{
-		ID:     "empty_state_banner",
-		Role:   accessibility.RoleGeneric,
-		Label:  i18n.T("No controller connected"),
-		Bounds: cell.NewRect(bx, by, bw, bh),
-	})
-}
-
-// renderDeviceSwitcher draws "‹ ◆ DualSense  ◇ Xbox (Test) ›" chips under the visual.
-func renderDeviceSwitcher(f *terminal.Frame, area cell.Rect, s *state.AppState, accent cell.Color, cb StageCallbacks) {
-	p := s.Theme
-	if len(s.Devices) == 0 {
-		renderCentered(f, area, i18n.T("No devices attached"), cell.Style{Fg: p.FgMuted, Bg: p.BgCanvas})
-		return
-	}
-	labels := make([]string, len(s.Devices))
-	totalW := 4 // arrows
-	for i, d := range s.Devices {
-		mark := "◇"
-		if d.Key == s.ActiveDeviceKey {
-			mark = "◆"
-		}
-		labels[i] = fmt.Sprintf(" %s %s ", mark, d.Descriptor.ShortName)
-		totalW += cell.StringWidth(labels[i]) + 1
-	}
-	x := area.X
-	if uint16(totalW) < area.Width {
-		x = area.X + (area.Width-uint16(totalW))/2
-	}
-	limit := area.X + area.Width
-	arrowStyle := cell.Style{Fg: p.FgMuted, Bg: p.BgCanvas, Modifier: cell.ModifierBold}
-
-	f.Buffer.SetStringWithin(x, area.Y, "‹ ", arrowStyle, 2)
-	if cb.OnCycleDevice != nil {
-		f.RegisterClickHandler(cell.NewRect(x, area.Y, 2, 1), func(_ driver.MouseEvent) { cb.OnCycleDevice(-1) })
-	}
-	x += 2
-
-	for i, d := range s.Devices {
-		cw := uint16(cell.StringWidth(labels[i]))
-		if x+cw > limit {
-			break
-		}
-		active := d.Key == s.ActiveDeviceKey
-		st := cell.Style{Fg: p.FgSecondary, Bg: p.BgElevated}
-		if active {
-			st = cell.Style{Fg: p.BgCanvas, Bg: accent, Modifier: cell.ModifierBold}
-		}
-		rect := cell.NewRect(x, area.Y, cw, 1)
-		f.Buffer.SetStringWithin(x, area.Y, labels[i], st, cw)
-		key := d.Key
-		if cb.OnSelectDevice != nil {
-			f.RegisterClickHandler(rect, func(_ driver.MouseEvent) { cb.OnSelectDevice(key) })
-		}
-		nodeState := accessibility.NodeState(0)
-		if active {
-			nodeState |= accessibility.StateSelected
-		}
-		f.RegisterAccessibility(accessibility.AccessibilityNode{
-			ID:     fmt.Sprintf("device_chip_%d", i),
-			Role:   accessibility.RoleButton,
-			Label:  d.Descriptor.ShortName,
-			Value:  d.Descriptor.DisplayName,
-			State:  nodeState,
-			Bounds: rect,
-		})
-		x += cw + 1
-	}
-	if x+2 <= limit {
-		f.Buffer.SetStringWithin(x, area.Y, " ›", arrowStyle, 2)
-		if cb.OnCycleDevice != nil {
-			f.RegisterClickHandler(cell.NewRect(x, area.Y, 2, 1), func(_ driver.MouseEvent) { cb.OnCycleDevice(1) })
-		}
-	}
-}
-
-func renderStageToolbar(f *terminal.Frame, area cell.Rect, s *state.AppState) {
-	p := s.Theme
-	type item struct {
-		text    string
-		active  bool
-		onClick func()
-	}
-	markerNames := [3]string{"Braille", "HalfBlock", "Quadrant"}
-	items := []item{
-		{i18n.Tf(" ⟳ Orbit %s ", onOff(s.AutoRotate)), s.AutoRotate, func() { s.AutoRotate = !s.AutoRotate }},
-		{fmt.Sprintf(" ◐ %s ", s.ShadingMode), false, func() { CycleShading(s) }},
-		{fmt.Sprintf(" ❖ %s ", markerNames[s.RenderMarker%3]), false, func() { s.RenderMarker = (s.RenderMarker + 1) % 3 }},
-		{i18n.T(" ⌖ Reset "), false, s.ResetCamera},
-	}
-	totalW := 0
-	for _, it := range items {
-		totalW += cell.StringWidth(it.text) + 1
-	}
-	x := area.X
-	if uint16(totalW) < area.Width {
-		x = area.X + (area.Width-uint16(totalW))/2
-	}
-	for _, it := range items {
-		w := uint16(cell.StringWidth(it.text))
-		if x+w > area.X+area.Width {
-			break
-		}
-		st := cell.Style{Fg: p.FgMuted, Bg: p.BgCanvas}
-		if it.active {
-			st = cell.Style{Fg: p.FgSecondary, Bg: p.BgElevated}
-		}
-		f.Buffer.SetStringWithin(x, area.Y, it.text, st, w)
-		fn := it.onClick
-		f.RegisterClickHandler(cell.NewRect(x, area.Y, w, 1), func(_ driver.MouseEvent) { fn() })
-		x += w + 1
-	}
-}
-
-func onOff(b bool) string {
-	if b {
-		return i18n.T("ON")
-	}
-	return i18n.T("OFF")
-}
-
-// CycleShading advances the stage shading mode.
-func CycleShading(s *state.AppState) {
-	switch s.ShadingMode {
-	case "Lambert":
-		s.ShadingMode = "Gouraud"
-	case "Gouraud":
-		s.ShadingMode = "Flat"
-	case "Flat":
-		s.ShadingMode = "Wireframe"
-	default:
-		s.ShadingMode = "Lambert"
-	}
+	f.RegisterAccessibility(accessibility.AccessibilityNode{ID: "empty_state_banner", Role: accessibility.RoleGeneric, Label: i18n.T("No controller connected"), Bounds: viewArea})
 }
 
 func register3DStageMouse(
@@ -379,7 +186,7 @@ func register3DStageMouse(
 	var dragStartX, dragStartY int
 	var movedDuringDrag bool
 
-	f.RegisterClickHandler(viewArea, func(ev driver.MouseEvent) {
+	handlePointer := func(ev driver.MouseEvent) {
 		switch ev.Button {
 		case driver.MouseScrollUp:
 			s.Zoom = math.Min(1.75, s.Zoom+0.10)
@@ -420,102 +227,18 @@ func register3DStageMouse(
 				}
 			})
 		}
-	})
-}
-
-// renderRegionHotspotPills places one callout per declared region at its slot.
-func renderRegionHotspotPills(
-	f *terminal.Frame,
-	viewArea cell.Rect,
-	s *state.AppState,
-	accent cell.Color,
-	onSelectRegion func(device.RegionID),
-) {
-	if viewArea.Width < 34 || viewArea.Height < 8 {
-		return
 	}
-	p := s.Theme
-	left := viewArea.X + 1
-	right := viewArea.X + viewArea.Width - 1
-	centerX := viewArea.X + viewArea.Width/2
-	topY := viewArea.Y
-	midY := viewArea.Y + 3
-	lowY := viewArea.Y + viewArea.Height - 3
-	botY := viewArea.Y + viewArea.Height - 1
-
-	// Track occupied spans per row so callouts never overlap on narrow stages.
-	occupied := map[uint16][][2]uint16{}
-	fits := func(x, y, w uint16) bool {
-		if x < viewArea.X || x+w > viewArea.X+viewArea.Width {
-			return false
-		}
-		for _, span := range occupied[y] {
-			if x < span[1]+1 && span[0] < x+w+1 {
-				return false
-			}
-		}
-		return true
-	}
-
-	for _, region := range s.Descriptor.Regions {
-		label := " ◉ " + i18n.T(region.Badge) + " "
-		w := uint16(cell.StringWidth(label))
-		var x, y uint16
-		switch region.Slot {
-		case device.SlotTopLeft:
-			x, y = left, topY
-		case device.SlotTopCenter:
-			x, y = centerX-w/2, topY
-		case device.SlotTopRight:
-			x, y = right-w, topY
-		case device.SlotMidLeft:
-			x, y = left, midY
-		case device.SlotMidRight:
-			x, y = right-w, midY
-		case device.SlotLowLeft:
-			x, y = left, lowY
-		case device.SlotLowRight:
-			x, y = right-w, lowY
-		default:
-			x, y = centerX-w/2, botY
-		}
-		if x < viewArea.X {
-			x = viewArea.X
-		}
-		if !fits(x, y, w) {
-			continue
-		}
-		occupied[y] = append(occupied[y], [2]uint16{x, x + w})
-		rect := cell.NewRect(x, y, w, 1)
-
-		active := s.SelectedRegion == region.ID
-		st := cell.Style{Fg: p.FgSecondary, Bg: p.BgElevated}
-		switch {
-		case active:
-			st = cell.Style{Fg: p.BgCanvas, Bg: accent, Modifier: cell.ModifierBold}
-		case !s.Caps.Supports(region.Capability):
-			st = cell.Style{Fg: p.FgMuted, Bg: p.BgCanvas}
-		}
-		f.Buffer.SetStringWithin(rect.X, rect.Y, label, st, rect.Width)
-
-		id := region.ID
-		f.RegisterClickHandler(rect, func(_ driver.MouseEvent) {
-			if onSelectRegion != nil {
-				onSelectRegion(id)
-			}
-		})
-
-		nodeState := accessibility.NodeState(0)
-		if active {
-			nodeState |= accessibility.StateSelected
-		}
-		f.RegisterAccessibility(accessibility.AccessibilityNode{
-			ID:     "region_" + string(region.ID),
-			Role:   accessibility.RoleButton,
-			Label:  i18n.T(region.Badge),
-			Value:  i18n.T(region.Label),
-			State:  nodeState,
-			Bounds: rect,
+	f.RegisterClickHandler(viewArea, handlePointer)
+	for _, anchor := range projected {
+		x := max(int(viewArea.X), int(anchor.cellX)-2)
+		y := max(int(viewArea.Y), int(anchor.cellY)-1)
+		rect := cell.NewRect(uint16(x), uint16(y), 5, 3).Intersection(viewArea)
+		region := anchor.region
+		f.RegisterEventRegion(terminal.EventRegion{ID: "hover_" + string(region), Area: rect, Phase: terminal.TargetPhase,
+			OnEnter: func(_ *terminal.EventContext) { s.HoveredRegion = region },
+			OnLeave: func(_ *terminal.EventContext) { s.HoveredRegion = device.RegionNone },
+			Handler: func(ctx *terminal.EventContext) { handlePointer(ctx.Mouse) },
 		})
 	}
+
 }

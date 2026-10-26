@@ -57,8 +57,16 @@ func (t *ButtonTest) Reset() {
 // Feed processes one sample. Presses that started and ended between two polls
 // are still counted through ButtonsLatched.
 func (t *ButtonTest) Feed(tel device.Telemetry, now time.Time) {
-	current := tel.Buttons
-	latched := tel.ButtonsLatched | current
+	if len(tel.Samples) > 0 {
+		for _, sample := range tel.Samples {
+			t.feedState(sample.Buttons, sample.Buttons, sample.At)
+		}
+		return
+	}
+	t.feedState(tel.Buttons, tel.ButtonsLatched|tel.Buttons, now)
+}
+
+func (t *ButtonTest) feedState(current, latched device.ButtonSet, now time.Time) {
 	if !t.started {
 		t.started = true
 		t.HeldAtStart = current
@@ -152,9 +160,9 @@ func (t *ButtonTest) Result(now time.Time, simulated bool) *Result {
 	res.Measurements = []Measurement{{i18n.T("Buttons registered"), float64(seen), i18n.Tf("of %d", total)}}
 	switch {
 	case len(missing) > 0:
-		res.Status = Warning
-		res.Summary = i18n.Tf("%d of %d buttons were not detected.", len(missing), total)
-		res.Details = append(res.Details, i18n.T("Not detected (skipped — may be unresponsive): ")+strings.Join(missing, ", "))
+		res.Status = Incomplete
+		res.Summary = i18n.Tf("%d of %d buttons were not tested.", len(missing), total)
+		res.Details = append(res.Details, i18n.T("Skipped — no conclusion about these buttons: ")+strings.Join(missing, ", "))
 	case len(stuck) > 0:
 		res.Status = Warning
 		res.Summary = i18n.T("All buttons registered, but some stayed pressed for a long time.")
@@ -166,7 +174,7 @@ func (t *ButtonTest) Result(now time.Time, simulated bool) *Result {
 		res.Details = append(res.Details, i18n.T("Long continuous presses (stuck, or simply held): ")+strings.Join(stuck, ", "))
 	}
 	res.Limitations = []string{
-		i18n.T("Two presses of the same button within one poll interval (~40 ms) count as one."),
+		i18n.T("Per-report transitions are counted when available. A latched-only source cannot distinguish multiple presses between polls; repeated key events alone do not prove switch bounce."),
 		i18n.T("Analog travel of L2/R2 is tested separately in the trigger test."),
 	}
 	return res

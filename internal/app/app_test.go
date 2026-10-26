@@ -1,6 +1,8 @@
 package app
 
 import (
+	"context"
+	"errors"
 	"strings"
 	"testing"
 
@@ -8,6 +10,8 @@ import (
 	"github.com/Phobby/TuiSense/internal/drivers"
 	"github.com/Phobby/TuiSense/internal/drivers/dualsense"
 	"github.com/Phobby/TuiSense/internal/drivers/xboxmock"
+	"github.com/Phobby/TuiSense/internal/firmware"
+	"github.com/Phobby/TuiSense/internal/firmware/sony"
 	"github.com/Phobby/TuiSense/internal/state"
 	"github.com/thebanri/limoni/core/terminal"
 	"github.com/thebanri/limoni/testkit"
@@ -32,6 +36,18 @@ func newTestApp(t *testing.T, dirs testDirs, opts Options) *Application {
 	if opts.Registry == nil {
 		opts.Registry = drivers.NewBuiltinRegistry(drivers.RegistryOptions{TestDevices: true})
 	}
+	if opts.FirmwareProviders == nil {
+		// Never reach Sony's real server from tests.
+		opts.FirmwareProviders = []firmware.Provider{sony.New(sony.FetcherFunc(func(context.Context) (sony.Catalog, error) {
+			return sony.Catalog{}, &sony.FetchError{Kind: sony.ErrNetwork, Err: errors.New("network disabled in tests")}
+		}))}
+	}
+	if opts.OpenURL == nil {
+		opts.OpenURL = func(string) error { return errors.New("browser disabled in tests") }
+	}
+	if opts.CopyText == nil {
+		opts.CopyText = func(string) error { return nil }
+	}
 	a := New(opts)
 	a.State.AutoRotate = false
 	return a
@@ -47,11 +63,12 @@ func TestDashboardStartupAndRegionSelection(t *testing.T) {
 	application := newMockApp(t, state.ModeAdvanced)
 	page := uitest.Run(t, 120, 40, application.Draw)
 
-	page.Expect(page.GetByID("status_widget")).ToBeVisible()
-	page.Expect(page.GetByID("device_summary_widget")).ToBeVisible()
-	page.Expect(page.GetByID("battery_gauge")).ToBeVisible()
+	page.Expect(page.GetByID("status_widget")).Not().ToBeVisible()
+	page.Expect(page.GetByID("device_summary_widget")).Not().ToBeVisible()
+	page.Expect(page.GetByID("battery_gauge")).Not().ToBeVisible()
 
-	page.GetByRole("button", "L2 Trigger").Click()
+	page.Press("3")
+	page.GetByID("region_" + string(device.RegionLeftTrigger)).Click()
 	if application.State.SelectedRegion != device.RegionLeftTrigger {
 		t.Fatalf("expected SelectedRegion=%s, got %s", device.RegionLeftTrigger, application.State.SelectedRegion)
 	}
@@ -60,25 +77,29 @@ func TestDashboardStartupAndRegionSelection(t *testing.T) {
 	}
 	page.Expect(page.GetByID("slider_l2_strength")).ToBeVisible()
 
-	page.GetByRole("button", "Haptics").Click()
+	application.State.SelectRegion(device.RegionHaptics)
+	page.Press("tab")
 	if application.State.ActivePanel != state.PanelHaptics {
 		t.Fatalf("expected haptics panel, got %v", application.State.ActivePanel)
 	}
 	page.Expect(page.GetByID("btn_test_heavy_rumble")).ToBeVisible()
 
-	page.GetByRole("button", "L-Stick").Click()
+	application.State.SelectRegion(device.RegionLeftStick)
+	page.Press("tab")
 	if application.State.ActivePanel != state.PanelSticks {
 		t.Fatalf("expected sticks panel, got %v", application.State.ActivePanel)
 	}
 	page.Expect(page.GetByID("slider_lstick_inner_dz")).ToBeVisible()
 
-	page.GetByRole("button", "Gyro/IMU").Click()
+	application.State.SelectRegion(device.RegionMotion)
+	page.Press("tab")
 	if application.State.ActivePanel != state.PanelMotion {
 		t.Fatalf("expected motion panel, got %v", application.State.ActivePanel)
 	}
 	page.Expect(page.GetByID("cb_gyro_enabled")).ToBeVisible()
 
-	page.GetByRole("button", "Mic/Audio").Click()
+	application.State.SelectRegion(device.RegionAudio)
+	page.Press("tab")
 	if application.State.ActivePanel != state.PanelAudio {
 		t.Fatalf("expected audio panel, got %v", application.State.ActivePanel)
 	}
@@ -170,21 +191,23 @@ func TestSwitchingDeviceChangesVisualInfoAndPanels(t *testing.T) {
 	page.Expect(page.GetByRole("image", "Sony DualSense 3D")).ToBeVisible()
 	application.State.Config.Lighting.Red = 42 // DualSense-specific change
 
-	page.GetByRole("button", "Xbox (Test)").Click()
+	page.Press("c")
+	page.GetByID("selector_item_1").Click()
 	s := application.State
 	if s.ActiveDeviceKey != xboxmock.Key || s.Descriptor.VisualID != "xbox" {
 		t.Fatalf("expected Xbox test device to be active, got %q", s.ActiveDeviceKey)
 	}
 	page.Expect(page.GetByRole("image", "Xbox-style Gamepad 3D")).ToBeVisible()
-	page.Expect(page.GetByID("device_summary_widget")).ToContainValue("Xbox")
-	page.Expect(page.GetByRole("button", "LT")).ToBeVisible()
+	page.Expect(page.GetByID("device_selector")).ToContainValue("Xbox")
+	page.Press("3")
+	page.Expect(page.GetByID("region_" + string(device.RegionLeftTrigger))).ToBeVisible()
 	page.Expect(page.GetByRole("button", "Gyro/IMU")).Not().ToBeVisible()
 	if state.PanelVisible(s.VisiblePanels(), state.PanelTriggers) || state.PanelVisible(s.VisiblePanels(), state.PanelMotion) {
 		t.Fatalf("Xbox test device must not offer adaptive triggers or motion panels")
 	}
 
 	// Xbox LT is an impulse trigger: it opens haptics with trigger motor sliders.
-	page.GetByRole("button", "LT").Click()
+	page.GetByID("region_" + string(device.RegionLeftTrigger)).Click()
 	if s.ActivePanel != state.PanelHaptics {
 		t.Fatalf("expected haptics panel for Xbox LT, got %s", s.ActivePanel)
 	}
@@ -197,6 +220,7 @@ func TestSwitchingDeviceChangesVisualInfoAndPanels(t *testing.T) {
 	if s.Config.Lighting.Red != 42 {
 		t.Fatalf("DualSense config should be restored after switching back, got red=%d", s.Config.Lighting.Red)
 	}
+	page.Press("1")
 	page.Expect(page.GetByRole("image", "Sony DualSense 3D")).ToBeVisible()
 }
 
@@ -218,14 +242,17 @@ func TestModeSwitchingChangesVisibleControls(t *testing.T) {
 	page := uitest.Run(t, 120, 40, application.Draw)
 	s := application.State
 
-	page.Expect(page.GetByID("ez_vib_Medium")).ToBeVisible()
+	page.Expect(page.GetByID("ez_vib_Medium")).Not().ToBeVisible()
 	page.Expect(page.GetByRole("tab", "1 Home")).ToBeVisible()
 	ezTabs := len(s.VisiblePanels())
 
+	page.Press("3")
+	page.GetByID("nav_haptics").Click()
 	page.GetByID("ez_vib_Off").Click()
 	if s.Config.Haptics.MasterIntensity != 0 {
 		t.Fatalf("EZ vibration Off should set master intensity to 0")
 	}
+	page.GetByID("nav_triggers").Click()
 	page.GetByID("ez_trig_Weapon").Click()
 	if s.Config.LeftTrigger.Mode != device.TriggerModeWeapon || s.Config.RightTrigger.Mode != device.TriggerModeWeapon {
 		t.Fatalf("EZ trigger feel should apply to both triggers")
@@ -236,9 +263,10 @@ func TestModeSwitchingChangesVisibleControls(t *testing.T) {
 		t.Fatalf("Advanced mode should expose more panels")
 	}
 	page.Expect(page.GetByID("ez_vib_Medium")).Not().ToBeVisible()
-	page.Expect(page.GetByRole("button", "⚡ Test Vibration")).ToBeVisible()
+	page.Expect(page.GetByID("slider_l2_strength")).ToBeVisible()
 
-	page.GetByRole("button", "L-Stick").Click()
+	application.State.SelectRegion(device.RegionLeftStick)
+	page.Press("tab")
 	if s.ActivePanel != state.PanelSticks {
 		t.Fatalf("expected sticks panel in Advanced mode")
 	}
@@ -248,7 +276,8 @@ func TestModeSwitchingChangesVisibleControls(t *testing.T) {
 	}
 
 	// In EZ, Advanced-only regions keep the user on Home with a hint.
-	page.GetByRole("button", "L-Stick").Click()
+	application.State.SelectRegion(device.RegionLeftStick)
+	page.Press("tab")
 	if s.ActivePanel != state.PanelOverview || !strings.Contains(s.RegionHint, "Advanced") {
 		t.Fatalf("expected EZ hint for stick region, got panel=%s hint=%q", s.ActivePanel, s.RegionHint)
 	}
@@ -297,11 +326,11 @@ func TestNoControllerFallback(t *testing.T) {
 
 	page := uitest.Run(t, 120, 40, application.Draw)
 	page.Expect(page.GetByID("empty_state_banner")).ToBeVisible()
-	page.Expect(page.GetByRole("button", "Xbox (Test)")).ToBeVisible()
+	page.Expect(page.GetByRole("button", "Xbox (Test)")).Not().ToBeVisible()
 
 	page.Press("D")
-	if s.ActiveDeviceKey != dualsense.MockKey || !s.DeviceInfo.Connected {
-		t.Fatalf("[D] should attach the simulated DualSense, got %q", s.ActiveDeviceKey)
+	if s.ActiveDeviceKey != "" || s.DeviceInfo.Connected {
+		t.Fatal("simulation shortcuts must not enable demo mode implicitly")
 	}
-	page.Expect(page.GetByID("empty_state_banner")).Not().ToBeVisible()
+	page.Expect(page.GetByID("empty_state_banner")).ToBeVisible()
 }

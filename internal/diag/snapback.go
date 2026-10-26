@@ -296,7 +296,7 @@ func (t *SnapbackTest) Analyze(i int) SnapbackAnalysis {
 		a.Explanation = append(a.Explanation, i18n.T("A game using that deadzone can read this as a brief input in the opposite direction — for example the character glancing the other way for a moment."))
 		a.Advice = append(a.Advice,
 			i18n.T("Let the stick glide back instead of flicking it off, or use a slightly larger deadzone or the game's anti-snapback option if it has one."),
-			i18n.T("Overshoot that grows over weeks can point to a worn centering spring."))
+			i18n.T("Different methods or sampling rates can change overshoot readings; comparable repeats are needed."))
 	case lowRate:
 		a.Verdict = VerdictInconclusive
 		a.Headline = i18n.Tf("The %s overshot at most %.1f%%, but the controller reported only %.0f samples/s, so a short overshoot may have been missed.", name, a.MaxOvershootPct, a.RateHz)

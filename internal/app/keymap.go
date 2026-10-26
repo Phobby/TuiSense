@@ -22,6 +22,13 @@ func (a *Application) HandleKeyEvent(f *terminal.Frame, key driver.KeyEvent) boo
 	}
 	s := a.State
 
+	if s.ShowCopyFallback {
+		if key.Type == driver.KeyEsc || key.Type == driver.KeyEnter {
+			s.ShowCopyFallback = false
+		}
+		return true
+	}
+
 	// 0. Device selector modal captures navigation keys while open
 	if s.ShowDeviceSelector {
 		switch {
@@ -40,8 +47,22 @@ func (a *Application) HandleKeyEvent(f *terminal.Frame, key driver.KeyEvent) boo
 		return true
 	}
 
-	// 1. If Help Modal is open, Esc / ? / Enter / Space closes it
+	// Help captures navigation before any controller or page shortcuts.
 	if s.ShowHelp {
+		switch key.Type {
+		case driver.KeyArrowDown:
+			s.HelpScroll = min(s.HelpScrollMax, s.HelpScroll+1)
+		case driver.KeyArrowUp:
+			s.HelpScroll = max(0, s.HelpScroll-1)
+		case driver.KeyPageDown:
+			s.HelpScroll = min(s.HelpScrollMax, s.HelpScroll+8)
+		case driver.KeyPageUp:
+			s.HelpScroll = max(0, s.HelpScroll-8)
+		case driver.KeyHome:
+			s.HelpScroll = 0
+		case driver.KeyEnd:
+			s.HelpScroll = s.HelpScrollMax
+		}
 		if key.Type == driver.KeyEsc || key.Type == driver.KeyEnter || key.Type == driver.KeySpace ||
 			(key.Type == driver.KeyRune && (key.Ch == '?' || key.Ch == 'q' || key.Ch == 'Q')) {
 			s.ShowHelp = false
@@ -49,6 +70,22 @@ func (a *Application) HandleKeyEvent(f *terminal.Frame, key driver.KeyEvent) boo
 		return true
 	}
 
+	if s.ActivePanel == state.PanelDiagnostics && (key.Type == driver.KeyPageUp || key.Type == driver.KeyPageDown) {
+		delta := 8
+		if key.Type == driver.KeyPageUp {
+			delta = -8
+		}
+		s.DiagnosticsScroll = min(max(0, s.DiagnosticsScroll+delta), s.DiagnosticsScrollMax)
+		return true
+	}
+	if s.ActivePanel != state.PanelDiagnostics && (key.Type == driver.KeyPageUp || key.Type == driver.KeyPageDown) {
+		delta := 8
+		if key.Type == driver.KeyPageUp {
+			delta = -8
+		}
+		s.PanelScroll = min(max(0, s.PanelScroll+delta), s.PanelScrollMax)
+		return true
+	}
 	focusedID := ""
 	if f != nil && f.FocusManager != nil {
 		focusedID = f.FocusManager.Focused()
@@ -63,6 +100,16 @@ func (a *Application) HandleKeyEvent(f *terminal.Frame, key driver.KeyEvent) boo
 				f.FocusManager.Next()
 			}
 		}
+		return true
+	}
+
+	if focusedID == "diag_deadzone_slider" && s.Diag != nil && s.Diag.Sticks != nil && s.DiagnosticDeadzoneSlider != nil {
+		if s.DiagnosticDeadzoneSlider.HandleKey(key, 0, 25) {
+			s.Diag.Sticks.PreviewDeadzone = float64(s.DiagnosticDeadzoneSlider.Value)
+			return true
+		}
+	}
+	if s.Copy.Activate(focusedID, views.CopyScope(s), key) {
 		return true
 	}
 
@@ -88,7 +135,9 @@ func (a *Application) HandleKeyEvent(f *terminal.Frame, key driver.KeyEvent) boo
 			s.ActivePanel = state.PanelOverview
 			return true
 		}
-		return false
+		s.SelectedRegion = device.RegionNone
+		s.RegionHint = ""
+		return true
 	}
 
 	// 5. Route directional / activation keys to the currently focused widget
@@ -112,7 +161,7 @@ func (a *Application) HandleKeyEvent(f *terminal.Frame, key driver.KeyEvent) boo
 			if key.Ch == 'h' {
 				step = -1
 			}
-			d.Active = cats[(idx+step+len(cats))%len(cats)]
+			d.Select(cats[(idx+step+len(cats))%len(cats)])
 			return true
 		case 'o':
 			views.DiagPrimaryAction(d, time.Now())
@@ -129,6 +178,15 @@ func (a *Application) HandleKeyEvent(f *terminal.Frame, key driver.KeyEvent) boo
 		}
 	}
 
+	if key.Type == driver.KeyRune && (key.Ch == 'y' || key.Ch == 'Y') {
+		if s.ActivePanel == state.PanelDiagnostics {
+			a.CopyText(views.BuildHealthClipboard(s, key.Ch == 'y', time.Now()))
+		} else {
+			a.CopyText(views.BuildClipboardReport(s, key.Ch == 'y', a.Opts.Version, time.Now()))
+		}
+		return true
+	}
+
 	// 6. Global Rune Shortcuts
 	if key.Type == driver.KeyRune {
 		switch key.Ch {
@@ -138,11 +196,16 @@ func (a *Application) HandleKeyEvent(f *terminal.Frame, key driver.KeyEvent) boo
 			s.ShowHelp = !s.ShowHelp
 			return true
 		case '1', '2', '3', '4', '5', '6', '7', '8', '9', '0':
-			for _, e := range s.VisiblePanels() {
+			for _, e := range s.PrimaryPanels() {
 				if e.Hotkey == key.Ch {
 					s.ActivePanel = e.Spec.ID
 					break
 				}
+			}
+			return true
+		case 'f', 'F':
+			if state.PanelVisible(s.VisiblePanels(), state.PanelFirmware) {
+				s.ActivePanel = state.PanelFirmware
 			}
 			return true
 		case 'p', 'P':
@@ -193,13 +256,19 @@ func (a *Application) HandleKeyEvent(f *terminal.Frame, key driver.KeyEvent) boo
 			s.RotY = math.Mod(s.RotY+8.0, 360.0)
 			return true
 		case 'D':
-			a.ToggleSimulatedConnection()
+			if s.IsSimulatedDevice() {
+				a.ToggleSimulatedConnection()
+			}
 			return true
 		case 'b', 'B':
-			a.CycleSimulatedTransport()
+			if s.IsSimulatedDevice() {
+				a.CycleSimulatedTransport()
+			}
 			return true
 		case 'u', 'U':
-			a.ToggleSimulatedPermission()
+			if s.IsSimulatedDevice() {
+				a.ToggleSimulatedPermission()
+			}
 			return true
 		case 'r', 'R':
 			s.ResetCamera()
