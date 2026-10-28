@@ -59,3 +59,18 @@ func TestOtherPlatformsAreHonest(t *testing.T) {
 		t.Fatal("managed installs are pointed to their package manager")
 	}
 }
+
+// Terminal.app before macOS 26 cannot draw 24-bit colour; doctor says so and
+// recommends a terminal that can.
+func TestAppleTerminalColourDepth(t *testing.T) {
+	vars := map[string]string{"LANG": "en_US.UTF-8", "TERM": "xterm-256color", "TERM_PROGRAM": "Apple_Terminal"}
+	e := env("darwin", vars)
+	e.MacOSMajor = 15
+	if f := find(Check(e), "Colours"); len(f) != 1 || !strings.Contains(f[0].Detail, "256 colours") || !strings.Contains(f[0].Detail, "iTerm2") {
+		t.Fatalf("legacy Terminal.app: %+v", f)
+	}
+	e.MacOSMajor = 26
+	if f := find(Check(e), "Colours"); len(f) != 1 || f[0].Level != OK {
+		t.Fatalf("Terminal.app on macOS 26: %+v", f)
+	}
+}

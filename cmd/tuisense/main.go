@@ -15,6 +15,7 @@ import (
 	"github.com/Phobby/TuiSense/internal/doctor"
 	"github.com/Phobby/TuiSense/internal/state"
 	"github.com/Phobby/TuiSense/internal/system"
+	"github.com/Phobby/TuiSense/internal/termcolor"
 	"github.com/Phobby/TuiSense/internal/updatecmd"
 	"github.com/Phobby/TuiSense/internal/version"
 )
@@ -92,6 +93,7 @@ func main() {
 		Version:       version.String(),
 	})
 	updatecmd.CleanupAfterStart()
+	termcolor.Apply() // before Limoni detects the terminal's colour depth
 
 	err := application.Run(ctx)
 	if err != nil && !errors.Is(err, context.Canceled) {

@@ -15,6 +15,7 @@ import (
 	"github.com/Phobby/TuiSense/internal/compat"
 	"github.com/Phobby/TuiSense/internal/system"
 	"github.com/Phobby/TuiSense/internal/system/evdev"
+	"github.com/Phobby/TuiSense/internal/termcolor"
 	"github.com/Phobby/TuiSense/internal/update"
 	"github.com/Phobby/TuiSense/internal/version"
 )
@@ -45,6 +46,8 @@ type Env struct {
 	Clipboard []string
 	Exe       string
 	Keys      int
+	// MacOSMajor is the macOS major version (0 elsewhere or if unknown).
+	MacOSMajor int
 	// Controllers counts DualSense hidraw nodes and evdev gamepads, with
 	// how many are not accessible.
 	DualSense, DualSenseDenied, Gamepads, GamepadsDenied int
@@ -53,7 +56,8 @@ type Env struct {
 // System inspects the real machine.
 func System() Env {
 	e := Env{GOOS: runtime.GOOS, Getenv: os.Getenv, Stat: func(p string) error { _, err := os.Stat(p); return err },
-		Writable: compat.SystemEnv{}.Writable, LookPath: exec.LookPath, Clipboard: clipboard.New().Available(), Keys: len(update.TrustedKeys())}
+		Writable: compat.SystemEnv{}.Writable, LookPath: exec.LookPath, Clipboard: clipboard.New().Available(), Keys: len(update.TrustedKeys()),
+		MacOSMajor: termcolor.MacOSMajor()}
 	if exe, err := os.Executable(); err == nil {
 		e.Exe = exe
 	}
@@ -100,8 +104,12 @@ func Check(e Env) []Finding {
 	default:
 		add(OK, "Terminal", fmt.Sprintf("TERM=%s, UTF-8 locale", e.Getenv("TERM")))
 	}
-	if ct := strings.ToLower(e.Getenv("COLORTERM")); ct == "truecolor" || ct == "24bit" || e.Getenv("WT_SESSION") != "" {
+	if termcolor.LegacyAppleTerminal(e.GOOS, e.Getenv, e.MacOSMajor) {
+		add(Info, "Colours", "Terminal.app before macOS 26 has no 24-bit colour; TuiSense uses 256 colours. For the smoothest 3D view use iTerm2, Ghostty, kitty or WezTerm")
+	} else if ct := strings.ToLower(e.Getenv("COLORTERM")); ct == "truecolor" || ct == "24bit" || e.Getenv("WT_SESSION") != "" {
 		add(OK, "Colours", "24-bit colour")
+	} else if e.GOOS == "darwin" && e.Getenv("TERM_PROGRAM") == "Apple_Terminal" {
+		add(OK, "Colours", "24-bit colour (Terminal.app, macOS 26 or later)")
 	} else {
 		add(Info, "Colours", "24-bit colour not announced (COLORTERM); colours may be approximated")
 	}
