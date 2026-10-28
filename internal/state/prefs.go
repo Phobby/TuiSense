@@ -27,6 +27,8 @@ type Preferences struct {
 	UpdateAutoDownload bool      `json:"update_auto_download,omitempty"`
 	UpdateChannel      string    `json:"update_channel,omitempty"`
 	UpdateLastCheck    time.Time `json:"update_last_check,omitempty"`
+	// UpdateLatest is the newest release the last check found ("0.8.1").
+	UpdateLatest string `json:"update_latest,omitempty"`
 }
 
 // PrefsStore reads and writes Preferences at a fixed path.

@@ -351,8 +351,10 @@ tuisense update --rollback  # go back to the version replaced by the last update
 Inside the app, **Settings → Application updates** shows the installed and latest
 version, the channel, the last check, download progress and release notes.
 
-- **Automatic checks** are on by default (at most every 12 hours, in the
-  background, 10-second timeout; offline use is silent). You can turn them off.
+- **Automatic checks** are on by default (in the background when TuiSense
+  starts, at most once an hour, 10-second timeout; offline use is silent). The
+  result is shown next to the version in the top-right corner. You can turn
+  checks off.
 - **Automatic downloads** are off until you enable them. A downloaded update is
   verified and staged, never run; TuiSense then says it will be applied on restart.
 - **Verification:** the release's checksum list must carry a valid Ed25519

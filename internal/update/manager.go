@@ -68,11 +68,12 @@ type Manager struct {
 	snap    Snapshot
 	rel     *Release
 	busy    bool
+	recheck bool // check at start-up regardless of Interval (see RestoreLatest)
 }
 
 // NewManager prepares a manager for the running version.
 func NewManager(current string, settings Settings, lastCheck time.Time, dir, exe string) *Manager {
-	m := &Manager{Dir: dir, Exe: exe, Keys: TrustedKeys(), GOOS: runtime.GOOS, GOARCH: runtime.GOARCH, Interval: 12 * time.Hour}
+	m := &Manager{Dir: dir, Exe: exe, Keys: TrustedKeys(), GOOS: runtime.GOOS, GOARCH: runtime.GOARCH, Interval: time.Hour}
 	v, err := ParseSemver(current)
 	m.current, m.dev = v, err != nil
 	m.snap = Snapshot{Status: StatusIdle, Current: current, Settings: settings, CheckedAt: lastCheck}
@@ -93,6 +94,26 @@ func NewManager(current string, settings Settings, lastCheck time.Time, dir, exe
 		m.snap.Status = StatusDisabled
 	}
 	return m
+}
+
+// RestoreLatest shows the result of the previous check (the newest release
+// it found) until the next check runs, so a start-up inside Interval still
+// says whether TuiSense is up to date. Anything else — a newer release, a
+// different running version (just updated) or no usable record — makes the
+// next automatic check run at once: downloading needs fresh release metadata,
+// and the user should hear about an update now.
+func (m *Manager) RestoreLatest(latest string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.snap.Status != StatusIdle {
+		return
+	}
+	v, err := ParseSemver(latest)
+	if err != nil || v.Compare(m.current) != 0 {
+		m.recheck = true
+		return
+	}
+	m.snap.Status, m.snap.Latest = StatusUpToDate, latest
 }
 
 func (m *Manager) canStage() bool { return len(m.Keys) > 0 && !Managed(m.Exe) && !m.dev }
@@ -135,7 +156,7 @@ func (m *Manager) Due(now time.Time) bool {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return m.snap.Settings.Check && !m.dev && !m.busy && m.snap.Status != StatusReady &&
-		(m.snap.CheckedAt.IsZero() || now.Sub(m.snap.CheckedAt) >= m.Interval)
+		(m.recheck || m.snap.CheckedAt.IsZero() || now.Sub(m.snap.CheckedAt) >= m.Interval)
 }
 
 // CheckAsync checks for a newer release in the background. Automatic
@@ -147,11 +168,11 @@ func (m *Manager) CheckAsync(manual bool) bool {
 		m.mu.Unlock()
 		return false
 	}
-	if !manual && !m.snap.CheckedAt.IsZero() && time.Since(m.snap.CheckedAt) < m.Interval {
+	if !manual && !m.recheck && !m.snap.CheckedAt.IsZero() && time.Since(m.snap.CheckedAt) < m.Interval {
 		m.mu.Unlock()
 		return false
 	}
-	m.busy = true
+	m.busy, m.recheck = true, false
 	m.snap.Status, m.snap.Err = StatusChecking, ""
 	m.mu.Unlock()
 	m.changed()

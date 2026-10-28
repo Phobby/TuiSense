@@ -578,3 +578,49 @@ func TestPinnedKeysParse(t *testing.T) {
 		t.Fatalf("trusted_keys.txt must parse: %v", err)
 	}
 }
+
+// A start-up shortly after the last check shows that check's result. A
+// different running version (just updated), a recorded newer release, or no
+// record makes the check run at once instead of waiting for Interval.
+func TestStartupRestoresOrRechecks(t *testing.T) {
+	f := newFakeRelease(t)
+	f.publish(t, "v0.8.1", false, runtime.GOOS+"/"+runtime.GOARCH)
+	recent := time.Now().Add(-5 * time.Minute)
+	start := func(current, latest string) *Manager {
+		m := NewManager(current, Settings{Check: true}, recent, t.TempDir(), filepath.Join(t.TempDir(), "tuisense"))
+		m.Source, m.Keys = f.source(), f.keys
+		m.RestoreLatest(latest)
+		return m
+	}
+
+	m := start("0.8.1", "0.8.1")
+	if s := m.Snapshot(); s.Status != StatusUpToDate || s.Latest != "0.8.1" {
+		t.Fatalf("the last result must be shown: %+v", s)
+	}
+	if m.CheckAsync(false) {
+		t.Fatal("a recent check of the same version is not repeated")
+	}
+
+	for _, tc := range []struct{ current, latest string }{
+		{"0.8.1", "0.8.0"}, // updated since the last check
+		{"0.8.0", "0.8.0"}, // the recorded check predates the 0.8.1 release: still throttled…
+		{"0.8.0", "0.8.1"}, // …but a recorded newer release is announced at once
+		{"0.8.0", ""},      // no record (older settings file)
+	} {
+		m := start(tc.current, tc.latest)
+		ran := m.CheckAsync(false)
+		if want := tc.current != tc.latest; ran != want {
+			t.Fatalf("current %s, recorded %q: check ran %v, want %v", tc.current, tc.latest, ran, want)
+		}
+		if ran {
+			want := StatusUpToDate
+			if tc.current == "0.8.0" {
+				want = StatusAvailable
+			}
+			waitFor(t, m, want)
+		}
+	}
+	if NewManager("0.8.0", Settings{Check: true}, time.Time{}, t.TempDir(), "x").Interval > time.Hour {
+		t.Fatal("automatic checks run at least hourly while TuiSense is started")
+	}
+}

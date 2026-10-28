@@ -86,6 +86,7 @@ type Application struct {
 	Updater       *update.Manager
 	updateSeen    update.Status
 	updateChecked time.Time
+	updateLatest  string
 	// escAt is the last Esc press (see escHeld); escFix and escFixAt track a
 	// mouse report broken by a held Esc (see repairKey).
 	escAt    time.Time
@@ -179,7 +180,7 @@ func New(opts Options) *Application {
 		a.Updater = newUpdater(opts, prefs)
 	}
 	a.Updater.OnChange = limoni.Wakeup
-	a.updateChecked = prefs.UpdateLastCheck
+	a.updateChecked, a.updateLatest = prefs.UpdateLastCheck, prefs.UpdateLatest
 	s.Update = a.Updater.Snapshot()
 	a.updateSeen = s.Update.Status
 	a.confirmed = map[string]string{}
@@ -472,6 +473,7 @@ func (a *Application) savePrefs() {
 		p.UpdateChannel = string(update.Prerelease)
 	}
 	p.UpdateLastCheck = a.updateChecked
+	p.UpdateLatest = a.updateLatest
 	if err := a.Prefs.Save(p); err != nil {
 		a.Logger.Warn("PREFS", "Could not save %s: %v", a.Prefs.Path(), err)
 	}
@@ -841,6 +843,7 @@ func newUpdater(opts Options, prefs state.Preferences) *update.Manager {
 		}
 	}
 	m := update.NewManager(opts.Version, settings, prefs.UpdateLastCheck, filepath.Join(system.DataDir(), "updates"), exe)
+	m.RestoreLatest(prefs.UpdateLatest)
 	if opts.UpdateSource != nil {
 		m.Source = *opts.UpdateSource
 	}
@@ -856,6 +859,9 @@ func (a *Application) syncUpdater() {
 	s.Update = snap
 	if snap.CheckedAt.After(a.updateChecked) {
 		a.updateChecked = snap.CheckedAt
+		if snap.Latest != "" {
+			a.updateLatest = snap.Latest
+		}
 		a.savePrefs()
 	}
 	if snap.Status == a.updateSeen {
