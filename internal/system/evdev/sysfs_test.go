@@ -92,6 +92,9 @@ func fakeSysfs(t *testing.T) string {
 }
 
 func TestScanFakeSysfs(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Linux sysfs paths contain ':', which Windows file names cannot")
+	}
 	root := fakeSysfs(t)
 	devs, err := Scan(root, "/dev/input")
 	if err != nil {

@@ -1,19 +1,30 @@
 package drivers
 
 import (
-	"github.com/Phobby/TuiSense/internal/i18n"
 	"regexp"
+	"runtime"
+	"strings"
 	"testing"
 
 	"github.com/Phobby/TuiSense/internal/device"
+	"github.com/Phobby/TuiSense/internal/drivers/xinput"
+	"github.com/Phobby/TuiSense/internal/i18n"
 	"github.com/Phobby/TuiSense/internal/state"
 	"github.com/Phobby/TuiSense/internal/ui/visual"
 )
 
 func TestBuiltinRegistryContents(t *testing.T) {
 	r := NewBuiltinRegistry(RegistryOptions{Hardware: true, TestDevices: true})
-	if len(r.Drivers()) != 2 || r.Drivers()[0].ID() != "dualsense" || r.Drivers()[1].ID() != "evdev_gamepad" {
-		t.Fatalf("expected the DualSense and evdev gamepad hardware drivers")
+	want := []string{"dualsense", "evdev_gamepad"}
+	if runtime.GOOS == "windows" {
+		want = append(want, "xinput")
+	}
+	var got []string
+	for _, d := range r.Drivers() {
+		got = append(got, d.ID())
+	}
+	if strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Fatalf("hardware drivers %v, want %v", got, want)
 	}
 	keys := map[string]device.Source{}
 	for _, v := range r.Virtuals() {
@@ -86,7 +97,8 @@ var lowerWord = regexp.MustCompile(`[a-z]{2,}`) // codes like "L1", "X", "LB" ne
 // Turkish catalog: every user-visible descriptor string needs a translation.
 func TestDescriptorTextIsTranslated(t *testing.T) {
 	r := NewBuiltinRegistry(RegistryOptions{Hardware: true, TestDevices: true})
-	for _, d := range r.Models() {
+	// The XInput driver is only registered on Windows; check its text everywhere.
+	for _, d := range append(r.Models(), xinput.Descriptor(true)) {
 		texts := []string{d.DisplayName, d.ShortName}
 		for _, reg := range d.Regions {
 			texts = append(texts, reg.Label, reg.Badge, reg.Description)

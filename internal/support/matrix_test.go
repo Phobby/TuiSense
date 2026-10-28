@@ -15,7 +15,7 @@ func TestSupportMatrixDocumentIsCurrent(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if string(got) != want {
+	if strings.ReplaceAll(string(got), "\r\n", "\n") != want {
 		t.Fatal("docs/SUPPORT_MATRIX.md is stale; regenerate it with `go run ./cmd/tuisense debug support-matrix > docs/SUPPORT_MATRIX.md`")
 	}
 }

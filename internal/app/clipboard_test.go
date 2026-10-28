@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"os"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -66,8 +67,10 @@ func TestCopyFeedbackFailureAndAccessibleFallback(t *testing.T) {
 				if err != nil || string(data) != text {
 					t.Fatalf("fallback: %q %v", data, err)
 				}
+				// Windows has no Unix permission bits; the file lives in the
+				// user's own temp directory, which its ACL keeps private.
 				stat, err := os.Stat(path)
-				if err != nil || stat.Mode().Perm() != 0600 {
+				if err != nil || runtime.GOOS != "windows" && stat.Mode().Perm() != 0600 {
 					t.Fatal("fallback file not private")
 				}
 				page := uitest.Run(t, 120, 40, a.Draw)

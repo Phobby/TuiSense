@@ -3,6 +3,7 @@ package app
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -111,7 +112,8 @@ func TestV2FailedExportNeverClaimsSuccess(t *testing.T) {
 		a.drainDiagnosticStorage()
 		time.Sleep(time.Millisecond)
 	}
-	if a.State.LastError == "" || !strings.Contains(a.State.LastError, "not a directory") {
+	// The OS words the error differently ("not a directory" on Unix).
+	if a.State.LastError == "" || runtime.GOOS != "windows" && !strings.Contains(a.State.LastError, "not a directory") {
 		t.Fatalf("export failure must be visible: %s", a.State.LastError)
 	}
 }

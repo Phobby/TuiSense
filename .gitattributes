@@ -1,0 +1,6 @@
+# Keep LF everywhere: tests compare text files byte for byte, and the
+# installers are served from the repository as-is.
+* text=auto eol=lf
+
+*.gif binary
+*.png binary

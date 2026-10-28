@@ -3,6 +3,7 @@ package gamepad
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 )
 
@@ -10,6 +11,9 @@ import (
 // …/0005:054C:09CC.0003/power_supply/<name>/{capacity,status} with the input
 // node at …/0005:054C:09CC.0003/input/input20.
 func TestPowerSupplyIsFoundAndRead(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Linux sysfs paths contain ':', which Windows file names cannot")
+	}
 	hid := filepath.Join(t.TempDir(), "devices", "bt", "0005:054C:09CC.0003")
 	input := filepath.Join(hid, "input", "input20")
 	ps := filepath.Join(hid, "power_supply", "ps-controller-battery-aa")

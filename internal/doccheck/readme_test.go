@@ -19,7 +19,8 @@ func read(t *testing.T, rel string) string {
 	if err != nil {
 		t.Fatal(err)
 	}
-	return string(b)
+	// A Windows checkout may still carry CRLF line endings.
+	return strings.ReplaceAll(string(b), "\r\n", "\n")
 }
 
 var (
