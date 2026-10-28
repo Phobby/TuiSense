@@ -10,7 +10,6 @@ import (
 	"github.com/Phobby/TuiSense/internal/device"
 	"github.com/Phobby/TuiSense/internal/drivers"
 	"github.com/Phobby/TuiSense/internal/state"
-	uiwidgets "github.com/Phobby/TuiSense/internal/ui/widgets"
 	"github.com/thebanri/limoni/core/accessibility"
 	"github.com/thebanri/limoni/core/driver"
 	"github.com/thebanri/limoni/core/terminal"
@@ -168,22 +167,17 @@ func TestProjectedMouseSelectionAndHover(t *testing.T) {
 		if stick == nil {
 			t.Fatal("left stick is not exposed at its projected position")
 		}
-		for _, region := range f.EventRegions {
-			if region.ID != uiwidgets.StagePointerID {
-				continue
-			}
-			ev := driver.MouseEvent{X: stick.Bounds.X, Y: stick.Bounds.Y}
-			f.DispatchEventRegions(ev) // pointer motion (no button)
-			if a.State.HoveredComponent != "left_stick" || a.State.HoveredRegion != device.RegionLeftStick {
-				t.Fatalf("projected hover picked %q", a.State.HoveredComponent)
-			}
-			ev.Button = driver.MouseLeft
-			f.DispatchEventRegions(ev)
-			if a.State.SelectedComponent != "left_stick" || a.State.ActivePanel != state.PanelSticks {
-				t.Fatalf("projected click selected %q, panel %s", a.State.SelectedComponent, a.State.ActivePanel)
-			}
-			return
+		ev := driver.MouseEvent{X: stick.Bounds.X, Y: stick.Bounds.Y}
+		if !f.DispatchEventRegions(ev) { // pointer motion (no button)
+			t.Fatal("3D stage pointer region missing")
 		}
-		t.Fatal("3D stage pointer region missing")
+		if a.State.HoveredComponent != "left_stick" || a.State.HoveredRegion != device.RegionLeftStick {
+			t.Fatalf("projected hover picked %q", a.State.HoveredComponent)
+		}
+		ev.Button = driver.MouseLeft
+		f.DispatchEventRegions(ev)
+		if a.State.SelectedComponent != "left_stick" || a.State.ActivePanel != state.PanelSticks {
+			t.Fatalf("projected click selected %q, panel %s", a.State.SelectedComponent, a.State.ActivePanel)
+		}
 	})
 }
