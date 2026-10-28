@@ -8,7 +8,6 @@ import (
 	"github.com/Phobby/TuiSense/internal/drivers"
 	"github.com/Phobby/TuiSense/internal/state"
 	"github.com/Phobby/TuiSense/internal/ui/visual"
-	uiwidgets "github.com/Phobby/TuiSense/internal/ui/widgets"
 	"github.com/thebanri/limoni/core/accessibility"
 	"github.com/thebanri/limoni/core/driver"
 	"github.com/thebanri/limoni/core/terminal"
@@ -124,33 +123,28 @@ func TestStageDragRotatesAndDoubleClickResets(t *testing.T) {
 				area = n
 			}
 		}
-		for _, region := range f.EventRegions {
-			if region.ID != uiwidgets.StagePointerID {
-				continue
-			}
-			x, y := area.Bounds.X+2, area.Bounds.Y+2
-			before := a.State.RotY
-			f.DispatchEventRegions(driver.MouseEvent{Button: driver.MouseLeft, X: x, Y: y})
-			capture := f.TakeMouseCapture()
-			capture(driver.MouseEvent{Button: driver.MouseLeft, Drag: true, X: x + 10, Y: y})
-			capture(driver.MouseEvent{Button: driver.MouseRelease, X: x + 10, Y: y})
-			if a.State.RotY == before {
-				t.Fatal("dragging must rotate the model")
-			}
-			a.State.StageClick.At = time.Time{}
-			f.DispatchEventRegions(driver.MouseEvent{Button: driver.MouseLeft, X: x, Y: y})
-			f.TakeMouseCapture()
-			f.DispatchEventRegions(driver.MouseEvent{Button: driver.MouseLeft, X: x, Y: y})
-			if a.State.RotY != a.State.StageSpec().Front.RotY {
-				t.Fatal("double-click must reset the camera")
-			}
-			f.DispatchEventRegions(driver.MouseEvent{Button: driver.MouseScrollUp, X: x, Y: y})
-			if a.State.Zoom <= 1 {
-				t.Fatal("the wheel must zoom")
-			}
-			return
+		x, y := area.Bounds.X+2, area.Bounds.Y+2
+		before := a.State.RotY
+		if !f.DispatchEventRegions(driver.MouseEvent{Button: driver.MouseLeft, X: x, Y: y}) {
+			t.Fatal("stage pointer region missing")
 		}
-		t.Fatal("stage pointer region missing")
+		capture := f.TakeMouseCapture()
+		capture(driver.MouseEvent{Button: driver.MouseLeft, Drag: true, X: x + 10, Y: y})
+		capture(driver.MouseEvent{Button: driver.MouseRelease, X: x + 10, Y: y})
+		if a.State.RotY == before {
+			t.Fatal("dragging must rotate the model")
+		}
+		a.State.StageClick.At = time.Time{}
+		f.DispatchEventRegions(driver.MouseEvent{Button: driver.MouseLeft, X: x, Y: y})
+		f.TakeMouseCapture()
+		f.DispatchEventRegions(driver.MouseEvent{Button: driver.MouseLeft, X: x, Y: y})
+		if a.State.RotY != a.State.StageSpec().Front.RotY {
+			t.Fatal("double-click must reset the camera")
+		}
+		f.DispatchEventRegions(driver.MouseEvent{Button: driver.MouseScrollUp, X: x, Y: y})
+		if a.State.Zoom <= 1 {
+			t.Fatal("the wheel must zoom")
+		}
 	})
 }
 
