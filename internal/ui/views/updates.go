@@ -38,6 +38,27 @@ func updateStatusText(u update.Snapshot) string {
 	return i18n.T("Updates are checked in the background.")
 }
 
+// updateBadge is the short updater state shown beside the version in the
+// header, so a background check is visible without opening Settings. Quiet
+// states (checks off, offline, development builds) show nothing.
+func updateBadge(u update.Snapshot) string {
+	switch u.Status {
+	case update.StatusChecking:
+		return i18n.T("checking for updates…")
+	case update.StatusUpToDate:
+		return "✓"
+	case update.StatusAvailable:
+		return i18n.Tf("v%s available", u.Latest)
+	case update.StatusDownloading:
+		return i18n.Tf("downloading v%s %d%%", u.Latest, int(u.Progress*100))
+	case update.StatusReady:
+		return i18n.T("restart to update")
+	case update.StatusFailed:
+		return i18n.T("update discarded")
+	}
+	return ""
+}
+
 // renderUpdates draws the compact Application updates section of Settings.
 func renderUpdates(f *terminal.Frame, inner cell.Rect, y uint16, s *state.AppState, cb Callbacks, advanced bool) uint16 {
 	p := s.Theme

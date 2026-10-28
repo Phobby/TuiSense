@@ -382,7 +382,8 @@ version, the channel, the last check, download progress and release notes.
 | `Tab` / `Shift+Tab`, arrows, `Enter` | Move between and change controls |
 | `PgUp` / `PgDn` | Scroll long panels |
 | `?` | Help |
-| `Esc` · `Q` | Back / close · quit |
+| `Esc` | Close the open window or selection; otherwise asks before quitting |
+| `Q` | Quit immediately |
 
 **Mouse:** drag the model to rotate, scroll to zoom, double-click to reset,
 click a part to open its settings or test, click any value to copy it, click the

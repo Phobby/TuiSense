@@ -3,12 +3,14 @@ package views
 import (
 	"fmt"
 	"github.com/Phobby/TuiSense/internal/i18n"
+	"strings"
 	"time"
 
 	"github.com/Phobby/TuiSense/internal/device"
 	"github.com/Phobby/TuiSense/internal/state"
 	"github.com/Phobby/TuiSense/internal/ui"
 	uiwidgets "github.com/Phobby/TuiSense/internal/ui/widgets"
+	"github.com/Phobby/TuiSense/internal/update"
 	"github.com/thebanri/limoni/core/accessibility"
 	"github.com/thebanri/limoni/core/cell"
 	"github.com/thebanri/limoni/core/driver"
@@ -24,7 +26,7 @@ func RenderDashboard(f *terminal.Frame, s *state.AppState, dispatch func(device.
 		return
 	}
 	s.Copy.Begin(CopyScope(s))
-	s.Copy.Disabled = s.ShowHelp || s.ShowDeviceSelector || s.ShowCopyFallback
+	s.Copy.Disabled = s.ShowHelp || s.ShowDeviceSelector || s.ShowCopyFallback || s.ShowQuitConfirm
 	p := s.Theme
 	f.SetTheme(p.LimoniTheme())
 
@@ -57,6 +59,9 @@ func RenderDashboard(f *terminal.Frame, s *state.AppState, dispatch func(device.
 
 	if s.ShowCopyFallback {
 		renderCopyFallback(f, total, s)
+	}
+	if s.ShowQuitConfirm {
+		renderQuitConfirm(f, total, s)
 	}
 	if s.Toasts != nil {
 		s.Toasts.Update(time.Now())
@@ -156,13 +161,29 @@ func renderHeader(f *terminal.Frame, area cell.Rect, s *state.AppState, cb Callb
 	for _, sg := range segs {
 		width += uint16(cell.StringWidth(sg.label))
 	}
-	// The installed version sits in the top-right corner, small and muted.
+	// The installed version sits in the top-right corner, small and muted,
+	// with the application updater's state beside it when there is room.
+	// Clicking it opens Settings, where the update details live.
 	ver := displayVersion(s.AppVersion)
-	vw := uint16(cell.StringWidth(ver))
+	label := ver
+	if badge := updateBadge(s.Update); badge != "" {
+		label = badge + "  " + ver
+		if area.X+area.Width < x+width+uint16(cell.StringWidth(label))+6 {
+			label = ver // too narrow: keep the mode switch visible
+		}
+	}
+	vw := uint16(cell.StringWidth(label))
 	if area.Width > vw+2 {
-		f.Buffer.SetStringWithin(area.X+area.Width-vw-1, area.Y, ver, cell.Style{Fg: p.FgMuted, Bg: p.BgElevated}, vw)
-		f.RegisterAccessibility(accessibility.AccessibilityNode{ID: "app_version", Role: accessibility.RoleGeneric, Label: "TuiSense " + ver,
-			Bounds: cell.NewRect(area.X+area.Width-vw-1, area.Y, vw, 1)})
+		vx := area.X + area.Width - vw - 1
+		st := cell.Style{Fg: p.FgMuted, Bg: p.BgElevated}
+		if s.Update.Status == update.StatusAvailable || s.Update.Status == update.StatusReady {
+			st.Fg = p.AccentBlue
+		}
+		f.Buffer.SetStringWithin(vx, area.Y, label, st, vw)
+		rect := cell.NewRect(vx, area.Y, vw, 1)
+		f.RegisterClickHandler(rect, func(_ driver.MouseEvent) { s.ActivePanel = state.PanelSettings })
+		f.RegisterAccessibility(accessibility.AccessibilityNode{ID: "app_version", Role: accessibility.RoleButton, Label: "TuiSense " + ver,
+			Value: updateStatusText(s.Update), Bounds: rect})
 	}
 	mx := area.X + area.Width - width - vw - 3
 	if mx <= x+1 || mx > area.X+area.Width {
@@ -331,4 +352,51 @@ func renderDeviceSelector(f *terminal.Frame, total cell.Rect, s *state.AppState,
 		y += 2
 	}
 	f.Buffer.SetStringWithin(mx+3, my+mh-2, i18n.T("↑/↓ choose · Enter select · Esc close"), cell.Style{Fg: p.FgMuted, Bg: p.BgElevated}, mw-6)
+}
+
+// renderQuitConfirm draws the small "Quit TuiSense?" dialog that Esc opens on
+// the main screen.
+func renderQuitConfirm(f *terminal.Frame, total cell.Rect, s *state.AppState) {
+	p := s.Theme
+	yes, no := " "+i18n.T("Yes")+" ", " "+i18n.T("No")+" "
+	title := i18n.T("Quit TuiSense?")
+	hint := i18n.T("Enter: quit · Esc: stay")
+	w := uint16(max(cell.StringWidth(title), cell.StringWidth(hint), cell.StringWidth(yes+"  "+no)) + 6)
+	if total.Width < w+2 || total.Height < 9 {
+		return
+	}
+	area := cell.NewRect(total.X+(total.Width-w)/2, total.Y+(total.Height-7)/2, w, 7)
+	f.RegisterModal("quit_confirm", area, func() { s.ShowQuitConfirm = false })
+	f.BeginLayer("quit_confirm")
+	defer f.EndLayer()
+
+	widgets.DrawShadow(f.Buffer, area, 2, 1)
+	f.RenderWidget(widgets.Block{
+		Borders: widgets.BorderAll, BorderSymbols: widgets.SymbolsRounded,
+		BorderStyle: cell.Style{Fg: p.FgSecondary, Bg: p.BgElevated},
+		Style:       cell.Style{Fg: p.FgPrimary, Bg: p.BgElevated},
+	}, area)
+	center := func(text string) uint16 { return area.X + (w-uint16(cell.StringWidth(text)))/2 }
+	f.Buffer.SetStringWithin(center(title), area.Y+1, title, cell.Style{Fg: p.FgPrimary, Bg: p.BgElevated, Modifier: cell.ModifierBold}, w-2)
+
+	bx := center(yes + "  " + no)
+	buttons := []struct {
+		id, label string
+		x         uint16
+		selected  bool
+		onClick   func()
+	}{
+		{"quit_yes", yes, bx, true, func() { s.QuitRequested = true }},
+		{"quit_no", no, bx + uint16(cell.StringWidth(yes)) + 2, false, func() { s.ShowQuitConfirm = false }},
+	}
+	for _, b := range buttons {
+		bw := uint16(cell.StringWidth(b.label))
+		rect := cell.NewRect(b.x, area.Y+3, bw, 1)
+		f.Buffer.SetStringWithin(b.x, area.Y+3, b.label, p.ButtonStyle(b.selected), bw)
+		onClick := b.onClick
+		f.RegisterClickHandler(rect, func(_ driver.MouseEvent) { onClick() })
+		f.RegisterAccessibility(accessibility.AccessibilityNode{ID: b.id, Role: accessibility.RoleButton, Label: strings.TrimSpace(b.label), Bounds: rect})
+	}
+	f.Buffer.SetStringWithin(center(hint), area.Y+5, hint, cell.Style{Fg: p.FgMuted, Bg: p.BgElevated}, w-2)
+	f.RegisterAccessibility(accessibility.AccessibilityNode{ID: "quit_confirm", Role: accessibility.RoleGeneric, Label: title, Bounds: area})
 }

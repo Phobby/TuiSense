@@ -64,9 +64,13 @@ type AppState struct {
 	Devices            []DeviceChoice
 	ShowDeviceSelector bool
 	SelectorIndex      int
-	RegionHint         string        // shown when a region's panel is hidden in the current mode
-	Diag               *diag.Session // diagnostics session of the active device (nil without one)
-	Firmware           FirmwareView  // read-only firmware update check of the active device
+	// ShowQuitConfirm is the "Quit TuiSense?" dialog that Esc opens on the
+	// main screen; QuitRequested is set by its Yes button.
+	ShowQuitConfirm bool
+	QuitRequested   bool
+	RegionHint      string        // shown when a region's panel is hidden in the current mode
+	Diag            *diag.Session // diagnostics session of the active device (nil without one)
+	Firmware        FirmwareView  // read-only firmware update check of the active device
 	// Compat is the Driver & Compatibility analysis of the active device;
 	// CompatReview names the action awaiting explicit approval ("" = none)
 	// and CompatStatus reports the last action's outcome.

@@ -105,7 +105,7 @@ func TestLeavingDiagnosticsRestoresTriggersAndStopsEffects(t *testing.T) {
 	}
 	d.Haptics.Play("both", time.Now())
 
-	page.Press("esc") // back to overview → leaving diagnostics
+	page.Press("1") // back to Home → leaving diagnostics
 	a.Dispatcher.FlushNow()
 	if d.Triggers.ResistanceActive || d.Haptics.Running != nil {
 		t.Fatalf("leaving the tab must stop resistance and haptics")

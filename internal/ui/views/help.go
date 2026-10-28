@@ -14,7 +14,7 @@ import (
 type helpLine struct{ key, text string }
 
 func helpLines(s *state.AppState) []helpLine {
-	lines := []helpLine{{"", "General navigation"}, {"Tab / Shift+Tab", "Move focus"}, {"Esc", "Back / clear selection"}, {"?", "Open Help"}}
+	lines := []helpLine{{"", "General navigation"}, {"Tab / Shift+Tab", "Move focus"}, {"Esc", "Close / clear selection / ask to quit"}, {"?", "Open Help"}}
 	for _, p := range s.PrimaryPanels() {
 		lines = append(lines, helpLine{string(p.Hotkey), p.DisplayTitle(s.Mode)})
 	}

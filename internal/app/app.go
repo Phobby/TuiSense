@@ -86,6 +86,11 @@ type Application struct {
 	Updater       *update.Manager
 	updateSeen    update.Status
 	updateChecked time.Time
+	// escAt is the last Esc press (see escHeld); escFix and escFixAt track a
+	// mouse report broken by a held Esc (see repairKey).
+	escAt    time.Time
+	escFix   escRepair
+	escFixAt time.Time
 
 	eventsMu sync.Mutex
 	events   []session.DeviceEvent
@@ -706,9 +711,12 @@ func (a *Application) Draw(f *terminal.Frame, ev *driver.Event) bool {
 	a.lastFrame = now
 
 	if ev != nil && ev.Type == driver.EventKey {
-		if !a.HandleKeyEvent(f, ev.Key) {
+		if key, ok := a.repairKey(ev.Key, now); ok && !a.HandleKeyEvent(f, key) {
 			return false
 		}
+	}
+	if a.State.QuitRequested {
+		return false
 	}
 
 	a.tickDiagnostics(now)

@@ -94,7 +94,7 @@ func RenderControllerStage(f *terminal.Frame, area cell.Rect, s *state.AppState,
 	viewer.Light = visual.StageLight
 	f.RenderWidget(viewer, view)
 
-	if !s.ShowHelp && !s.ShowDeviceSelector && !s.ShowCopyFallback {
+	if !s.ShowHelp && !s.ShowDeviceSelector && !s.ShowCopyFallback && !s.ShowQuitConfirm {
 		registerStagePointer(f, view, s, m, cam, cb)
 		registerComponentNodes(f, view, s, m, cam)
 	}

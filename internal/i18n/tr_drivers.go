@@ -36,8 +36,16 @@ var turkishDrivers = map[string]string{
 	"Automated tests; parts experimental; not verified on hardware": "Otomatik testler; bazı kısımlar deneysel; donanımda doğrulanmadı",
 
 	// Application updates (TuiSense itself, never controller firmware)
-	"Update":                               "Güncelleme",
-	"A new TuiSense version is available.": "Yeni TuiSense sürümü mevcut.",
+	"Update":                                "Güncelleme",
+	"A new TuiSense version is available.":  "Yeni TuiSense sürümü mevcut.",
+	"checking for updates…":                 "güncellemeler denetleniyor…",
+	"v%s available":                         "v%s mevcut",
+	"downloading v%s %d%%":                  "v%s indiriliyor %%%d",
+	"restart to update":                     "güncellemek için yeniden başlatın",
+	"update discarded":                      "güncelleme reddedildi",
+	"Quit TuiSense?":                        "TuiSense'ten çıkılsın mı?",
+	"Enter: quit · Esc: stay":               "Enter: çık · Esc: kal",
+	"Close / clear selection / ask to quit": "Kapat / seçimi temizle / çıkmayı sor",
 	"A new TuiSense version is ready. It will be applied when you restart the app.":           "Yeni TuiSense sürümü hazır. Uygulamayı yeniden başlattığınızda güncelleme uygulanacak.",
 	"The update could not be verified and was discarded. The installed version is unchanged.": "Güncelleme doğrulanamadı ve silindi. Kurulu sürüm değişmedi.",
 	"Automatic update checks are off.":                                                        "Otomatik güncelleme denetimi kapalı.",

@@ -20,6 +20,14 @@ func (a *Application) HandleKeyEvent(f *terminal.Frame, key driver.KeyEvent) boo
 		return true
 	}
 	s := a.State
+	// A held Esc auto-repeats; only a fresh press counts, so holding Esc
+	// never toggles dialogs or walks back through the interface.
+	if key.Type == driver.KeyEsc && a.escHeld(key, time.Now()) {
+		return true
+	}
+	if s.ShowQuitConfirm {
+		return a.handleQuitConfirm(key)
+	}
 
 	if s.ShowCopyFallback {
 		if key.Type == driver.KeyEsc || key.Type == driver.KeyEnter {
@@ -128,19 +136,20 @@ func (a *Application) HandleKeyEvent(f *terminal.Frame, key driver.KeyEvent) boo
 		return true
 	}
 
-	// 4. Esc handling: dismiss inline error -> return to Overview -> Quit
+	// 4. Esc handling: dismiss an inline error or a selected controller part,
+	// otherwise ask whether to quit.
 	if key.Type == driver.KeyEsc {
 		if s.LastError != "" {
 			s.ClearError()
 			return true
 		}
-		if s.ActivePanel != state.PanelOverview {
-			s.ActivePanel = state.PanelOverview
+		if s.SelectedRegion != device.RegionNone || s.SelectedComponent != "" {
+			s.SelectedRegion = device.RegionNone
+			s.SelectedComponent = ""
+			s.RegionHint = ""
 			return true
 		}
-		s.SelectedRegion = device.RegionNone
-		s.SelectedComponent = ""
-		s.RegionHint = ""
+		s.ShowQuitConfirm = true
 		return true
 	}
 
