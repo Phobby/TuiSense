@@ -42,7 +42,7 @@ func RenderDashboard(f *terminal.Frame, s *state.AppState, dispatch func(device.
 
 	renderHeader(f, grid.HeaderArea, s, cb)
 	if s.Gallery.Active {
-		renderGallery(f, grid, s)
+		renderGallery(f, grid, s, cb)
 	} else {
 		renderPanelTabs(f, grid.TabsArea, s)
 		renderBody(f, total, grid, pc)
@@ -122,7 +122,10 @@ func renderHeader(f *terminal.Frame, area cell.Rect, s *state.AppState, cb Callb
 	if s.ActiveDeviceKey == "" {
 		pill = ""
 	}
-	if s.IsSimulatedDevice() {
+	if s.IsPreviewDevice() {
+		pill += i18n.T(" PREVIEW ")
+		accent = p.AccentBlue
+	} else if s.IsSimulatedDevice() {
 		pill += i18n.T(" MOCK ")
 	}
 	if len(s.Devices) > 1 {
@@ -145,7 +148,18 @@ func renderHeader(f *terminal.Frame, area cell.Rect, s *state.AppState, cb Callb
 			Value: s.Descriptor.DisplayName, Bounds: rect,
 		})
 		x += pw + 1
-
+	}
+	// A settings preview says so and offers the way back.
+	if s.IsPreviewDevice() && !s.Gallery.Active && cb.OnExitPreview != nil {
+		exit := " ✕ " + i18n.T("Exit preview") + " "
+		ew := uint16(cell.StringWidth(exit))
+		if x+ew < area.X+area.Width {
+			rect := cell.NewRect(x, area.Y, ew, 1)
+			f.Buffer.SetStringWithin(x, area.Y, exit, cell.Style{Fg: p.FgPrimary, Bg: p.BgSubtle}, ew)
+			f.RegisterClickHandler(rect, func(_ driver.MouseEvent) { cb.OnExitPreview() })
+			f.RegisterAccessibility(accessibility.AccessibilityNode{ID: "exit_preview", Role: accessibility.RoleButton, Label: i18n.T("Exit preview"), Bounds: rect})
+			x += ew + 1
+		}
 	}
 
 	// Mode switch (right aligned)
@@ -371,9 +385,11 @@ func renderQuitConfirm(f *terminal.Frame, total cell.Rect, s *state.AppState) {
 	defer f.EndLayer()
 
 	widgets.DrawShadow(f.Buffer, area, 2, 1)
+	// Same frame as the controller selector, with a clearly visible border.
 	f.RenderWidget(widgets.Block{
+		Title: " TuiSense ", TitleStyle: cell.Style{Fg: p.FgPrimary, Bg: p.BgElevated, Modifier: cell.ModifierBold},
 		Borders: widgets.BorderAll, BorderSymbols: widgets.SymbolsRounded,
-		BorderStyle: cell.Style{Fg: p.FgSecondary, Bg: p.BgElevated},
+		BorderStyle: cell.Style{Fg: p.AccentBlue, Bg: p.BgElevated, Modifier: cell.ModifierBold},
 		Style:       cell.Style{Fg: p.FgPrimary, Bg: p.BgElevated},
 	}, area)
 	center := func(text string) uint16 { return area.X + (w-uint16(cell.StringWidth(text)))/2 }

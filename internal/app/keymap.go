@@ -149,6 +149,10 @@ func (a *Application) HandleKeyEvent(f *terminal.Frame, key driver.KeyEvent) boo
 			s.RegionHint = ""
 			return true
 		}
+		if s.IsPreviewDevice() {
+			a.ExitPreview()
+			return true
+		}
 		s.ShowQuitConfirm = true
 		return true
 	}
@@ -350,6 +354,9 @@ func (a *Application) handleGalleryKey(key driver.KeyEvent) bool {
 	case driver.KeyTab:
 		s.CycleComponent(1)
 		return true
+	case driver.KeyEnter:
+		a.PreviewGalleryModel()
+		return true
 	}
 	if key.Type != driver.KeyRune {
 		return true
@@ -361,6 +368,8 @@ func (a *Application) handleGalleryKey(key driver.KeyEvent) bool {
 		s.ShowHelp = true
 	case 'g', 'G':
 		s.CloseGallery()
+	case 'p', 'P':
+		a.PreviewGalleryModel()
 	case ',', '<':
 		s.GalleryStep(-1)
 	case '.', '>':

@@ -19,6 +19,10 @@ type Callbacks struct {
 
 	// Device & mode
 	OnSelectDevice func(key string)
+	// OnPreviewModel opens the gallery model's settings as a preview;
+	// OnExitPreview returns to the connected controller.
+	OnPreviewModel func()
+	OnExitPreview  func()
 	OnCycleDevice  func(delta int)
 	OnSetMode      func(state.UXMode)
 

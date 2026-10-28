@@ -195,6 +195,14 @@ func renderDiagnosticsPanel(f *terminal.Frame, area cell.Rect, pc PanelContext) 
 	if d != nil && d.Ctx.Simulated {
 		title += i18n.T(" · SIMULATED DATA")
 	}
+	if s.IsPreviewDevice() {
+		// Tests measure a real controller's input; a preview has none.
+		inner := panelFrame(f, area, s, i18n.T("Diagnostics 2.0"))
+		c := newCursor(f, inner, s)
+		c.line(i18n.T("Diagnostics measure a connected controller's own input, so they are not part of the settings preview."), p.LabelStyle())
+		c.line(i18n.T("Connect this controller to test its sticks, triggers and buttons."), p.MutedStyle())
+		return
+	}
 	inner := panelFrame(f, area, s, title)
 	c := newCursor(f, inner, s)
 	renderCopyActions(c, true)

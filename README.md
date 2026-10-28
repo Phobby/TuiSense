@@ -180,7 +180,11 @@ scroll to zoom, press `V` for the rear view and `R` to reset. Hover a part to se
 its name; click it to open its settings or diagnostic. The **Controller Gallery**
 (`G`) lets you browse all ten models — including rear paddles and back buttons —
 without owning them; gallery models are labelled **VISUAL PREVIEW** and never
-appear as connected devices.
+appear as connected devices. Press `Enter` (or **▶ Preview settings**) to open a
+model's settings exactly as a connected one would show them — select a part
+first, such as a trigger, to jump straight to its settings. The preview is
+marked **PREVIEW**, works on every operating system, and sends nothing to any
+controller; `Esc` leaves it.
 
 <p align="center"><img src="docs/media/controller-3d.gif" alt="Rotating the DualSense model, then opening the Xbox Elite Series 2 in the gallery and inspecting its rear paddles" width="820"></p>
 
@@ -373,7 +377,7 @@ version, the channel, the last check, download progress and release notes.
 | `1`–`5` | Home · Diagnostics · Customize · Profiles · Device / Settings |
 | `E` | Switch EZ ↔ Advanced mode |
 | `C` · `,` / `.` | Choose controller · previous / next controller |
-| `G` | Controller Gallery (`←` / `→` model, `Esc` back) |
+| `G` | Controller Gallery (`←` / `→` model, `Enter` preview its settings, `Esc` back) |
 | `F` | Device Details and firmware information |
 | `P` | Profiles |
 | `V` · `R` | Front / rear view · reset view |
@@ -384,7 +388,7 @@ version, the channel, the last check, download progress and release notes.
 | `Tab` / `Shift+Tab`, arrows, `Enter` | Move between and change controls |
 | `PgUp` / `PgDn` | Scroll long panels |
 | `?` | Help |
-| `Esc` | Close the open window or selection; otherwise asks before quitting |
+| `Esc` | Close the open window, selection or settings preview; otherwise asks before quitting |
 | `Q` | Quit immediately |
 
 **Mouse:** drag the model to rotate, scroll to zoom, double-click to reset,

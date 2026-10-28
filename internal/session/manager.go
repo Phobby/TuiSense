@@ -282,6 +282,45 @@ func (m *Manager) EnableMock() device.Device {
 	return e.dev
 }
 
+// AttachPreview adds a settings preview (device.SourcePreview) under key and
+// selects it. Only one preview exists at a time; an earlier one is replaced.
+func (m *Manager) AttachPreview(key string, dev device.Device) error {
+	m.mu.Lock()
+	kept := m.entries[:0]
+	for _, e := range m.entries {
+		if e.source != device.SourcePreview {
+			kept = append(kept, e)
+		}
+	}
+	m.entries = append(kept, &entry{key: key, source: device.SourcePreview, dev: dev})
+	m.mu.Unlock()
+	m.logInfo("MANAGER", "Previewing %s (nothing is sent to a controller)", dev.Descriptor().DisplayName)
+	return m.Select(key)
+}
+
+// RemovePreview drops the settings preview and selects next (if attached),
+// otherwise the default device.
+func (m *Manager) RemovePreview(next string) {
+	m.mu.Lock()
+	kept := m.entries[:0]
+	for _, e := range m.entries {
+		if e.source != device.SourcePreview {
+			kept = append(kept, e)
+		}
+	}
+	m.entries = kept
+	if m.findLocked(m.activeKey) == nil {
+		m.activeKey = ""
+		if next != "" && m.findLocked(next) != nil {
+			m.activeKey = next
+		} else {
+			m.activeKey = m.defaultActiveLocked()
+		}
+	}
+	m.mu.Unlock()
+	m.emit(DeviceEvent{Kind: EventListChanged})
+}
+
 // Start polls the active device (25Hz) and scans for hot-plugged hardware
 // (every 1.5s) until ctx is cancelled.
 func (m *Manager) Start(ctx context.Context) {

@@ -98,9 +98,12 @@ type Application struct {
 	events   []session.DeviceEvent
 
 	diagSessions map[string]*diag.Session
-	simAudio     map[string]*audio.Simulated
-	prevPanel    state.PanelID
-	audioProbeAt time.Time
+	// previewReturn is the device that was active before a gallery
+	// settings preview started.
+	previewReturn string
+	simAudio      map[string]*audio.Simulated
+	prevPanel     state.PanelID
+	audioProbeAt  time.Time
 	// confirmed holds the user's controller identifications (hardware key → model ID).
 	confirmed map[string]string
 
@@ -449,6 +452,14 @@ func (a *Application) initialConfig(dev device.Device) (device.Config, string) {
 	return desc.NewDefaultConfig(), "Factory Defaults"
 }
 
+// lastRealDevice is the device to reopen next time: never a preview.
+func (a *Application) lastRealDevice() string {
+	if a.State.IsPreviewDevice() {
+		return a.previewReturn
+	}
+	return a.State.ActiveDeviceKey
+}
+
 // savePrefs persists mode, selected device, and per-family active profiles.
 func (a *Application) savePrefs() {
 	s := a.State
@@ -456,7 +467,7 @@ func (a *Application) savePrefs() {
 	p := state.Preferences{
 		Mode:           string(s.Mode),
 		Language:       string(s.Language),
-		LastDevice:     s.ActiveDeviceKey,
+		LastDevice:     a.lastRealDevice(),
 		ActiveProfiles: s.ActiveProfiles(),
 		HighContrast:   s.HighContrast,
 		AutoRotate:     &auto,
@@ -498,6 +509,7 @@ func (a *Application) SelectDevice(key string) {
 		return
 	}
 	a.syncActiveDevice()
+	a.dropPreview()
 	a.savePrefs()
 }
 
@@ -510,6 +522,7 @@ func (a *Application) CycleDevice(delta int) {
 		return
 	}
 	a.syncActiveDevice()
+	a.dropPreview()
 	a.savePrefs()
 }
 
@@ -690,6 +703,8 @@ func (a *Application) callbacks() views.Callbacks {
 		OnCheckFirmware:        a.CheckFirmware,
 		OnCheckDrivers:         a.refreshCompat,
 		OnCheckUpdates:         a.CheckForUpdates,
+		OnPreviewModel:         a.PreviewGalleryModel,
+		OnExitPreview:          a.ExitPreview,
 		OnDownloadUpdate:       a.DownloadUpdate,
 		OnSetUpdateSettings:    a.SetUpdateSettings,
 		OnRunCompatAction:      a.RunCompatAction,

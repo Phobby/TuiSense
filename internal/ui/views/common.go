@@ -40,6 +40,9 @@ func scopeLabel(s *state.AppState) string {
 	if c == "" || s.Gallery.Active {
 		return ""
 	}
+	if s.IsPreviewDevice() {
+		return i18n.T("· preview — not sent to any controller")
+	}
 	scope, ok := device.SettingScope(s.Caps, c)
 	if !ok {
 		return ""

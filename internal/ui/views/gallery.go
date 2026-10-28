@@ -19,7 +19,7 @@ import (
 
 // renderGallery draws the Controller Gallery: a visual preview of every
 // registered model, clearly separated from connected hardware.
-func renderGallery(f *terminal.Frame, grid ui.DashboardLayout, s *state.AppState) {
+func renderGallery(f *terminal.Frame, grid ui.DashboardLayout, s *state.AppState, cb Callbacks) {
 	specs := visual.Gallery()
 	if len(specs) == 0 {
 		return
@@ -27,7 +27,7 @@ func renderGallery(f *terminal.Frame, grid ui.DashboardLayout, s *state.AppState
 	spec := s.StageSpec()
 	renderGalleryTitle(f, grid.TabsArea, s, len(specs))
 	uiwidgets.RenderControllerStage(f, grid.Stage3DArea, s, uiwidgets.StageCallbacks{OnSelectComponent: s.SelectComponent})
-	renderGalleryInspector(f, grid.InspectorArea, s, spec)
+	renderGalleryInspector(f, grid.InspectorArea, s, spec, cb)
 }
 
 func renderGalleryTitle(f *terminal.Frame, area cell.Rect, s *state.AppState, n int) {
@@ -66,7 +66,7 @@ func hardwareSupport(s *state.AppState, spec *visual.ModelSpec) []device.Descrip
 	return out
 }
 
-func renderGalleryInspector(f *terminal.Frame, area cell.Rect, s *state.AppState, spec *visual.ModelSpec) {
+func renderGalleryInspector(f *terminal.Frame, area cell.Rect, s *state.AppState, spec *visual.ModelSpec, cb Callbacks) {
 	if area.Width < 20 || area.Height < 3 {
 		return
 	}
@@ -111,6 +111,20 @@ func renderGalleryInspector(f *terminal.Frame, area cell.Rect, s *state.AppState
 		if s.Mode == state.ModeAdvanced {
 			line(i18n.T("Detection")+": "+row.Detection+" · "+i18n.T(row.Verification), p.MutedStyle())
 		}
+		// Explore this model's settings without owning it; nothing is sent.
+		label := i18n.T("▶ Preview settings")
+		if c, ok := s.StageComponent(false); ok && c.Region != device.RegionNone {
+			label = i18n.Tf("▶ Preview %s settings", i18n.T(c.Label))
+		}
+		if y < area.Y+area.Height && cb.OnPreviewModel != nil {
+			pillRow(f, x, y, x+w, s, "", 0, []choice{{ID: "gallery_preview", Label: label, OnSelect: cb.OnPreviewModel}})
+			hint := "  " + i18n.T("settings only · nothing is sent to a controller")
+			used := uint16(cell.StringWidth(label)) + 2
+			if used < w {
+				f.Buffer.SetStringWithin(x+used, y, hint, p.MutedStyle(), w-used)
+			}
+			y++
+		}
 	} else {
 		line(i18n.T("Visual preview only — TuiSense cannot communicate with this controller."), cell.Style{Fg: p.Warning, Bg: p.BgCanvas})
 	}
@@ -136,7 +150,7 @@ func renderGalleryInspector(f *terminal.Frame, area cell.Rect, s *state.AppState
 	}
 	if y < area.Y+area.Height {
 		y = area.Y + area.Height - 1
-		line(i18n.T("←/→ model · V front/rear · drag to rotate · wheel to zoom · Esc back"), p.MutedStyle())
+		line(i18n.T("←/→ model · Enter preview settings · V front/rear · drag to rotate · Esc back"), p.MutedStyle())
 	}
 }
 

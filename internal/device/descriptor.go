@@ -34,6 +34,9 @@ const (
 	SourceHardware Source = "hardware" // real device opened by a driver
 	SourceMock     Source = "mock"     // simulated device mirroring a real driver
 	SourceTest     Source = "test"     // UI/architecture test device with no real backend
+	// SourcePreview is a gallery model opened to preview its settings: it has
+	// no backend and nothing it is told reaches any controller.
+	SourcePreview Source = "preview"
 )
 
 // RGB is a plain 24-bit color (kept UI-framework agnostic).

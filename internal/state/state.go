@@ -346,7 +346,8 @@ func (s *AppState) ActiveProfiles() map[string]string {
 	for k, v := range s.activeProfiles {
 		out[k] = v
 	}
-	if s.ActiveDeviceKey != "" && s.ActiveProfile != "" {
+	// A preview never changes the profile a real controller starts with.
+	if s.ActiveDeviceKey != "" && s.ActiveProfile != "" && !s.IsPreviewDevice() {
 		out[s.Descriptor.Family] = s.ActiveProfile
 	}
 	return out
@@ -418,6 +419,17 @@ func (s *AppState) ClearError() {
 }
 
 // IsSimulatedDevice reports the source of the active selection, never its model.
+// IsPreviewDevice reports whether the active device is a gallery settings
+// preview (nothing it is told reaches a controller).
+func (s *AppState) IsPreviewDevice() bool {
+	for _, d := range s.Devices {
+		if d.Key == s.ActiveDeviceKey {
+			return d.Source == device.SourcePreview
+		}
+	}
+	return false
+}
+
 func (s *AppState) IsSimulatedDevice() bool {
 	for _, d := range s.Devices {
 		if d.Key == s.ActiveDeviceKey {
