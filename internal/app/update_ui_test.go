@@ -67,3 +67,16 @@ func TestUpdateSettingsPersistAndShowInSettings(t *testing.T) {
 		}
 	}
 }
+
+// The 3D marker (Braille, half-block, quadrant) is remembered: some terminal
+// fonts draw Braille poorly, and the workaround must survive a restart.
+func TestRenderMarkerIsRemembered(t *testing.T) {
+	dirs := newDirs(t)
+	a := newTestApp(t, dirs, Options{Version: "0.8.1", Registry: drivers.NewBuiltinRegistry(drivers.RegistryOptions{})})
+	a.State.RenderMarker = 1
+	snapshotOf(a, 100, 30)
+	again := newTestApp(t, dirs, Options{Version: "0.8.1", Registry: drivers.NewBuiltinRegistry(drivers.RegistryOptions{})})
+	if again.State.RenderMarker != 1 {
+		t.Fatalf("render marker %d after restart, want 1", again.State.RenderMarker)
+	}
+}

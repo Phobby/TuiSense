@@ -87,6 +87,7 @@ type Application struct {
 	updateSeen    update.Status
 	updateChecked time.Time
 	updateLatest  string
+	savedMarker   int // the 3D marker last written to settings.json
 	// escAt is the last Esc press (see escHeld); escFix and escFixAt track a
 	// mouse report broken by a held Esc (see repairKey).
 	escAt    time.Time
@@ -166,6 +167,10 @@ func New(opts Options) *Application {
 	if prefs.AutoRotate != nil {
 		s.AutoRotate = *prefs.AutoRotate
 	}
+	if prefs.RenderMarker >= 0 && prefs.RenderMarker <= 2 {
+		s.RenderMarker = prefs.RenderMarker
+	}
+	a.savedMarker = s.RenderMarker
 	s.RestoreActiveProfiles(prefs.ActiveProfiles)
 	providers := opts.FirmwareProviders
 	if providers == nil {
@@ -455,6 +460,7 @@ func (a *Application) savePrefs() {
 		ActiveProfiles: s.ActiveProfiles(),
 		HighContrast:   s.HighContrast,
 		AutoRotate:     &auto,
+		RenderMarker:   s.RenderMarker,
 	}
 	if !a.fwAutoCheck {
 		off := false
@@ -719,6 +725,10 @@ func (a *Application) Draw(f *terminal.Frame, ev *driver.Event) bool {
 	}
 	if a.State.QuitRequested {
 		return false
+	}
+	if a.State.RenderMarker != a.savedMarker {
+		a.savedMarker = a.State.RenderMarker
+		a.savePrefs()
 	}
 
 	a.tickDiagnostics(now)
