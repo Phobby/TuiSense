@@ -10,6 +10,8 @@ import (
 	"github.com/Phobby/TuiSense/internal/device"
 	"github.com/Phobby/TuiSense/internal/drivers"
 	"github.com/Phobby/TuiSense/internal/state"
+	uiwidgets "github.com/Phobby/TuiSense/internal/ui/widgets"
+	"github.com/thebanri/limoni/core/accessibility"
 	"github.com/thebanri/limoni/core/driver"
 	"github.com/thebanri/limoni/core/terminal"
 	"github.com/thebanri/limoni/testkit"
@@ -156,22 +158,32 @@ func TestProjectedMouseSelectionAndHover(t *testing.T) {
 	term := testkit.NewTerminal(160, 45)
 	term.Draw(func(f *terminal.Frame) {
 		a.Draw(f, nil)
+		var stick *accessibility.AccessibilityNode
+		for _, node := range f.AccessibilityTree() {
+			if node.ID == "component_left_stick" {
+				n := node
+				stick = &n
+			}
+		}
+		if stick == nil {
+			t.Fatal("left stick is not exposed at its projected position")
+		}
 		for _, region := range f.EventRegions {
-			if region.ID != "hover_"+string(device.RegionLeftTrigger) {
+			if region.ID != uiwidgets.StagePointerID {
 				continue
 			}
-			ev := driver.MouseEvent{X: region.Area.X + 2, Y: region.Area.Y + 1}
-			f.DispatchPointerMove(ev)
-			if a.State.HoveredRegion != device.RegionLeftTrigger {
-				t.Fatal("projected region did not highlight on hover")
+			ev := driver.MouseEvent{X: stick.Bounds.X, Y: stick.Bounds.Y}
+			f.DispatchEventRegions(ev) // pointer motion (no button)
+			if a.State.HoveredComponent != "left_stick" || a.State.HoveredRegion != device.RegionLeftStick {
+				t.Fatalf("projected hover picked %q", a.State.HoveredComponent)
 			}
 			ev.Button = driver.MouseLeft
 			f.DispatchEventRegions(ev)
-			if a.State.ActivePanel != state.PanelTriggers {
-				t.Fatal("projected click did not open trigger inspector")
+			if a.State.SelectedComponent != "left_stick" || a.State.ActivePanel != state.PanelSticks {
+				t.Fatalf("projected click selected %q, panel %s", a.State.SelectedComponent, a.State.ActivePanel)
 			}
 			return
 		}
-		t.Fatal("3D projected interaction region missing")
+		t.Fatal("3D stage pointer region missing")
 	})
 }

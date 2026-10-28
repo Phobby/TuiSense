@@ -97,7 +97,12 @@ func (d *Dispatcher) flushBatch(ctx context.Context) {
 			}
 			continue
 		}
-		err := ctrl.ExecuteCommand(ctx, cmd)
+		// Capabilities are re-read at execution time, so a transport change
+		// or a different device can never receive an unsupported command.
+		err := device.Authorize(ctrl.Capabilities(), cmd)
+		if err == nil {
+			err = ctrl.ExecuteCommand(ctx, cmd)
+		}
 		if err != nil {
 			if d.logger != nil {
 				d.logger.Error("DISPATCH", "%s failed: %v", cmd.Describe(), err)

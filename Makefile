@@ -1,5 +1,5 @@
 APP_NAME    := tuisense
-VERSION     ?= 0.7.0
+VERSION     ?= $(shell cat VERSION)
 PREFIX      ?= $(HOME)/.local
 BINDIR      ?= $(PREFIX)/bin
 BUILD_DIR   := bin
@@ -7,9 +7,9 @@ BINARY      := $(BUILD_DIR)/$(APP_NAME)
 CMD_PKG     := ./cmd/tuisense
 GO          ?= go
 GOFLAGS     ?= -trimpath
-LDFLAGS     := -s -w -X main.version=$(VERSION)
+LDFLAGS     := -s -w -X github.com/Phobby/TuiSense/internal/version.Version=$(VERSION)
 
-.PHONY: all build install uninstall test run mock udev clean help
+.PHONY: all build install uninstall test run mock udev media clean help
 
 all: build
 
@@ -20,11 +20,11 @@ build:
 
 ## install: Build and install TuiSense into ~/.local/bin/tuisense (rootless)
 install: build
-	@PREFIX="$(PREFIX)" BINDIR="$(BINDIR)" ./scripts/install.sh
+	@PREFIX="$(PREFIX)" BINDIR="$(BINDIR)" ./scripts/install-from-source.sh
 
 ## uninstall: Remove ~/.local/bin/tuisense (preserves user profiles in ~/.config/tuisense)
 uninstall:
-	@PREFIX="$(PREFIX)" BINDIR="$(BINDIR)" ./scripts/install.sh --uninstall
+	@PREFIX="$(PREFIX)" BINDIR="$(BINDIR)" ./scripts/install-from-source.sh --uninstall
 
 ## test: Run the complete unit and headless UI test suite
 test:
@@ -42,6 +42,12 @@ mock: build
 udev: build
 	./$(BINARY) --print-udev
 
+## media: Record the README demonstration GIFs from the real UI into docs/media
+media:
+	@rm -rf $(BUILD_DIR)/frames
+	$(GO) run -ldflags "-X github.com/Phobby/TuiSense/internal/version.Version=$(VERSION)" ./tools/capture -out $(BUILD_DIR)/frames
+	python3 tools/capture/render.py $(BUILD_DIR)/frames docs/media
+
 ## clean: Remove build artifacts
 clean:
 	rm -rf $(BUILD_DIR)
@@ -56,4 +62,5 @@ help:
 	@echo "  make run        Build and run TuiSense"
 	@echo "  make mock       Build and run TuiSense in interactive mock mode"
 	@echo "  make udev       Print recommended Linux udev rules"
+	@echo "  make media      Re-record the README GIFs into docs/media"
 	@echo "  make clean      Remove compiled artifacts"

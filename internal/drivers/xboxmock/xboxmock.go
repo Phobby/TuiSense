@@ -21,19 +21,19 @@ const (
 )
 
 var regions = []device.Region{
-	{ID: device.RegionLeftTrigger, Label: "LT Impulse Trigger", Badge: "LT", Capability: device.CapHaptics, Slot: device.SlotTopLeft,
+	{ID: device.RegionLeftTrigger, Label: "LT Impulse Trigger", Badge: "LT", Capability: device.CapHaptics,
 		Description: "Impulse trigger rumble motor strength (simulated)."},
-	{ID: device.RegionRightTrigger, Label: "RT Impulse Trigger", Badge: "RT", Capability: device.CapHaptics, Slot: device.SlotTopRight,
+	{ID: device.RegionRightTrigger, Label: "RT Impulse Trigger", Badge: "RT", Capability: device.CapHaptics,
 		Description: "Impulse trigger rumble motor strength (simulated)."},
-	{ID: device.RegionLight, Label: "Guide Button LED", Badge: "Guide", Capability: device.CapLighting, Slot: device.SlotTopCenter,
+	{ID: device.RegionLight, Label: "Guide Button LED", Badge: "Guide", Capability: device.CapLighting,
 		Description: "White guide button LED brightness (no RGB)."},
-	{ID: device.RegionLeftStick, Label: "Left Thumbstick", Badge: "L-Stick", Capability: device.CapSticks, Slot: device.SlotMidLeft,
+	{ID: device.RegionLeftStick, Label: "Left Thumbstick", Badge: "L-Stick", Capability: device.CapSticks,
 		Description: "Tune deadzones and response curves for the offset left stick."},
-	{ID: device.RegionRightStick, Label: "Right Thumbstick", Badge: "R-Stick", Capability: device.CapSticks, Slot: device.SlotMidRight,
+	{ID: device.RegionRightStick, Label: "Right Thumbstick", Badge: "R-Stick", Capability: device.CapSticks,
 		Description: "Tune deadzones and response curves for the right stick."},
-	{ID: device.RegionHaptics, Label: "Rumble Motors", Badge: "Rumble", Capability: device.CapHaptics, Slot: device.SlotLowLeft,
+	{ID: device.RegionHaptics, Label: "Rumble Motors", Badge: "Rumble", Capability: device.CapHaptics,
 		Description: "Adjust the four rumble motors (two grips, two impulse triggers)."},
-	{ID: device.RegionAudio, Label: "3.5mm Headset Jack", Badge: "Headset", Capability: device.CapAudio, Slot: device.SlotLowRight,
+	{ID: device.RegionAudio, Label: "3.5mm Headset Jack", Badge: "Headset", Capability: device.CapAudio,
 		Description: "Headset volume and chat mix (no internal speaker)."},
 }
 
@@ -80,37 +80,35 @@ func Descriptor() device.Descriptor {
 		Brand:       "Microsoft",
 		DisplayName: "Xbox Wireless Controller (Test Device)",
 		ShortName:   "Xbox (Test)",
-		VisualID:    "xbox",
+		VisualID:    "xbox_series",
 		Accent:      device.RGB{R: 60, G: 190, B: 90},
 		VendorID:    0x045E,
 		ProductIDs:  []uint16{0x0B13},
 		Regions:     regions,
 		Inputs:      inputs(),
+		// Every access below is implemented by the simulated backend only.
 		Capabilities: device.NewCapabilitySet(
-			device.CapabilitySpec{ID: device.CapBattery, Support: device.Full, Note: "2× AA batteries (simulated)."},
-			device.CapabilitySpec{ID: device.CapConnection, Support: device.Full},
-			device.CapabilitySpec{ID: device.CapFirmwareInfo, Support: device.Full},
-			device.CapabilitySpec{ID: device.CapHaptics, Support: device.Full,
-				Features: []device.Feature{device.FeatDualMotors, device.FeatTriggerMotors, device.FeatTestPulse, device.FeatMotorConfig}},
-			device.CapabilitySpec{ID: device.CapAdaptiveTriggers, Support: device.Unsupported,
-				Note: "Xbox controllers use impulse trigger motors instead of adaptive resistance."},
-			device.CapabilitySpec{ID: device.CapLighting, Support: device.Limited,
+			sim(device.CapabilitySpec{ID: device.CapBattery, Support: device.Full, Access: device.AccessRead, Note: "2× AA batteries (simulated)."}),
+			sim(device.CapabilitySpec{ID: device.CapConnection, Support: device.Full, Access: device.AccessRead}),
+			sim(device.CapabilitySpec{ID: device.CapFirmwareInfo, Support: device.Full, Access: device.AccessRead}),
+			sim(device.CapabilitySpec{ID: device.CapHaptics, Support: device.Full, Access: device.AccessTest | device.AccessConfigDevice,
+				Features: []device.Feature{device.FeatDualMotors, device.FeatTriggerMotors, device.FeatTestPulse, device.FeatMotorConfig}}),
+			device.AbsentSpec(device.CapAdaptiveTriggers),
+			sim(device.CapabilitySpec{ID: device.CapLighting, Support: device.Limited, Access: device.AccessConfigDevice,
 				Features: []device.Feature{device.FeatLEDBrightness},
-				Note:     "Only the white guide button LED brightness is adjustable."},
-			device.CapabilitySpec{ID: device.CapSticks, Support: device.Full,
-				Features: []device.Feature{device.FeatDeadzones, device.FeatResponseCurve}},
-			device.CapabilitySpec{ID: device.CapMotion, Support: device.Unsupported,
-				Note: "This controller has no motion sensors."},
-			device.CapabilitySpec{ID: device.CapAudio, Support: device.Limited,
+				Note:     "Only the white guide button LED brightness is adjustable."}),
+			sim(device.CapabilitySpec{ID: device.CapSticks, Support: device.Full, Access: device.AccessRead | device.AccessTest | device.AccessPreview,
+				Features: []device.Feature{device.FeatDeadzones, device.FeatResponseCurve}}),
+			device.AbsentSpec(device.CapMotion),
+			sim(device.CapabilitySpec{ID: device.CapAudio, Support: device.Limited, Access: device.AccessTest | device.AccessConfigDevice,
 				Features: []device.Feature{device.FeatHeadset},
-				Note:     "Headset jack only; there is no internal speaker or microphone."},
-			device.CapabilitySpec{ID: device.CapProfiles, Support: device.Full},
-			device.CapabilitySpec{ID: device.CapDiagnostics, Support: device.Full},
-			device.CapabilitySpec{ID: device.CapFirmwareUpdate, Support: device.Unsupported,
-				Note: "Firmware checks are not implemented for this test device."},
-			device.CapabilitySpec{ID: device.CapRemapping, Support: device.Unsupported,
-				Note: "Remapping is planned for a future Xbox backend."},
-			device.CapabilitySpec{ID: device.CapCalibration, Support: device.Unsupported},
+				Note:     "Headset jack only; there is no internal speaker or microphone."}),
+			sim(device.CapabilitySpec{ID: device.CapProfiles, Support: device.Full, Access: device.AccessConfigDevice}),
+			sim(device.CapabilitySpec{ID: device.CapDiagnostics, Support: device.Full, Access: device.AccessRead | device.AccessTest}),
+			device.InaccessibleSpec(device.CapFirmwareUpdate, device.RequiresBackend, "Firmware checks are not implemented for this test device."),
+			device.InaccessibleSpec(device.CapRemapping, device.RequiresBackend, "Remapping is planned for a future Xbox backend."),
+			device.AbsentSpec(device.CapCalibration),
+			device.AbsentSpec(device.CapRearControls),
 		),
 		Actions: []device.Action{
 			{ID: "pulse_test", Label: "Test Rumble", Capability: device.CapHaptics,
@@ -118,6 +116,12 @@ func Descriptor() device.Descriptor {
 		},
 		DefaultConfig: defaultConfig,
 	}
+}
+
+// sim marks a capability as implemented by the simulated backend.
+func sim(cs device.CapabilitySpec) device.CapabilitySpec {
+	cs.Backend, cs.Verification = "simulated", device.VerifiedAutomated
+	return cs
 }
 
 func defaultConfig() device.Config {

@@ -117,6 +117,11 @@ func BuildReport(s *Session, version string, includeIDs bool, now time.Time) Rep
 	}
 	for _, c := range AllCategories {
 		availability := s.Avail[c]
+		if availability.Hidden() {
+			// Reports describe only hardware the controller has and TuiSense
+			// can test; absent or unreachable features are not failures.
+			continue
+		}
 		entry := ReportEntry{Category: c, Label: c.Label(), Status: s.Status(c), Reason: availability.Reason}
 		if (c == CatAudioIn || c == CatAudioOut) && entry.Status == Unavailable && s.Ctx.Info.Connection == device.ConnBluetooth && s.Ctx.Desc.Inputs.Audio.RequiresUSB {
 			entry.RequiredConnection = "USB"

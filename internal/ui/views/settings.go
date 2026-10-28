@@ -25,10 +25,16 @@ func RenderSettingsPanel(f *terminal.Frame, area cell.Rect, s *state.AppState, s
 	y = renderModeChooser(f, inner, y, s, sim)
 	y = renderLanguageChooser(f, inner, y, s, sim)
 	y++
+	y = renderUpdates(f, inner, y, s, sim, true)
+	y++
 
 	// 1. 3D Stage & Visual Preferences
 	f.Buffer.SetStringWithin(inner.X, y, i18n.T("3D Viewport & Accessibility"), p.SectionHeaderStyle(), inner.Width)
 	y++
+	pillRow(f, inner.X, y, inner.X+inner.Width, s, "", 0, []choice{{
+		ID: "btn_open_gallery", Label: i18n.T("Controller Gallery (visual preview)"), OnSelect: s.OpenGallery,
+	}})
+	y += 2
 
 	f.RenderWidget(widgets.Checkbox{
 		ID:           "cb_settings_autorot",

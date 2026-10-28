@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"time"
 )
 
 // Preferences are user choices persisted across sessions in settings.json.
@@ -20,6 +21,12 @@ type Preferences struct {
 	// ConfirmedModels remembers the user's controller identifications:
 	// non-unique hardware key "vid:pid:version" → model ID.
 	ConfirmedModels map[string]string `json:"confirmed_models,omitempty"`
+	// Application updates (never controller firmware): automatic checks are
+	// on unless disabled; automatic downloads only when the user enables them.
+	UpdateChecks       *bool     `json:"update_checks,omitempty"`
+	UpdateAutoDownload bool      `json:"update_auto_download,omitempty"`
+	UpdateChannel      string    `json:"update_channel,omitempty"`
+	UpdateLastCheck    time.Time `json:"update_last_check,omitempty"`
 }
 
 // PrefsStore reads and writes Preferences at a fixed path.

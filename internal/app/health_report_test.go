@@ -125,7 +125,7 @@ func TestHealthReportCompactScreenRetainsControllerAndActions(t *testing.T) {
 	a.State.ActivePanel = state.PanelDiagnostics
 	a.State.Diag.GenerateHealthReport(time.Now())
 	page := uitest.Run(t, 80, 24, a.Draw)
-	page.Expect(page.GetByRole("image", "Sony DualSense 3D")).ToBeVisible()
+	page.Expect(page.GetByRole("image", "Sony DualSense Wireless Controller")).ToBeVisible()
 	page.Expect(page.GetByID("copy_full_report")).ToBeVisible()
 	page.Expect(page.GetByID("diag_scroll_down")).ToBeVisible()
 }

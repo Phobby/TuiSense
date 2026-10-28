@@ -363,7 +363,7 @@ func (s *Session) Status(c Category) Status {
 func (s *Session) Visible() []Category {
 	var out []Category
 	for _, c := range AllCategories {
-		if s.Avail[c].Status != Unsupported {
+		if !s.Avail[c].Hidden() {
 			out = append(out, c)
 		}
 	}

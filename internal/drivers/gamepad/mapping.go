@@ -156,10 +156,24 @@ func InferMapping(dev evdev.InputDevice, abs map[uint16]evdev.AbsInfo) Mapping {
 			break
 		}
 	}
+	positional := PositionalFaceButtons(dev.KernelDriver)
 	for _, b := range semantic {
 		if dev.Caps.Key.Has(b.Code) {
+			if positional {
+				// gamepad.rst drivers report the top button as BTN_NORTH (0x133)
+				// and the left one as BTN_WEST (0x134), unlike xpad.
+				switch b.Code {
+				case evdev.BtnNorth:
+					b.ID, b.Label = device.ButtonNorth, "North"
+				case evdev.BtnWest:
+					b.ID, b.Label = device.ButtonWest, "West"
+				}
+			}
 			m.Buttons = append(m.Buttons, b)
 		}
+	}
+	if positional {
+		m.Notes = append(m.Notes, "Face buttons follow the kernel gamepad specification (positional BTN_NORTH/BTN_WEST).")
 	}
 	if joystickStyle && len(m.Buttons) == 0 {
 		n := 0
@@ -203,6 +217,18 @@ func InferMapping(dev evdev.InputDevice, abs map[uint16]evdev.AbsInfo) Mapping {
 		m.Layout = LayoutGamepad
 	}
 	return m
+}
+
+// PositionalFaceButtons reports whether a kernel driver follows the Linux
+// gamepad specification for face buttons (BTN_NORTH is the top button), as
+// hid-playstation, hid-sony and hid-nintendo do. xpad keeps the historical
+// Xbox mapping where BTN_X (= BTN_NORTH) is the left button.
+func PositionalFaceButtons(kernelDriver string) bool {
+	switch kernelDriver {
+	case "playstation", "hid-playstation", "sony", "hid-sony", "nintendo", "hid-nintendo":
+		return true
+	}
+	return false
 }
 
 func (m Mapping) button(id device.ButtonID) (ButtonMap, bool) {

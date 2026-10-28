@@ -12,7 +12,7 @@ request available in this session.
 | Discovery | Initial scan could open duplicate keys; DualSense used node identity only | Initial key guard, physical identity filtering and endpoint replacement |
 | Header | Count, source pill and device selection repeated below model | One compact selector; source label only for simulated devices |
 | Dashboard | Three columns allocated large mostly empty status/info containers | Centered full-width stage and compact status/actions |
-| 3D viewer | Every region labeled; title, toolbar and second device selector repeated | Preserve mesh, camera, picking and live input; show selected/hovered label only |
+| 3D viewer | Every region labeled; title, toolbar and second device selector repeated | Descriptor-driven triangle meshes for ten controllers, face-level picking, front/rear presets, hover tooltip and selected label only (see 3D_MODELS.md) |
 | EZ | Lighting, vibration and triggers all visible immediately | Three entry actions; simple presets appear only in the selected category |
 | Advanced | More panels and raw input permanently visible | Same calm Home; technical controls are contextual |
 | Navigation | Every capability was a top-level destination | Five stable groups; capability-filtered, wrapped secondary controls |

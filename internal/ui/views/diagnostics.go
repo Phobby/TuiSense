@@ -385,8 +385,8 @@ func renderDiagSummary(c *cursor, d *diag.Session, pc PanelContext) {
 			break
 		}
 		st := d.Status(cat)
-		if !adv && st == diag.Unsupported {
-			continue
+		if d.Avail[cat].Hidden() {
+			continue // absent hardware, or explained in Driver & Compatibility
 		}
 		text := st.Label()
 		if r, ok := d.Results[cat]; ok && (st != diag.Unsupported && st != diag.Unavailable) {
@@ -487,7 +487,7 @@ func renderHealthCard(f *terminal.Frame, area cell.Rect, s *state.AppState) {
 	}
 	for _, cat := range diag.AllCategories {
 		st := d.Status(cat)
-		if st == diag.Unsupported && s.Mode == state.ModeEZ {
+		if d.Avail[cat].Hidden() {
 			continue
 		}
 		if !c.ok() {

@@ -31,6 +31,12 @@ const (
 	ButtonRightFn
 	ButtonLeftPaddle
 	ButtonRightPaddle
+	// ButtonPaddle1…4 are four independently reported rear paddles
+	// (Xbox Elite numbering P1–P4).
+	ButtonPaddle1
+	ButtonPaddle2
+	ButtonPaddle3
+	ButtonPaddle4
 	buttonCount
 )
 

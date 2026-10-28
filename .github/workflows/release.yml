@@ -1,0 +1,117 @@
+name: Release
+
+# Publishes a release when a version tag (v0.8.0, v0.9.0-rc.1) is pushed.
+# Every archive is built and smoke-tested on a native runner, the checksum
+# list is signed with the release key (OpenSSH SSHSIG, namespace
+# "tuisense-release") and verified against the key pinned in the repository
+# before anything is published. Without the signing secret the release fails.
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Tag matches VERSION
+        run: test "v$(cat VERSION)" = "${GITHUB_REF_NAME%%-*}" || test "v$(cat VERSION)" = "$GITHUB_REF_NAME"
+      - run: go vet ./...
+      - run: go test -count=1 ./...
+
+  build:
+    needs: test
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - { runner: ubuntu-latest,     goos: linux,   goarch: amd64 }
+          - { runner: ubuntu-24.04-arm,  goos: linux,   goarch: arm64 }
+          - { runner: macos-15-intel,    goos: darwin,  goarch: amd64 }
+          - { runner: macos-15,          goos: darwin,  goarch: arm64 }
+          - { runner: windows-latest,    goos: windows, goarch: amd64 }
+          - { runner: windows-11-arm,    goos: windows, goarch: arm64 }
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Build
+        shell: bash
+        env:
+          CGO_ENABLED: "0"
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          EXT=""; [ "$GOOS" = windows ] && EXT=".exe"
+          go build -trimpath -ldflags "-s -w -X github.com/Phobby/TuiSense/internal/version.Version=${VERSION}" -o "build/tuisense${EXT}" ./cmd/tuisense
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+          echo "BIN=build/tuisense${EXT}" >> "$GITHUB_ENV"
+      - name: Smoke test on the native runner
+        shell: bash
+        run: |
+          out="$("./$BIN" --version)"
+          echo "$out"
+          case "$out" in *"v$VERSION"*) ;; *) echo "unexpected version output"; exit 1 ;; esac
+      - name: Package
+        shell: bash
+        run: go run ./tools/release package -version "$VERSION" -os "${{ matrix.goos }}" -arch "${{ matrix.goarch }}" -bin "$BIN" -out dist
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: dist/*
+          if-no-files-found: error
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: dist-*
+          path: dist
+          merge-multiple: true
+      - name: Checksums
+        run: go run ./tools/release sums -out dist
+      - name: Sign checksums
+        env:
+          SIGNING_KEY: ${{ secrets.TUISENSE_RELEASE_SIGNING_KEY }}
+        run: |
+          if [ -z "$SIGNING_KEY" ]; then
+            echo "TUISENSE_RELEASE_SIGNING_KEY is not configured; refusing to publish an unsigned release." >&2
+            exit 1
+          fi
+          umask 077
+          printf '%s\n' "$SIGNING_KEY" > "$RUNNER_TEMP/release_key"
+          ssh-keygen -Y sign -f "$RUNNER_TEMP/release_key" -n tuisense-release dist/SHA256SUMS
+          rm -f "$RUNNER_TEMP/release_key"
+      - name: Verify against the pinned key
+        run: go run ./tools/release verify -out dist -keys internal/update/trusted_keys.txt
+      - name: Build provenance attestation
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: "dist/tuisense_*"
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          flags=""
+          case "$GITHUB_REF_NAME" in *-*) flags="--prerelease" ;; esac
+          gh release create "$GITHUB_REF_NAME" dist/* --title "TuiSense $GITHUB_REF_NAME" --generate-notes $flags

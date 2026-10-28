@@ -21,8 +21,13 @@ func helpLines(s *state.AppState) []helpLine {
 	if len(s.Devices) > 0 {
 		lines = append(lines, helpLine{"", "Controller selection"}, helpLine{"C", "Open the controller selector"}, helpLine{", / .", "Previous / next controller"})
 	}
-	if s.ActiveDeviceKey != "" {
-		lines = append(lines, []helpLine{{"", "3D viewer controls"}, {"W A S d / drag", "Orbit camera"}, {"[ / ] / click", "Select component"}, {"+ / - / scroll", "Zoom in / out"}, {"R", "Reset camera"}, {"Space / M", "Auto-orbit / shading"}}...)
+	if s.ActiveDeviceKey != "" || s.Gallery.Active {
+		lines = append(lines, []helpLine{{"", "3D viewer controls"}, {"W A S d / drag", "Orbit camera"}, {"V", "Front / rear view"},
+			{"[ / ] / click", "Select component"}, {"+ / - / scroll", "Zoom in / out"}, {"R / double-click", "Reset camera"}, {"Space / M", "Auto-orbit / shading"}}...)
+	}
+	lines = append(lines, helpLine{"", "Controller Gallery"}, helpLine{"G", "Browse every controller model (visual preview, no hardware)"})
+	if s.Gallery.Active {
+		lines = append(lines, helpLine{"← / → , / .", "Previous / next model"}, helpLine{"Esc / G", "Back to the connected controller"})
 	}
 	lines = append(lines, helpLine{"", "Settings and interaction"}, helpLine{"E", "Toggle EZ ↔ Advanced mode"}, helpLine{"Arrows / Enter", "Adjust focused control / activate"})
 	if state.PanelVisible(s.VisiblePanels(), state.PanelFirmware) {

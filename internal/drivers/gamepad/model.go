@@ -24,10 +24,13 @@ type Model struct {
 	Static device.Descriptor
 	// Identify inspects a discovered device. It must not open the device.
 	Identify func(evdev.InputDevice) (Confidence, string)
-	// Describe builds the runtime descriptor for the observed mapping.
-	Describe func(m Mapping, d evdev.InputDevice, rumble bool) device.Descriptor
+	// Describe builds the runtime descriptor for the observed mapping and
+	// what the backend could access.
+	Describe func(m Mapping, d evdev.InputDevice, rt Runtime) device.Descriptor
 	// ModeHint explains the observed input mode in model terms ("" = generic text).
 	ModeHint func(m Mapping, d evdev.InputDevice) string
+	// Spec is the data-only description when the model was built from one.
+	Spec *ModelSpec
 }
 
 // GenericModelID is the descriptor ID of unidentified gamepads. Storing it as

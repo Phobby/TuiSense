@@ -4,6 +4,7 @@ import (
 	"github.com/Phobby/TuiSense/internal/device"
 	"github.com/Phobby/TuiSense/internal/i18n"
 	"github.com/Phobby/TuiSense/internal/state"
+	"github.com/Phobby/TuiSense/internal/update"
 	"github.com/thebanri/limoni/core/cell"
 	"github.com/thebanri/limoni/core/terminal"
 )
@@ -44,6 +45,11 @@ type Callbacks struct {
 	// Read-only firmware update check. OnOpenLink only opens a web page;
 	// nothing in TuiSense installs firmware.
 	OnCheckFirmware        func()
+	OnCheckDrivers         func()
+	OnCheckUpdates         func()
+	OnDownloadUpdate       func()
+	OnSetUpdateSettings    func(update.Settings)
+	OnRunCompatAction      func(id string) // runs an action only after it was reviewed
 	OnSetFirmwareAutoCheck func(bool)
 	OnSetFirmwareSection   func(state.FirmwareSection)
 	OnSetDetailGroup       func(device.DetailGroup)

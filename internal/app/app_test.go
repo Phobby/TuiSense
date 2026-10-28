@@ -188,16 +188,16 @@ func TestSwitchingDeviceChangesVisualInfoAndPanels(t *testing.T) {
 	application := newMockApp(t, state.ModeAdvanced)
 	page := uitest.Run(t, 120, 40, application.Draw)
 
-	page.Expect(page.GetByRole("image", "Sony DualSense 3D")).ToBeVisible()
+	page.Expect(page.GetByRole("image", "Sony DualSense Wireless Controller")).ToBeVisible()
 	application.State.Config.Lighting.Red = 42 // DualSense-specific change
 
 	page.Press("c")
 	page.GetByID("selector_item_1").Click()
 	s := application.State
-	if s.ActiveDeviceKey != xboxmock.Key || s.Descriptor.VisualID != "xbox" {
+	if s.ActiveDeviceKey != xboxmock.Key || s.Descriptor.VisualID != "xbox_series" {
 		t.Fatalf("expected Xbox test device to be active, got %q", s.ActiveDeviceKey)
 	}
-	page.Expect(page.GetByRole("image", "Xbox-style Gamepad 3D")).ToBeVisible()
+	page.Expect(page.GetByRole("image", "Microsoft Xbox Wireless Controller")).ToBeVisible()
 	page.Expect(page.GetByID("device_selector")).ToContainValue("Xbox")
 	page.Press("3")
 	page.Expect(page.GetByID("region_" + string(device.RegionLeftTrigger))).ToBeVisible()
@@ -221,7 +221,7 @@ func TestSwitchingDeviceChangesVisualInfoAndPanels(t *testing.T) {
 		t.Fatalf("DualSense config should be restored after switching back, got red=%d", s.Config.Lighting.Red)
 	}
 	page.Press("1")
-	page.Expect(page.GetByRole("image", "Sony DualSense 3D")).ToBeVisible()
+	page.Expect(page.GetByRole("image", "Sony DualSense Wireless Controller")).ToBeVisible()
 }
 
 func TestDeviceSelectorModal(t *testing.T) {

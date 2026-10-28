@@ -180,13 +180,13 @@ func TestResolveHonorsConfirmations(t *testing.T) {
 func TestCapabilitiesNeverOverclaim(t *testing.T) {
 	d, abs := XInputDevice()
 	m := InferMapping(d, abs)
-	caps := Capabilities(m, false)
+	caps := Capabilities(m, nil, Runtime{})
 	for _, c := range []device.Capability{device.CapBattery, device.CapLighting, device.CapAdaptiveTriggers, device.CapMotion, device.CapAudio, device.CapFirmwareInfo, device.CapHaptics} {
 		if caps.Supports(c) {
 			t.Fatalf("%s must not be claimed", c)
 		}
 	}
-	if Capabilities(m, true).HasFeature(device.CapHaptics, device.FeatMotorConfig) {
+	if Capabilities(m, nil, RuntimeWith(true)).HasFeature(device.CapHaptics, device.FeatMotorConfig) {
 		t.Fatal("rumble pulses are not a configurable motor backend")
 	}
 	if caps.HasFeature(device.CapSticks, device.FeatDeadzones) {

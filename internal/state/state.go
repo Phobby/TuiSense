@@ -6,10 +6,12 @@ import (
 	"sync"
 	"time"
 
+	"github.com/Phobby/TuiSense/internal/compat"
 	"github.com/Phobby/TuiSense/internal/device"
 	"github.com/Phobby/TuiSense/internal/diag"
 	"github.com/Phobby/TuiSense/internal/logging"
 	"github.com/Phobby/TuiSense/internal/theme"
+	"github.com/Phobby/TuiSense/internal/update"
 	"github.com/thebanri/limoni/widgets"
 )
 
@@ -37,6 +39,11 @@ type AppState struct {
 	CopyStatus               string
 	CopyStatusUntil          time.Time
 
+	// AppVersion is the running TuiSense version ("0.8.0" or "dev").
+	AppVersion string
+	// Update mirrors the application updater for the Settings view.
+	Update update.Snapshot
+
 	// Theme, Mode & Layout
 	Theme            theme.Palette
 	HighContrast     bool
@@ -60,15 +67,36 @@ type AppState struct {
 	RegionHint         string        // shown when a region's panel is hidden in the current mode
 	Diag               *diag.Session // diagnostics session of the active device (nil without one)
 	Firmware           FirmwareView  // read-only firmware update check of the active device
-	deviceConfigs      map[string]device.Config
-	activeProfiles     map[string]string // device family -> active profile name
+	// Compat is the Driver & Compatibility analysis of the active device;
+	// CompatReview names the action awaiting explicit approval ("" = none)
+	// and CompatStatus reports the last action's outcome.
+	Compat         compat.Report
+	CompatReview   string
+	CompatBusy     bool
+	CompatStatus   string
+	deviceConfigs  map[string]device.Config
+	activeProfiles map[string]string // device family -> active profile name
 
-	// 3D Stage & Region Selection
-	SelectedRegion  device.RegionID
-	HoveredRegion   device.RegionID
-	RotX            float64
-	RotY            float64
-	RotZ            float64
+	// 3D Stage, Component & Region Selection
+	SelectedRegion    device.RegionID
+	HoveredRegion     device.RegionID
+	SelectedComponent string // visual.Component ID on the stage model
+	HoveredComponent  string
+	Gallery           GalleryState
+	// HardwareModels are the static descriptors of real hardware drivers,
+	// keyed by ModelID (the gallery uses them to state actual support).
+	HardwareModels map[string]device.Descriptor
+	RotX           float64
+	RotY           float64
+	RotZ           float64
+	// TargetRotX/Y and CameraTween drive smooth front/rear transitions.
+	TargetRotX, TargetRotY float64
+	CameraTween            bool
+	// StageClick remembers the last stage click for double-click detection.
+	StageClick struct {
+		At   time.Time
+		X, Y uint16
+	}
 	Zoom            float64
 	AutoRotate      bool
 	AutoRotateSpeed float64
@@ -160,9 +188,6 @@ func NewAppState(profileDir string, logger *logging.Logger) *AppState {
 		deviceConfigs:    map[string]device.Config{},
 		activeProfiles:   map[string]string{},
 		SelectedRegion:   device.RegionNone,
-		RotX:             -20.0,
-		RotY:             14.0,
-		RotZ:             0.0,
 		Zoom:             1.0,
 		AutoRotate:       false,
 		AutoRotateSpeed:  1.1,
@@ -206,6 +231,7 @@ func NewAppState(profileDir string, logger *logging.Logger) *AppState {
 		CurveCanvas:      widgets.NewCanvas(40, 8),
 		ScopeCanvas:      widgets.NewCanvas(28, 8),
 	}
+	s.ResetCamera()
 	return s
 }
 
@@ -272,6 +298,7 @@ func (s *AppState) ActivateDevice(key string, desc device.Descriptor, caps devic
 	if key != s.ActiveDeviceKey {
 		s.IncludeCopyIdentifiers = false
 	}
+	modelChanged := desc.VisualID != s.Descriptor.VisualID
 	if s.ActiveDeviceKey != "" {
 		s.deviceConfigs[s.ActiveDeviceKey] = s.Config
 		s.activeProfiles[s.Descriptor.Family] = s.ActiveProfile
@@ -294,6 +321,12 @@ func (s *AppState) ActivateDevice(key string, desc device.Descriptor, caps devic
 	s.SelectedRegion = device.RegionNone
 	s.HoveredRegion = device.RegionNone
 	s.RegionHint = ""
+	if !s.Gallery.Active {
+		s.SelectedComponent, s.HoveredComponent = "", ""
+		if modelChanged {
+			s.ResetCamera()
+		}
+	}
 	s.EnsureActivePanelVisible()
 }
 
@@ -364,32 +397,6 @@ func (s *AppState) SelectRegion(r device.RegionID) {
 	case s.Mode == ModeEZ:
 		s.RegionHint = region.Label + " settings are available in Advanced mode — press [E]."
 	}
-}
-
-// CycleRegion advances the selected region through the active descriptor's regions.
-func (s *AppState) CycleRegion(delta int) {
-	ids := s.Descriptor.RegionIDs()
-	if len(ids) == 0 {
-		return
-	}
-	idx := 0
-	for i, r := range ids {
-		if r == s.SelectedRegion {
-			idx = i
-			break
-		}
-	}
-	next := ((idx+delta)%len(ids) + len(ids)) % len(ids)
-	s.SelectRegion(ids[next])
-}
-
-// ResetCamera restores the default 3D controller orientation and zoom.
-func (s *AppState) ResetCamera() {
-	s.RotX = -20.0
-	s.RotY = 14.0
-	s.RotZ = 0.0
-	s.Zoom = 1.0
-	s.ShowcasePhase = 0.0
 }
 
 // SetError records a recoverable inline error and displays a toast notification.

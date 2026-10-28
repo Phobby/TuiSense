@@ -110,3 +110,15 @@ func (s *Service) Copy(ctx context.Context, text string) (Outcome, error) {
 	failures = append(failures, errors.New("clipboard unavailable: install wl-clipboard, xclip or xsel, or enable terminal clipboard support with TUISENSE_OSC52=1"))
 	return Outcome{}, errors.Join(failures...)
 }
+
+// Available lists the clipboard tools found on this system (in preference
+// order). Terminal clipboard support (OSC 52) is not detectable here.
+func (s *Service) Available() []string {
+	var out []string
+	for _, c := range s.candidates() {
+		if _, err := s.LookPath(c.name); err == nil {
+			out = append(out, c.name)
+		}
+	}
+	return out
+}

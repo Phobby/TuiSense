@@ -1,0 +1,39 @@
+name: Bug report
+description: Something in TuiSense does not work as expected
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting! For security problems, please use
+        [private vulnerability reporting](https://github.com/Phobby/TuiSense/security/advisories/new) instead.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: What did you do, what did you expect, and what happened instead?
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: TuiSense version
+      description: Output of `tuisense --version`
+      placeholder: TuiSense v0.8.0 (linux/amd64)
+    validations:
+      required: true
+  - type: input
+    id: controller
+    attributes:
+      label: Controller and connection
+      placeholder: DualSense over Bluetooth
+  - type: textarea
+    id: doctor
+    attributes:
+      label: Output of `tuisense doctor`
+      render: text
+  - type: input
+    id: terminal
+    attributes:
+      label: Operating system and terminal
+      placeholder: Fedora 41, KDE Plasma (Wayland), Konsole

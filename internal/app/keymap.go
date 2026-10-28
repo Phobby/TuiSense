@@ -2,7 +2,6 @@ package app
 
 import (
 	"github.com/Phobby/TuiSense/internal/i18n"
-	"math"
 	"time"
 
 	"github.com/Phobby/TuiSense/internal/device"
@@ -68,6 +67,10 @@ func (a *Application) HandleKeyEvent(f *terminal.Frame, key driver.KeyEvent) boo
 			s.ShowHelp = false
 		}
 		return true
+	}
+
+	if s.Gallery.Active {
+		return a.handleGalleryKey(key)
 	}
 
 	if s.ActivePanel == state.PanelDiagnostics && (key.Type == driver.KeyPageUp || key.Type == driver.KeyPageDown) {
@@ -136,7 +139,13 @@ func (a *Application) HandleKeyEvent(f *terminal.Frame, key driver.KeyEvent) boo
 			return true
 		}
 		s.SelectedRegion = device.RegionNone
+		s.SelectedComponent = ""
 		s.RegionHint = ""
+		return true
+	}
+
+	// The focused 3D stage orbits with the arrow keys.
+	if focusedID == "stage_3d" && handleOrbitKey(s, key) {
 		return true
 	}
 
@@ -234,26 +243,19 @@ func (a *Application) HandleKeyEvent(f *terminal.Frame, key driver.KeyEvent) boo
 			a.SetMode(s.Mode.Toggle())
 			return true
 		case '[':
-			s.CycleRegion(-1)
+			s.CycleComponent(-1)
 			return true
 		case ']':
-			s.CycleRegion(1)
+			s.CycleComponent(1)
 			return true
-		case 'w', 'W':
-			s.AutoRotate = false
-			s.RotX = math.Max(-75.0, s.RotX-6.0)
+		case 'g', 'G':
+			s.OpenGallery()
 			return true
-		case 's', 'S':
-			s.AutoRotate = false
-			s.RotX = math.Min(75.0, s.RotX+6.0)
+		case 'v', 'V':
+			s.ToggleView()
 			return true
-		case 'a', 'A':
-			s.AutoRotate = false
-			s.RotY = math.Mod(s.RotY-8.0+360.0, 360.0)
-			return true
-		case 'd':
-			s.AutoRotate = false
-			s.RotY = math.Mod(s.RotY+8.0, 360.0)
+		case 'w', 'W', 's', 'S', 'a', 'A', 'd':
+			handleOrbitKey(s, key)
 			return true
 		case 'D':
 			if s.IsSimulatedDevice() {
@@ -274,25 +276,13 @@ func (a *Application) HandleKeyEvent(f *terminal.Frame, key driver.KeyEvent) boo
 			s.ResetCamera()
 			return true
 		case 'm', 'M':
-			switch s.ShadingMode {
-			case "Gouraud":
-				s.ShadingMode = "Lambert"
-			case "Lambert":
-				s.ShadingMode = "Flat"
-			case "Flat":
-				s.ShadingMode = "Wireframe"
-			default:
-				s.ShadingMode = "Gouraud"
-			}
+			s.ShadingMode = nextShading(s.ShadingMode)
 			return true
 		case 't', 'T':
 			a.TestPulse()
 			return true
-		case '+', '=':
-			s.Zoom = math.Min(1.75, s.Zoom+0.10)
-			return true
-		case '-':
-			s.Zoom = math.Max(0.55, s.Zoom-0.10)
+		case '+', '=', '-':
+			handleOrbitKey(s, key)
 			return true
 		}
 	}
@@ -303,6 +293,99 @@ func (a *Application) HandleKeyEvent(f *terminal.Frame, key driver.KeyEvent) boo
 	}
 
 	return true
+}
+
+// handleOrbitKey rotates and zooms the stage camera (WASD, arrows, +/-).
+func handleOrbitKey(s *state.AppState, key driver.KeyEvent) bool {
+	ch := key.Ch
+	if key.Type != driver.KeyRune {
+		ch = 0
+	}
+	switch {
+	case ch == 'w' || ch == 'W' || key.Type == driver.KeyArrowUp:
+		s.Orbit(0, -6)
+	case ch == 's' || ch == 'S' || key.Type == driver.KeyArrowDown:
+		s.Orbit(0, 6)
+	case ch == 'a' || ch == 'A' || key.Type == driver.KeyArrowLeft:
+		s.Orbit(-8, 0)
+	case ch == 'd' || key.Type == driver.KeyArrowRight:
+		s.Orbit(8, 0)
+	case ch == '+' || ch == '=':
+		s.ZoomBy(0.10)
+	case ch == '-':
+		s.ZoomBy(-0.10)
+	default:
+		return false
+	}
+	return true
+}
+
+// handleGalleryKey owns the keyboard while the Controller Gallery is open.
+// Nothing here reaches the connected device.
+func (a *Application) handleGalleryKey(key driver.KeyEvent) bool {
+	s := a.State
+	switch key.Type {
+	case driver.KeyEsc:
+		if s.SelectedComponent != "" {
+			s.SelectedComponent = ""
+		} else {
+			s.CloseGallery()
+		}
+		return true
+	case driver.KeyArrowLeft:
+		s.GalleryStep(-1)
+		return true
+	case driver.KeyArrowRight:
+		s.GalleryStep(1)
+		return true
+	case driver.KeyTab:
+		s.CycleComponent(1)
+		return true
+	}
+	if key.Type != driver.KeyRune {
+		return true
+	}
+	switch key.Ch {
+	case 'q', 'Q':
+		return false
+	case '?':
+		s.ShowHelp = true
+	case 'g', 'G':
+		s.CloseGallery()
+	case ',', '<':
+		s.GalleryStep(-1)
+	case '.', '>':
+		s.GalleryStep(1)
+	case 'v', 'V':
+		s.ToggleView()
+	case 'r', 'R':
+		s.ResetCamera()
+	case '[':
+		s.CycleComponent(-1)
+	case ']':
+		s.CycleComponent(1)
+	case 'e', 'E':
+		a.SetMode(s.Mode.Toggle())
+	case 'm', 'M':
+		s.ShadingMode = nextShading(s.ShadingMode)
+	case ' ':
+		s.AutoRotate = !s.AutoRotate
+	default:
+		handleOrbitKey(s, key)
+	}
+	return true
+}
+
+func nextShading(m string) string {
+	switch m {
+	case "Gouraud":
+		return "Lambert"
+	case "Lambert":
+		return "Flat"
+	case "Flat":
+		return "Wireframe"
+	}
+	return "Gouraud"
 }
 
 func (a *Application) handleFocusedWidgetKey(id string, key driver.KeyEvent) bool {

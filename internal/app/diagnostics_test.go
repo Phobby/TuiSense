@@ -38,7 +38,7 @@ func TestDiagnosticsAdaptToSelectedController(t *testing.T) {
 	if d == nil || d.Ctx.Desc.ModelID != xboxmock.ModelID || !d.Ctx.Simulated {
 		t.Fatalf("diagnostics must switch to the simulated Xbox session")
 	}
-	page.Expect(page.GetByRole("image", "Xbox-style Gamepad 3D")).ToBeVisible()
+	page.Expect(page.GetByRole("image", "Microsoft Xbox Wireless Controller")).ToBeVisible()
 	page.Expect(page.GetByID("diag_tab_touchpad")).Not().ToBeVisible()
 	page.Expect(page.GetByID("diag_tab_motion")).Not().ToBeVisible()
 	page.Expect(page.GetByID("diag_tab_audio_input")).Not().ToBeVisible()

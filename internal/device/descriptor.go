@@ -18,20 +18,6 @@ const (
 	RegionAudio        RegionID = "audio" // mic mute button / headset jack
 )
 
-// PillSlot positions a region's callout badge around the controller visual.
-type PillSlot int
-
-const (
-	SlotTopLeft PillSlot = iota
-	SlotTopCenter
-	SlotTopRight
-	SlotMidLeft
-	SlotMidRight
-	SlotLowLeft
-	SlotLowRight
-	SlotBottomCenter
-)
-
 // Region describes an interactive controller zone and the capability it configures.
 type Region struct {
 	ID          RegionID
@@ -39,7 +25,6 @@ type Region struct {
 	Badge       string     // short callout text, e.g. "L2 Trigger"
 	Description string     // what selecting this region configures
 	Capability  Capability // capability whose panel opens on selection
-	Slot        PillSlot
 }
 
 // Source classifies where a device comes from.
@@ -84,6 +69,9 @@ type Descriptor struct {
 	DefaultConfig func() Config
 	// DefaultProfile names the built-in profile applied on first use ("" = factory config).
 	DefaultProfile string
+	// LinuxDrivers are the kernel drivers known to serve this model (used by
+	// Driver & Compatibility to spot an unexpected binding).
+	LinuxDrivers []string
 	// ModeGuide lists the controller's physical input modes (how to switch,
 	// how to recognize them) for troubleshooting. Empty when not applicable.
 	ModeGuide []string

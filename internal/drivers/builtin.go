@@ -3,11 +3,15 @@
 package drivers
 
 import (
+	"runtime"
+
 	"github.com/Phobby/TuiSense/internal/device"
 	"github.com/Phobby/TuiSense/internal/drivers/dualsense"
 	"github.com/Phobby/TuiSense/internal/drivers/gamepad"
 	"github.com/Phobby/TuiSense/internal/drivers/msigc20"
+	"github.com/Phobby/TuiSense/internal/drivers/padmodels"
 	"github.com/Phobby/TuiSense/internal/drivers/xboxmock"
+	"github.com/Phobby/TuiSense/internal/drivers/xinput"
 )
 
 // RegistryOptions selects which built-ins are registered.
@@ -24,7 +28,11 @@ func NewBuiltinRegistry(opts RegistryOptions) *device.Registry {
 		_ = r.RegisterDriver(dualsense.NewDriver())
 		// Generic Linux evdev gamepads, with model matchers for real
 		// controllers that have no dedicated protocol driver.
-		_ = r.RegisterDriver(gamepad.NewDriver(msigc20.Model()))
+		_ = r.RegisterDriver(gamepad.NewDriver(append([]gamepad.Model{msigc20.Model()}, padmodels.Models()...)...))
+		if runtime.GOOS == "windows" {
+			// Windows: XInput controllers through Microsoft's documented API.
+			_ = r.RegisterDriver(xinput.NewDriver())
+		}
 	}
 	// Virtual factories are absent from normal startup.
 	if opts.Mock || opts.TestDevices {

@@ -101,7 +101,7 @@ type Simulator interface {
 // support level and a human-readable reason when not fully available.
 func Availability(info Info, caps CapabilitySet, c Capability) (Support, string) {
 	spec := caps.Spec(c)
-	if spec.Support == Unsupported {
+	if !spec.Accessible() {
 		if spec.Note != "" {
 			return Unsupported, i18n.T(spec.Note)
 		}

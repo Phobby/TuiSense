@@ -25,11 +25,15 @@ const (
 	Inconclusive
 	Incomplete
 	PossibleIssue
+	// Inaccessible: the hardware exists but the current driver, permission
+	// or connection does not let TuiSense test it. Hidden like Unsupported;
+	// explained only in Driver & Compatibility, never reported as a fault.
+	Inaccessible
 )
 
 // String returns the stable English status code (used in JSON reports).
 func (s Status) String() string {
-	return [...]string{"Not tested", "Testing", "Passed", "Warning", "Failed", "Unsupported", "Unavailable", "Inconclusive", "Incomplete", "Possible Issue"}[s]
+	return [...]string{"Not tested", "Testing", "Passed", "Warning", "Failed", "Unsupported", "Unavailable", "Inconclusive", "Incomplete", "Possible Issue", "Inaccessible"}[s]
 }
 
 // Label returns the status in the active UI language.
@@ -37,7 +41,7 @@ func (s Status) Label() string { return i18n.T(s.String()) }
 
 // Icon returns a compact glyph for the status.
 func (s Status) Icon() string {
-	return [...]string{"○", "◌", "✓", "!", "✕", "–", "⊘", "?", "…", "!"}[s]
+	return [...]string{"○", "◌", "✓", "!", "✕", "–", "⊘", "?", "…", "!", "–"}[s]
 }
 
 // MarshalText makes statuses readable in JSON reports.
@@ -136,6 +140,11 @@ type Availability struct {
 
 // Available reports whether the test can be run.
 func (a Availability) Available() bool { return a.Status == NotTested }
+
+// Hidden reports whether the category is omitted from the normal UI and
+// reports: the controller does not have the hardware, or it cannot be
+// reached through the current driver or connection.
+func (a Availability) Hidden() bool { return a.Status == Unsupported || a.Status == Inaccessible }
 
 // CategoryForRegion maps a clicked controller region to its diagnostic
 // category, preferring categories available on the device.

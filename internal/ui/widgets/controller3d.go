@@ -1,17 +1,16 @@
 package widgets
 
 import (
-	"github.com/Phobby/TuiSense/internal/i18n"
-	"math"
+	"time"
 
 	"github.com/Phobby/TuiSense/internal/device"
+	"github.com/Phobby/TuiSense/internal/i18n"
 	"github.com/Phobby/TuiSense/internal/state"
 	"github.com/Phobby/TuiSense/internal/ui/visual"
 	"github.com/thebanri/limoni/core/accessibility"
 	"github.com/thebanri/limoni/core/cell"
 	"github.com/thebanri/limoni/core/driver"
 	"github.com/thebanri/limoni/core/terminal"
-	"github.com/thebanri/limoni/graphics"
 	"github.com/thebanri/limoni/widgets"
 )
 
@@ -22,53 +21,53 @@ func AccentColor(d device.Descriptor) cell.Color {
 
 // StageCallbacks lets the stage drive selection without knowing about the session.
 type StageCallbacks struct {
-	OnSelectRegion func(device.RegionID)
-	OnSelectDevice func(key string)
-	OnCycleDevice  func(delta int)
-	OnOpenSelector func()
+	OnSelectComponent func(id string)
 }
 
-// RenderControllerStage draws the centered controller visual — the focal point
-// of TuiSense — with projected picking and a single contextual region label.
-// Everything shown is derived from the active device's Descriptor.
+// StagePointerID is the event region covering the 3D stage.
+const StagePointerID = "stage_3d_pointer"
+
+const doubleClick = 400 * time.Millisecond
+
+// StageCamera returns the camera the stage draws (and picks) with for a
+// viewport, including motion-synced tilt on connected hardware.
+func StageCamera(s *state.AppState, m *visual.Model, view cell.Rect) visual.Camera {
+	rotX, rotY, rotZ := s.RotX, s.RotY, s.RotZ
+	if !s.Gallery.Active && s.DeviceInfo.Connected && s.Caps.Supports(device.CapMotion) && s.Config.Motion.GyroEnabled && s.Config.Motion.Sync3DViewTilt {
+		rotX += s.Telemetry.GyroPitch * 0.35
+		rotZ += s.Telemetry.GyroRoll * 0.35
+	}
+	return visual.Camera{RotX: rotX, RotY: rotY, RotZ: rotZ, Distance: visual.DefaultDistance,
+		Scale: m.FitScale(view.Width, view.Height, s.Zoom)}
+}
+
+// StageView is the viewport of the model inside a stage area (one row is
+// kept for the contextual component label).
+func StageView(area cell.Rect) cell.Rect {
+	return cell.NewRect(area.X+1, area.Y, area.Width-2, area.Height-1)
+}
+
+// RenderControllerStage draws the centred 3D controller — the focal point of
+// TuiSense — with projection-based picking, hover highlighting, a small
+// hover tooltip and a single contextual label. It renders the gallery model
+// while previewing and the active device's model otherwise.
 func RenderControllerStage(f *terminal.Frame, area cell.Rect, s *state.AppState, cb StageCallbacks) {
 	if area.Width < 20 || area.Height < 6 {
 		return
 	}
 	p := s.Theme
-	accent := AccentColor(s.Descriptor)
-
-	if s.ActiveDeviceKey == "" {
+	if s.ActiveDeviceKey == "" && !s.Gallery.Active {
 		renderEmptyBanner(f, area, s)
 		return
 	}
-	viewArea := cell.NewRect(area.X+1, area.Y, area.Width-2, area.Height-1)
-	v := visual.Lookup(s.Descriptor.VisualID)
-	model, faceColors := v.Build(visual.Context{
-		Palette:   p,
-		Accent:    accent,
-		Telemetry: s.Telemetry,
-		Config:    s.Config,
-		Connected: s.DeviceInfo.Connected,
-		Selected:  s.SelectedRegion,
-		Hovered:   s.HoveredRegion,
-		// In diagnostics, physical buttons light up while pressed.
-		Pressed:     s.Telemetry.Buttons | s.Telemetry.ButtonsLatched,
-		ShowPressed: s.ActivePanel == state.PanelDiagnostics,
-	})
-
-	rotX, rotY, rotZ := s.RotX, s.RotY, s.RotZ
-	if s.DeviceInfo.Connected && s.Caps.Supports(device.CapMotion) && s.Config.Motion.GyroEnabled && s.Config.Motion.Sync3DViewTilt {
-		rotX += s.Telemetry.GyroPitch * 0.35
-		rotZ += s.Telemetry.GyroRoll * 0.35
+	view := StageView(area)
+	m := visual.Lookup(s.StageModelID())
+	accent := AccentColor(s.Descriptor)
+	if s.Gallery.Active {
+		accent = p.AccentBlue
 	}
-
-	// Viewer3D scales by viewport height. Empirically the model spans ~62% of
-	// the height and ~0.57·H cells of width at scale 1.55, so cap the scale by
-	// both axes: tall stages stay height-bound, wide short stages grow.
-	fit := math.Min(1.95, 0.85*float64(viewArea.Width)/float64(max(viewArea.Height, 1)))
-	viewerScale := math.Max(0.9, fit) * s.Zoom
-	const dist = 3.1
+	model, colors := m.Frame(frameContext(s, m, accent))
+	cam := StageCamera(s, m, view)
 
 	marker := widgets.MarkerBraille
 	if s.RenderMarker == 1 {
@@ -76,44 +75,233 @@ func RenderControllerStage(f *terminal.Frame, area cell.Rect, s *state.AppState,
 	} else if s.RenderMarker == 2 {
 		marker = widgets.MarkerQuadrant
 	}
-
 	viewer := s.Viewer3D
 	if viewer == nil {
-		viewer = &widgets.Viewer3D{ID: "stage_3d"}
+		viewer = &widgets.Viewer3D{}
 		s.Viewer3D = viewer
 	}
 	viewer.ID = "stage_3d"
 	viewer.Model = model
-	viewer.RotX, viewer.RotY, viewer.RotZ = rotX, rotY, rotZ
-	viewer.Distance = dist
-	viewer.Scale = viewerScale
+	viewer.RotX, viewer.RotY, viewer.RotZ = cam.RotX, cam.RotY, cam.RotZ
+	viewer.Distance = cam.Distance
+	viewer.Scale = cam.Scale
 	viewer.Shading = s.ShadingMode
 	viewer.Wireframe = s.ShadingMode == "Wireframe"
 	viewer.WireframeStyle = cell.Style{Fg: p.AccentBlue, Bg: p.BgCanvas}
 	viewer.FocusedStyle = cell.Style{Fg: accent, Bg: p.BgCanvas}
-	viewer.FaceColors = faceColors
+	viewer.FaceColors = colors
 	viewer.Marker = marker
-	viewer.Light = graphics.Light{
-		Direction: graphics.Vector3D{X: 0.30, Y: 0.55, Z: -0.90}.Normalize(),
-		Ambient:   0.48,
-		Diffuse:   0.52,
-	}
-	f.RenderWidget(viewer, viewArea)
+	viewer.Light = visual.StageLight
+	f.RenderWidget(viewer, view)
 
-	// Must match Viewer3D's internal projection so mouse picking is 1:1.
-	projScale := float64(viewArea.Height) * 4.0 * 0.40 * viewerScale
 	if !s.ShowHelp && !s.ShowDeviceSelector && !s.ShowCopyFallback {
-		register3DStageMouse(f, viewArea, s, v.Anchors(), rotX, rotY, rotZ, dist, projScale, cb.OnSelectRegion)
+		registerStagePointer(f, view, s, m, cam, cb)
+		registerComponentNodes(f, view, s, m, cam)
 	}
+	renderTooltip(f, view, s, m, cam)
+	if !s.Gallery.Active { // the gallery inspector already names the selection
+		renderComponentLabel(f, cell.NewRect(area.X, area.Y+area.Height-1, area.Width, 1), s)
+	}
+}
 
-	region := s.SelectedRegion
-	if s.HoveredRegion != device.RegionNone {
-		region = s.HoveredRegion
+// frameContext derives the per-frame model state. Live input is only shown
+// for connected devices and only for buttons their driver reports; gallery
+// previews never animate.
+func frameContext(s *state.AppState, m *visual.Model, accent cell.Color) visual.FrameContext {
+	p := s.Theme
+	ctx := visual.FrameContext{
+		Selected: m.Index(s.SelectedComponent),
+		Hovered:  m.Index(s.HoveredComponent),
+		Accent:   accent,
+		Hover:    p.AccentPurple,
+		Pressing: cell.NewColorRGB(255, 236, 140),
 	}
-	if r, ok := s.Descriptor.Region(region); ok {
-		renderCentered(f, cell.NewRect(area.X, area.Y+area.Height-1, area.Width, 1), i18n.T(r.Label), p.MutedStyle())
+	if s.Gallery.Active {
+		return ctx
 	}
+	ctx.Region = s.SelectedRegion
+	connected := s.DeviceInfo.Connected
+	ctx.Dim, ctx.DimTo = !connected, p.BgSubtle
+	if !connected {
+		return ctx
+	}
+	ctx.Live = true
+	ctx.Telemetry = s.Telemetry
+	ctx.Pressed = s.Telemetry.Buttons | s.Telemetry.ButtonsLatched
+	ctx.Reported = func(id device.ButtonID) bool {
+		b, ok := s.Descriptor.Inputs.Button(id)
+		return ok && b.Group != "Unmapped"
+	}
+	cfg := s.Config
+	if s.Caps.Supports(device.CapLighting) {
+		light := visual.RGB{R: 55, G: 70, B: 95}
+		if cfg.Lighting.Enabled && cfg.Lighting.Animation != device.AnimOff {
+			light = visual.RGB{R: cfg.Lighting.Red, G: cfg.Lighting.Green, B: cfg.Lighting.Blue}
+		}
+		ctx.Light = &light
+	}
+	ctx.MicLED = cfg.Lighting.MicLED != device.MicLEDOff || s.Telemetry.MicMutedButton
+	return ctx
+}
 
+func registerStagePointer(f *terminal.Frame, view cell.Rect, s *state.AppState, m *visual.Model, cam visual.Camera, cb StageCallbacks) {
+	pick := func(x, y uint16) string {
+		if c, ok := m.ComponentAt(m.Pick(cam, view, x, y)); ok {
+			return c.ID
+		}
+		return ""
+	}
+	choose := func(id string) {
+		if cb.OnSelectComponent != nil {
+			cb.OnSelectComponent(id)
+		} else {
+			s.SelectComponent(id)
+		}
+	}
+	handle := func(ev driver.MouseEvent) {
+		switch ev.Button {
+		case driver.MouseNone:
+			if !ev.Drag {
+				s.HoveredComponent = pick(ev.X, ev.Y)
+				s.HoveredRegion = device.RegionNone
+				if c, ok := s.StageComponent(true); ok && s.HoveredComponent != "" {
+					s.HoveredRegion = c.Region
+				}
+			}
+		case driver.MouseScrollUp:
+			s.ZoomBy(0.10)
+		case driver.MouseScrollDown:
+			s.ZoomBy(-0.10)
+		case driver.MouseLeft:
+			if ev.Drag {
+				return
+			}
+			if f.FocusManager != nil {
+				f.FocusManager.SetFocused("stage_3d")
+			}
+			now := time.Now()
+			last := s.StageClick
+			s.StageClick.At, s.StageClick.X, s.StageClick.Y = now, ev.X, ev.Y
+			if now.Sub(last.At) < doubleClick && absDiff(last.X, ev.X) <= 1 && absDiff(last.Y, ev.Y) <= 1 {
+				s.ResetCamera()
+				s.StageClick.At = time.Time{}
+				return
+			}
+			// A press on a component selects it at once; a press on empty
+			// space that is released without dragging clears the selection.
+			hit := pick(ev.X, ev.Y)
+			if hit != "" {
+				choose(hit)
+			}
+			lastX, lastY := int(ev.X), int(ev.Y)
+			moved := false
+			f.CaptureMouse(func(d driver.MouseEvent) {
+				switch {
+				case d.Button == driver.MouseRelease:
+					if !moved && hit == "" && s.SelectedComponent != "" {
+						choose("")
+					}
+				case d.Drag:
+					dx, dy := int(d.X)-lastX, int(d.Y)-lastY
+					if dx != 0 || dy != 0 {
+						moved = true
+						s.HoveredComponent = ""
+						s.Orbit(float64(dx)*3.0, float64(dy)*3.0)
+						lastX, lastY = int(d.X), int(d.Y)
+					}
+				}
+			})
+		}
+	}
+	f.RegisterEventRegion(terminal.EventRegion{
+		ID: StagePointerID, Area: view, Phase: terminal.TargetPhase,
+		Handler: func(ctx *terminal.EventContext) { handle(ctx.Mouse) },
+		OnLeave: func(_ *terminal.EventContext) {
+			s.HoveredComponent = ""
+			s.HoveredRegion = device.RegionNone
+		},
+	})
+}
+
+func absDiff(a, b uint16) uint16 {
+	if a > b {
+		return a - b
+	}
+	return b - a
+}
+
+// registerComponentNodes exposes every visible component to accessibility
+// tooling (and UI tests) at its projected position.
+func registerComponentNodes(f *terminal.Frame, view cell.Rect, s *state.AppState, m *visual.Model, cam visual.Camera) {
+	for i, c := range m.Spec.Components {
+		if !c.Pickable() {
+			continue
+		}
+		cx, cy, facing := m.ScreenPos(cam, view, i)
+		if !facing || cx < float64(view.X) || cy < float64(view.Y) || cx >= float64(view.X+view.Width) || cy >= float64(view.Y+view.Height) {
+			continue
+		}
+		var st accessibility.NodeState
+		if c.ID == s.SelectedComponent {
+			st |= accessibility.StateSelected
+		}
+		f.RegisterAccessibility(accessibility.AccessibilityNode{
+			ID: "component_" + c.ID, Role: accessibility.RoleButton, Label: i18n.T(c.Label), State: st,
+			Value: i18n.T(visual.KindName(c.Kind)), Bounds: cell.NewRect(uint16(cx), uint16(cy), 1, 1),
+		})
+	}
+}
+
+// renderTooltip shows the hovered component's name just above it.
+func renderTooltip(f *terminal.Frame, view cell.Rect, s *state.AppState, m *visual.Model, cam visual.Camera) {
+	if s.HoveredComponent == "" || s.HoveredComponent == s.SelectedComponent {
+		return
+	}
+	i := m.Index(s.HoveredComponent)
+	c, ok := m.ComponentAt(i)
+	if !ok {
+		return
+	}
+	cx, cy, _ := m.ScreenPos(cam, view, i)
+	text := " " + i18n.T(c.Label) + " "
+	w := uint16(cell.StringWidth(text))
+	if w >= view.Width {
+		return
+	}
+	x := int(cx) - int(w)/2
+	x = max(int(view.X), min(x, int(view.X+view.Width-w)))
+	y := int(cy) - 2
+	if y < int(view.Y) {
+		y = int(cy) + 2
+	}
+	if y < int(view.Y) || y >= int(view.Y+view.Height) {
+		return
+	}
+	p := s.Theme
+	f.Buffer.SetStringWithin(uint16(x), uint16(y), text, cell.Style{Fg: p.FgPrimary, Bg: p.BgElevated}, w)
+}
+
+// renderComponentLabel is the single contextual line under the model: the
+// selected component (or capability region) and whether its input is live.
+func renderComponentLabel(f *terminal.Frame, row cell.Rect, s *state.AppState) {
+	text := ""
+	if c, ok := s.StageComponent(false); ok {
+		text = i18n.T(c.Label) + " · " + i18n.T(visual.KindName(c.Kind))
+		switch {
+		case s.ComponentReported(c):
+			text += " · " + i18n.T("live input")
+		case c.Bound || c.Kind.Rear():
+			text += " · " + i18n.T("visual only")
+		}
+		if s.Mode == state.ModeAdvanced {
+			text += " · " + c.ID
+		}
+	} else if r, ok := s.Descriptor.Region(s.SelectedRegion); ok && !s.Gallery.Active {
+		text = i18n.T(r.Label)
+	}
+	if text != "" {
+		renderCentered(f, row, text, s.Theme.MutedStyle())
+	}
 }
 
 func renderCentered(f *terminal.Frame, area cell.Rect, text string, st cell.Style) {
@@ -131,114 +319,8 @@ func renderEmptyBanner(f *terminal.Frame, viewArea cell.Rect, s *state.AppState)
 	if y+2 < viewArea.Y+viewArea.Height {
 		renderCentered(f, cell.NewRect(viewArea.X, y+2, viewArea.Width, 1), i18n.T("Connect a supported controller to get started."), s.Theme.MutedStyle())
 	}
+	if y+3 < viewArea.Y+viewArea.Height {
+		renderCentered(f, cell.NewRect(viewArea.X, y+3, viewArea.Width, 1), i18n.T("Press G to browse the controller gallery."), s.Theme.MutedStyle())
+	}
 	f.RegisterAccessibility(accessibility.AccessibilityNode{ID: "empty_state_banner", Role: accessibility.RoleGeneric, Label: i18n.T("No controller connected"), Bounds: viewArea})
-}
-
-func register3DStageMouse(
-	f *terminal.Frame,
-	viewArea cell.Rect,
-	s *state.AppState,
-	anchors []visual.Anchor,
-	rotX, rotY, rotZ, dist, projScale float64,
-	onSelectRegion func(device.RegionID),
-) {
-	virtW := float64(viewArea.Width) * 2.0
-	virtH := float64(viewArea.Height) * 4.0
-
-	// Project anchors with the same RotateY -> RotateX -> RotateZ order as Viewer3D.
-	type projAnchor struct {
-		region       device.RegionID
-		cellX, cellY float64
-		radius       float64
-	}
-	var projected []projAnchor
-	for _, a := range anchors {
-		if _, declared := s.Descriptor.Region(a.Region); !declared {
-			continue
-		}
-		v := a.Center.RotateY(rotY).RotateX(rotX).RotateZ(rotZ)
-		px, py, vis := graphics.Project(v, virtW, virtH, dist, projScale)
-		if !vis {
-			continue
-		}
-		projected = append(projected, projAnchor{
-			region: a.Region,
-			cellX:  float64(viewArea.X) + px/2.0,
-			cellY:  float64(viewArea.Y) + py/4.0,
-			radius: math.Max(4.0, (a.Radius*projScale/(v.Z+dist))/2.5),
-		})
-	}
-
-	pickRegionAt := func(mx, my uint16) device.RegionID {
-		best := device.RegionNone
-		bestScore := 1e9
-		fx, fy := float64(mx), float64(my)
-		for _, pa := range projected {
-			d := math.Hypot(fx-pa.cellX, (fy-pa.cellY)*1.8) // terminal cell aspect correction
-			if d <= pa.radius && d < bestScore {
-				bestScore = d
-				best = pa.region
-			}
-		}
-		return best
-	}
-
-	var dragStartX, dragStartY int
-	var movedDuringDrag bool
-
-	handlePointer := func(ev driver.MouseEvent) {
-		switch ev.Button {
-		case driver.MouseScrollUp:
-			s.Zoom = math.Min(1.75, s.Zoom+0.10)
-		case driver.MouseScrollDown:
-			s.Zoom = math.Max(0.55, s.Zoom-0.10)
-		case driver.MouseLeft:
-			if ev.Drag {
-				return
-			}
-			if f.FocusManager != nil {
-				f.FocusManager.SetFocused("stage_3d")
-			}
-			dragStartX, dragStartY = int(ev.X), int(ev.Y)
-			movedDuringDrag = false
-			if r := pickRegionAt(ev.X, ev.Y); r != device.RegionNone && onSelectRegion != nil {
-				onSelectRegion(r)
-			}
-			lastX, lastY := int(ev.X), int(ev.Y)
-			f.CaptureMouse(func(dragEv driver.MouseEvent) {
-				if dragEv.Button == driver.MouseRelease {
-					if !movedDuringDrag {
-						if r := pickRegionAt(uint16(dragStartX), uint16(dragStartY)); r != device.RegionNone && onSelectRegion != nil {
-							onSelectRegion(r)
-						}
-					}
-					return
-				}
-				if dragEv.Drag {
-					dx := int(dragEv.X) - lastX
-					dy := int(dragEv.Y) - lastY
-					if dx != 0 || dy != 0 {
-						movedDuringDrag = true
-						s.AutoRotate = false
-						s.RotY = math.Mod(s.RotY+float64(dx)*2.0+360.0, 360.0)
-						s.RotX = math.Max(-75.0, math.Min(75.0, s.RotX+float64(dy)*2.0))
-						lastX, lastY = int(dragEv.X), int(dragEv.Y)
-					}
-				}
-			})
-		}
-	}
-	f.RegisterClickHandler(viewArea, handlePointer)
-	for _, anchor := range projected {
-		x := max(int(viewArea.X), int(anchor.cellX)-2)
-		y := max(int(viewArea.Y), int(anchor.cellY)-1)
-		rect := cell.NewRect(uint16(x), uint16(y), 5, 3).Intersection(viewArea)
-		region := anchor.region
-		f.RegisterEventRegion(terminal.EventRegion{ID: "hover_" + string(region), Area: rect, Phase: terminal.TargetPhase,
-			OnEnter: func(_ *terminal.EventContext) { s.HoveredRegion = region },
-			OnLeave: func(_ *terminal.EventContext) { s.HoveredRegion = device.RegionNone },
-			Handler: func(ctx *terminal.EventContext) { handlePointer(ctx.Mouse) },
-		})
-	}
-
 }

@@ -15,6 +15,8 @@ import (
 	"github.com/Phobby/TuiSense/internal/device"
 	"github.com/Phobby/TuiSense/internal/drivers/gamepad"
 	"github.com/Phobby/TuiSense/internal/drivers/msigc20"
+	"github.com/Phobby/TuiSense/internal/drivers/padmodels"
+	"github.com/Phobby/TuiSense/internal/support"
 	"github.com/Phobby/TuiSense/internal/system"
 	"github.com/Phobby/TuiSense/internal/system/evdev"
 )
@@ -26,6 +28,7 @@ const Usage = `Usage:
                                       --watch N prints live input events for N seconds
                                       (move every stick, press every button and trigger)
   tuisense debug inputs --device /dev/input/eventX [--watch N]
+  tuisense debug support-matrix       Print the controller support matrix (Markdown)
 
 No serial numbers or MAC addresses are printed, so the output is safe to share.
 `
@@ -40,6 +43,9 @@ func Run(args []string, out io.Writer, confirmed map[string]string) int {
 	switch args[0] {
 	case "devices":
 		return devices(out)
+	case "support-matrix":
+		fmt.Fprint(out, support.Markdown(support.Matrix()))
+		return 0
 	case "inputs":
 		fs := flag.NewFlagSet("inputs", flag.ContinueOnError)
 		fs.SetOutput(out)
@@ -54,7 +60,9 @@ func Run(args []string, out io.Writer, confirmed map[string]string) int {
 	return 2
 }
 
-func driver() *gamepad.Driver { return gamepad.NewDriver(msigc20.Model()) }
+func driver() *gamepad.Driver {
+	return gamepad.NewDriver(append([]gamepad.Model{msigc20.Model()}, padmodels.Models()...)...)
+}
 
 func confidence(r gamepad.Resolution) string {
 	switch r.Confidence {

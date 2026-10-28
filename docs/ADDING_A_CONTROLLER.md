@@ -15,11 +15,11 @@ func Descriptor() device.Descriptor {
         Brand:       "Nintendo",
         DisplayName: "Switch Pro Controller",
         ShortName:   "Switch Pro",
-        VisualID:    "switchpro",          // see step 3 (or reuse "xbox"/"dualsense")
+        VisualID:    "switch_pro",         // a visual.ModelSpec ID, see step 3
         Accent:      device.RGB{R: 230, G: 60, B: 60},
         Regions: []device.Region{
             {ID: device.RegionLeftStick, Label: "Left Stick", Badge: "L-Stick",
-             Capability: device.CapSticks, Slot: device.SlotMidLeft,
+             Capability: device.CapSticks,
              Description: "Deadzones and response curves."},
             // ...
         },
@@ -76,22 +76,53 @@ the tests your declaration supports.
 Implement `device.Device` (and optionally `device.Simulator` for mocks). Apply
 only the `Config` sections your capabilities support; ignore the rest.
 
-## 3. Provide a visual (optional)
+## 3. Provide a visual
 
-Add `internal/ui/visual/<family>.go`, register it in `init()` with
-`Register("<visual id>", v)`, build the mesh with `meshBuilder.box/disk`, and
-return one `Anchor` per region so 3D picking works.
+Visuals are data-only `visual.ModelSpec` descriptors turned into cached 3D
+meshes; see [3D_MODELS.md](3D_MODELS.md). Reuse an existing spec when your
+controller is one of the ten built-in models (and add your driver's ModelID to
+its `HardwareModelIDs`), or register a new spec. Every region your descriptor
+declares needs a component with that `Region`, and every button it declares
+needs a component bound to that `ButtonID`, so picking and live input work.
 
-### Linux evdev gamepads
+### Linux evdev gamepads (sample integration)
 
-Controllers that Linux already exposes as `/dev/input/event*` gamepads (xpad,
-hid-generic, …) need no protocol driver: add a `gamepad.Model` (see
-`internal/drivers/msigc20`) with `Identify` (never claim a match you cannot
-support with evidence — return `Probable` for shared IDs), `Describe` (labels,
-visual, only real capabilities via `gamepad.Capabilities`) and an optional
-`ModeHint`. Inputs are mapped from what the kernel reports, so different input
-modes of one controller work without per-mode tables. Pass the model to
-`gamepad.NewDriver` in `builtin.go`.
+Controllers Linux already exposes as `/dev/input/event*` gamepads need no
+protocol driver. Describe the model as data in `internal/drivers/padmodels`
+(or your own package) and register it in `internal/drivers/builtin.go`:
+
+```go
+var MyPad = gamepad.ModelSpec{
+    ID: "acme.pro_pad", Family: "acme_pro_pad", Brand: "Acme",
+    DisplayName: "Acme Pro Pad", ShortName: "Pro Pad", VisualID: "acme_pro_pad",
+    // Documented IDs only, with their source. Without verified IDs use
+    // Strings (and Probable: true when the name is not unique).
+    IDs: []gamepad.DeviceID{{Vendor: 0x1234, Product: 0x5678, Transport: "usb", Source: "Linux xpad device table"}},
+    Labels:        map[device.ButtonID]string{device.ButtonSouth: "A" /* … */},
+    TriggerLabels: [2]string{"LT", "RT"},
+    // What the product physically has. Absent hardware is never shown;
+    // present hardware TuiSense cannot reach is explained in Driver & Compatibility.
+    Hardware: gamepad.Hardware{Battery: true, Rumble: true, RearControls: true,
+        // Only if the kernel reports rear controls individually:
+        // RearInputs: []gamepad.ButtonMap{{Code: 0x2c4, ID: device.ButtonPaddle1, Label: "P1", Group: "Rear"}},
+    },
+    KernelDrivers: []string{"xpad"},
+}
+```
+
+The backend then derives, per connection, input mapping, rumble (when the
+kernel exposes force feedback), battery (kernel `power_supply`), diagnostics,
+the Driver & Compatibility checks and the support-matrix row. Add tests like
+`internal/drivers/padmodels/padmodels_test.go` (exact IDs, look-alike
+rejection, capabilities) and regenerate the matrix:
+
+```sh
+go run ./cmd/tuisense debug support-matrix > docs/SUPPORT_MATRIX.md
+```
+
+Never add vendor output reports or configuration commands without a verified
+protocol; declare such features as present but `RequiresBackend` instead.
+See [DRIVERS.md](DRIVERS.md) for the capability model and safety rules.
 
 ## 4. Register it
 
@@ -106,5 +137,9 @@ Then add one line to `internal/drivers/builtin.go`.
 go test ./internal/drivers/ ./internal/state/ ./internal/ui/...
 ```
 
-`TestDescriptorsAreConsistent` fails if a region has no panel or no 3D anchor,
-or if the descriptor is missing identity fields.
+Every supported `CapabilitySpec` must declare its `Access` (read, test,
+configure on device, configure through software, or preview); a capability
+without access is hidden. `TestDescriptorsAreConsistent` fails if a region has no panel or no selectable
+3D component, if a declared button has no bound component, or if the
+descriptor is missing identity fields. `TestVisualHardwareLinks` checks that a
+visual only claims hardware support for drivers that render with it.

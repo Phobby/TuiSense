@@ -39,16 +39,29 @@ func Plan(dc DeviceContext) map[Category]Availability {
 			set(c, Unsupported, reason)
 		}
 	}
+	// needCap distinguishes absent hardware from hardware that exists but
+	// cannot be reached (driver, permission, connection or missing backend).
+	needCap := func(c Category, ok bool, capability device.Capability, reason string) {
+		spec := caps.Spec(capability)
+		switch {
+		case ok:
+			set(c, NotTested, "")
+		case spec.Physical() == device.Present && spec.Presence == device.Present:
+			set(c, Inaccessible, noteOr(caps, capability, reason))
+		default:
+			set(c, Unsupported, reason)
+		}
+	}
 
 	need(CatDeadzone, in.HasSticks() && caps.Supports(device.CapSticks), "This controller exposes no stick input for a deadzone preview.")
 	need(CatFirmware, caps.Supports(device.CapFirmwareInfo), "Firmware information is not exposed by this controller.")
 	need(CatSticks, in.HasSticks() && caps.Supports(device.CapSticks), i18n.T("This controller has no analog sticks."))
 	need(CatButtons, len(in.Buttons) > 0, i18n.T("No buttons are declared for this controller."))
 	need(CatTriggers, in.HasTriggers(), i18n.T("This controller has no analog triggers."))
-	need(CatTouchpad, in.TouchpadContacts > 0, i18n.T("This controller has no touchpad."))
-	need(CatMotion, caps.Supports(device.CapMotion), noteOr(caps, device.CapMotion, i18n.T("This controller has no motion sensors.")))
-	need(CatHaptics, caps.Supports(device.CapHaptics), noteOr(caps, device.CapHaptics, i18n.T("This controller has no vibration motors.")))
-	need(CatBattery, caps.Supports(device.CapBattery), i18n.T("This controller reports no battery telemetry (wired-only or unsupported)."))
+	needCap(CatTouchpad, in.TouchpadContacts > 0, device.CapTouchpad, i18n.T("This controller has no touchpad."))
+	needCap(CatMotion, caps.Supports(device.CapMotion), device.CapMotion, i18n.T("This controller has no motion sensors."))
+	needCap(CatHaptics, caps.Supports(device.CapHaptics), device.CapHaptics, i18n.T("This controller has no vibration motors."))
+	needCap(CatBattery, caps.Supports(device.CapBattery), device.CapBattery, i18n.T("This controller reports no battery telemetry (wired-only or unsupported)."))
 	set(CatConnection, NotTested, "")
 
 	audioCat := func(c Category, feats []device.Feature, wantCapture bool) {
@@ -57,9 +70,14 @@ func Plan(dc DeviceContext) map[Category]Availability {
 			has = has || caps.HasFeature(device.CapAudio, f)
 		}
 		if !has {
-			// Over Bluetooth the runtime set may have dropped the feature; explain that precisely.
+			// Hardware that exists but is out of reach on this connection or
+			// driver is hidden (Driver & Compatibility explains it).
 			if base := dc.Desc.Capabilities; base.Supports(device.CapAudio) && dc.Info.Connection == device.ConnBluetooth && in.Audio.RequiresUSB {
-				set(c, Unavailable, i18n.T("Controller audio is only exposed as a USB audio device; connect it with a USB cable."))
+				set(c, Inaccessible, i18n.T("Controller audio is only exposed as a USB audio device; connect it with a USB cable."))
+				return
+			}
+			if spec := caps.Spec(device.CapAudio); spec.Presence == device.Present {
+				set(c, Inaccessible, noteOr(caps, device.CapAudio, ""))
 				return
 			}
 			set(c, Unsupported, map[bool]string{true: i18n.T("This controller has no microphone."), false: i18n.T("This controller has no audio output.")}[wantCapture])
@@ -69,7 +87,7 @@ func Plan(dc DeviceContext) map[Category]Availability {
 		case !dc.Info.Connected:
 			set(c, Unavailable, i18n.T("Controller is disconnected."))
 		case dc.Info.Connection == device.ConnBluetooth && in.Audio.RequiresUSB:
-			set(c, Unavailable, i18n.T("Controller audio is only exposed as a USB audio device; connect it with a USB cable."))
+			set(c, Inaccessible, i18n.T("Controller audio is only exposed as a USB audio device; connect it with a USB cable."))
 		case dc.Audio.Err != nil:
 			set(c, Unavailable, i18n.Tf("Audio system error: %s", dc.Audio.Err.Error()))
 		case !dc.Audio.Found:

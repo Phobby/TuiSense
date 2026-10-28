@@ -218,17 +218,31 @@ func TestHealthGuidedFinishAutomaticallyShowsPartialReport(t *testing.T) {
 
 func TestHealthCapabilityDrivenMSIReport(t *testing.T) {
 	input := evdev.InputDevice{Vendor: 0x045e, Product: 0x028e}
-	desc := msigc20.Describe(gamepad.Mapping{}, input, false)
+	desc := msigc20.Describe(gamepad.Mapping{}, input, gamepad.Runtime{})
 	s := NewSession(DeviceContext{Desc: desc, Caps: desc.Capabilities, Info: device.Info{Connected: true, Connection: device.ConnUSBWired}}, nil, nil, nil, nil, t0)
 	report := BuildReport(s, "test", false, t0)
-	for _, category := range []Category{CatBattery, CatMotion, CatAudioIn, CatTouchpad, CatFirmware} {
-		entry := reportEntry(t, report, category)
-		if entry.Completion != CompletionUnsupported || entry.Assessments[0].Status != Unsupported {
-			t.Fatalf("MSI %s must be unsupported, not defective", category)
+	for _, e := range report.Entries {
+		switch e.Category {
+		case CatBattery, CatMotion, CatAudioIn, CatAudioOut, CatTouchpad, CatFirmware:
+			t.Fatalf("MSI report must not mention absent %s at all", e.Category)
 		}
 	}
-	if len(report.PotentialIssues()) != 0 {
-		t.Fatal("absent MSI capabilities are not warnings")
+	if report.Coverage.Unsupported != 0 || len(report.PotentialIssues()) != 0 {
+		t.Fatal("absent MSI capabilities are neither counted nor warnings")
+	}
+	for _, view := range s.Visible() {
+		if view == CatBattery || view == CatMotion || view == CatTouchpad || view == CatAudioIn || view == CatAudioOut {
+			t.Fatalf("MSI diagnostics must not list %s", view)
+		}
+	}
+	var text strings.Builder
+	if err := report.WriteText(&text); err != nil {
+		t.Fatal(err)
+	}
+	for _, word := range []string{"Pil", "Mikrofon", "Dokunmatik", "Desteklenmeyen"} {
+		if strings.Contains(text.String(), word) {
+			t.Fatalf("MSI simplified report mentions %q:\n%s", word, text.String())
+		}
 	}
 }
 

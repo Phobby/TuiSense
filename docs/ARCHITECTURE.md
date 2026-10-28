@@ -18,8 +18,8 @@ descriptor — never by editing the UI core.
 flowchart TD
     subgraph UI["internal/ui — presentation"]
         Layout["layout.go — responsive solver (centered stage)"]
-        Stage["widgets/controller3d.go — centered stage, contextual hover, projected picking"]
-        Visual["visual/ — per-family 3D models (dualsense, xbox, generic)"]
+        Stage["widgets/controller3d.go — centered stage, hover tooltip, face-level projected picking"]
+        Visual["visual/ + geom/ — descriptor-driven 3D models (10 controllers + generic), see 3D_MODELS.md"]
         Views["views/ — dashboard, panel view registry, EZ + Advanced renderers"]
     end
     subgraph State["internal/state — UI state & policy"]
@@ -67,7 +67,8 @@ TuiSense except `logging`; drivers import `device`; `session` only knows the
 internal/
 ├── device/                 # Universal controller model (stable contributor API)
 │   ├── capability.go       # Capability, Feature, Support, CapabilitySet
-│   ├── descriptor.go       # Descriptor, Region, PillSlot, Source, Action
+│   ├── descriptor.go       # Descriptor, Region, Source, Action
+│   ├── operations.go       # Operation table + Authorize (command gate)
 │   ├── device.go           # Device, Simulator, Info, Availability()
 │   ├── registry.go         # Driver, Candidate, VirtualDevice, Registry
 │   ├── config.go           # Config (capability-grouped superset), sub-configs
@@ -88,7 +89,8 @@ internal/
 │   └── profiles.go         # Profile store (family-scoped, MAC-bound)
 ├── ui/
 │   ├── layout.go           # Wide / Stacked / Compact layouts
-│   ├── visual/             # Visual registry + meshBuilder + per-family meshes
+│   ├── geom/               # Mesh primitives, outlines, ear clipping
+│   ├── visual/             # ModelSpec registry, generator, picking, 10 controller models
 │   ├── widgets/            # Stage, status card, device card, help bar
 │   └── views/              # Dashboard, panel registry, Advanced + EZ panels
 ├── app/                    # Application wiring, event queue, keymap
@@ -218,9 +220,9 @@ Compact (80×24): stage left, status + inspector right.
   count, segmented **EZ / ADVANCED** switch.
 * **Tabs**: generated from `VisiblePanels(caps, mode)`; number hotkeys follow
   the visible order; `◐` marks limited support.
-* **Stage**: title + source tag (`MOCK` / `TEST`), Advanced-only camera toolbar,
-  region pills placed by `Region.Slot` with collision avoidance, projected 3D
-  picking from the visual's anchors, region description, device switcher chips.
+* **Stage**: the active model (or the gallery model) drawn by `Viewer3D`, a
+  hover tooltip, face-level projected picking (`visual.Model.Pick`) and one
+  contextual line for the selected component. See [3D_MODELS.md](3D_MODELS.md).
 * **Side cards**: status (connection, battery, profile), device card (EZ: 4
   rows; Advanced: identity, firmware, path, capability counts), live input
   (Advanced) or getting-started tips (EZ).
@@ -313,7 +315,7 @@ Windows HID/SetupAPI, or hidapi) only needs to produce `Candidate`s and an
 | Drift math & classification, cancel, guided buttons, triggers + resistance restore, haptic bounds/cleanup, ALSA endpoint selection, plan, mic signal/silence, disconnect, reports, battery honesty, connection rate | `internal/diag/diag_test.go` |
 | Button decoding, raw values, 2 touch points, queue drain / latching / gap counting (SOCK_SEQPACKET as fake hidraw) | `internal/drivers/dualsense/diag_protocol_test.go` |
 | Diagnostics UI: device adaptation, region → test, simulated drift, cleanup on leaving, disconnect, export, EZ guided | `internal/app/diagnostics_test.go` |
-| Every declared button lights up on its visual | `internal/ui/visual/visual_test.go` |
+| Ten distinct models; budgets, surfaces, picking after rotation, no rear mirroring, framing, live-input binding | `internal/ui/visual/visual_test.go` |
 | Turkish catalog coverage, valid format strings, fallback, locale detection | `internal/i18n/i18n_test.go` |
 | Language switch from Settings (EZ + Advanced), live UI update, persistence | `internal/app/language_test.go` |
 | Centered layout, compact fit | `internal/ui/layout_test.go` |

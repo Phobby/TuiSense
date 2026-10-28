@@ -98,7 +98,7 @@ func TestActivateDeviceSwitchesContextAndRemembersConfig(t *testing.T) {
 	s.ActivePanel = PanelTriggers
 
 	activate(s, "xb", xboxmock.Descriptor())
-	if s.Descriptor.VisualID != "xbox" || s.ActiveDeviceKey != "xb" {
+	if s.Descriptor.VisualID != "xbox_series" || s.ActiveDeviceKey != "xb" {
 		t.Fatalf("context not switched: %+v", s.Descriptor.ModelID)
 	}
 	if s.ActivePanel != PanelOverview {

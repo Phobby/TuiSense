@@ -1,0 +1,6 @@
+# Pinned Ed25519 public keys that sign TuiSense release metadata (SHA256SUMS).
+# One "ssh-ed25519 AAAA… name" line per key. Keep in sync with
+# scripts/install.sh and scripts/install.ps1. See docs/RELEASING.md.
+#
+# Fingerprint: SHA256:tWDwavuCx2W7m0gvo9RVwWI33wPw8hG5aYOUuORjRBc
+ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAILqV1bC0kFEN1Vxj3JnEp5ZieGsstZf0Atekky5WXFyv tuisense-release

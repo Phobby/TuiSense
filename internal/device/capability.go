@@ -30,6 +30,10 @@ const (
 	CapFirmwareCheck Capability = "firmware_check"
 	CapRemapping     Capability = "remapping"
 	CapCalibration   Capability = "calibration"
+	// CapTouchpad is the touch surface (its click is a button).
+	CapTouchpad Capability = "touchpad"
+	// CapRearControls covers back buttons and paddles.
+	CapRearControls Capability = "rear_controls"
 )
 
 // AllCapabilities lists every known capability in canonical display order.
@@ -49,6 +53,8 @@ var AllCapabilities = []Capability{
 	CapFirmwareCheck,
 	CapRemapping,
 	CapCalibration,
+	CapTouchpad,
+	CapRearControls,
 }
 
 // Label returns a human-readable capability name.
@@ -84,6 +90,10 @@ func (c Capability) Label() string {
 		return i18n.T("Remapping")
 	case CapCalibration:
 		return i18n.T("Calibration")
+	case CapTouchpad:
+		return i18n.T("Touchpad")
+	case CapRearControls:
+		return i18n.T("Rear buttons and paddles")
 	default:
 		return string(c)
 	}
@@ -148,13 +158,167 @@ func (s Support) String() string {
 	}
 }
 
-// CapabilitySpec declares one capability's support level, its sub-features,
-// and an optional note explaining a limitation.
+// CapabilitySpec declares one capability: whether the hardware has it, what
+// TuiSense can actually do with it (read, test, configure on the device,
+// configure through software, or only preview), on which connections, through
+// which backend, and how well that is verified. "The hardware has it" and
+// "TuiSense can configure it" are deliberately separate facts.
 type CapabilitySpec struct {
 	ID       Capability
-	Support  Support
+	Support  Support // Full / Limited when accessible (Limited marks partial support in the UI)
 	Features []Feature
 	Note     string
+
+	// Presence is the physical fact; zero means "implied by Support".
+	Presence Presence
+	// Access is what TuiSense can do; zero means nothing (the UI hides it).
+	Access Access
+	// Requires explains why a present feature is not accessible.
+	Requires Requirement
+	// Transports limits Access to these connections (nil = every connection).
+	Transports []ConnectionType
+	// Backend names the implementation (e.g. "dualsense-hidraw", "evdev-ff").
+	Backend string
+	// Verification records how the implementation was validated.
+	Verification Verification
+	// Persistent: a device configuration survives a disconnect (stored on the controller).
+	Persistent bool
+}
+
+// Presence is whether the hardware physically contains a feature.
+type Presence uint8
+
+const (
+	PresenceImplied Presence = iota // legacy: Support != Unsupported means present
+	Present
+	Absent
+)
+
+// Access is a set of operations TuiSense can perform on a capability.
+type Access uint8
+
+const (
+	AccessRead           Access = 1 << iota // live values are read from the device
+	AccessTest                              // a diagnostic can exercise it
+	AccessConfigDevice                      // settings are written to the controller
+	AccessConfigSoftware                    // settings change input through a software backend
+	AccessPreview                           // adjustable inside TuiSense only; no effect on games or hardware
+)
+
+// Has reports whether every bit of want is granted.
+func (a Access) Has(want Access) bool { return want != 0 && a&want == want }
+
+// Requirement is why present hardware is not accessible.
+type Requirement string
+
+const (
+	RequiresNothing    Requirement = ""
+	RequiresDriver     Requirement = "driver"     // the OS driver does not expose it
+	RequiresPermission Requirement = "permission" // device node access is missing
+	RequiresConnection Requirement = "connection" // not available on the current transport
+	RequiresBackend    Requirement = "backend"    // TuiSense has no implementation yet
+	RequiresPlatform   Requirement = "platform"   // not implemented on this operating system
+)
+
+// Verification is how an implementation has been validated.
+type Verification string
+
+const (
+	VerifiedOnHardware Verification = "hardware"     // exercised on a physical controller
+	VerifiedAutomated  Verification = "automated"    // protocol/unit tests and mocks only
+	Experimental       Verification = "experimental" // implemented from documentation, untested
+	NotVerified        Verification = "unverified"
+)
+
+// SupportState is the single summary the UI and support matrix use.
+type SupportState string
+
+const (
+	StateHardwareAbsent       SupportState = "HardwareAbsent"
+	StateDetected             SupportState = "Detected"
+	StateRequiresDriver       SupportState = "RequiresDriver"
+	StateReadOnly             SupportState = "ReadOnly"
+	StateTestable             SupportState = "Testable"
+	StatePreviewOnly          SupportState = "PreviewOnly"
+	StateConfigurableDevice   SupportState = "ConfigurableOnDevice"
+	StateConfigurableSoftware SupportState = "ConfigurableThroughSoftware"
+)
+
+// Physical resolves the presence, honouring the legacy implication.
+func (cs CapabilitySpec) Physical() Presence {
+	if cs.Presence != PresenceImplied {
+		return cs.Presence
+	}
+	if cs.Support != Unsupported {
+		return Present
+	}
+	return Absent
+}
+
+// Accessible reports whether TuiSense can do anything with the capability.
+func (cs CapabilitySpec) Accessible() bool {
+	return cs.Support != Unsupported && cs.Physical() == Present && cs.Access != 0
+}
+
+// State summarises the spec.
+func (cs CapabilitySpec) State() SupportState {
+	switch {
+	case cs.Physical() == Absent:
+		return StateHardwareAbsent
+	case !cs.Accessible() && (cs.Requires == RequiresDriver || cs.Requires == RequiresPermission):
+		return StateRequiresDriver
+	case !cs.Accessible():
+		return StateDetected
+	case cs.Access.Has(AccessConfigDevice):
+		return StateConfigurableDevice
+	case cs.Access.Has(AccessConfigSoftware):
+		return StateConfigurableSoftware
+	case cs.Access.Has(AccessPreview):
+		return StatePreviewOnly
+	case cs.Access.Has(AccessTest):
+		return StateTestable
+	}
+	return StateReadOnly
+}
+
+// HasAccess reports whether c is accessible with every bit of want.
+func (cs CapabilitySet) HasAccess(c Capability, want Access) bool {
+	s := cs.Spec(c)
+	return s.Accessible() && s.Access.Has(want)
+}
+
+// AbsentSpec declares hardware the controller does not have.
+func AbsentSpec(id Capability) CapabilitySpec {
+	return CapabilitySpec{ID: id, Support: Unsupported, Presence: Absent}
+}
+
+// InaccessibleSpec declares hardware that exists but TuiSense cannot use
+// (the reason is shown only in Driver & Compatibility, never as a failure).
+func InaccessibleSpec(id Capability, why Requirement, note string) CapabilitySpec {
+	return CapabilitySpec{ID: id, Support: Unsupported, Presence: Present, Requires: why, Note: note}
+}
+
+// ForConnection narrows capabilities whose access is limited to certain
+// transports: on any other connection they become present-but-inaccessible.
+func (cs CapabilitySet) ForConnection(conn ConnectionType) CapabilitySet {
+	out := cs.Clone()
+	if conn == "" { // unknown transport (static descriptors): keep the declaration
+		return out
+	}
+	for id, s := range out {
+		if len(s.Transports) == 0 || !s.Accessible() {
+			continue
+		}
+		ok := false
+		for _, t := range s.Transports {
+			ok = ok || t == conn || (t == ConnUSB && conn == ConnUSBWired) || (t == ConnUSBWired && conn == ConnUSB)
+		}
+		if !ok {
+			s.Presence, s.Support, s.Access, s.Requires = Present, Unsupported, 0, RequiresConnection
+			out[id] = s
+		}
+	}
+	return out
 }
 
 // HasFeature reports whether the spec lists feat.
@@ -193,15 +357,17 @@ func (cs CapabilitySet) Level(c Capability) Support {
 	return cs.Spec(c).Support
 }
 
-// Supports reports whether c is at least partially supported.
+// Supports reports whether TuiSense can actually use c: the hardware has it
+// and at least one operation is implemented. Physically present but
+// inaccessible features are not "supported" and are hidden from the UI.
 func (cs CapabilitySet) Supports(c Capability) bool {
-	return cs.Level(c) != Unsupported
+	return cs.Spec(c).Accessible()
 }
 
 // HasFeature reports whether c is supported and lists feat.
 func (cs CapabilitySet) HasFeature(c Capability, feat Feature) bool {
 	s := cs.Spec(c)
-	return s.Support != Unsupported && s.HasFeature(feat)
+	return s.Accessible() && s.HasFeature(feat)
 }
 
 // Clone returns a deep copy so callers can derive runtime variants safely.
@@ -209,6 +375,7 @@ func (cs CapabilitySet) Clone() CapabilitySet {
 	out := make(CapabilitySet, len(cs))
 	for k, v := range cs {
 		v.Features = append([]Feature(nil), v.Features...)
+		v.Transports = append([]ConnectionType(nil), v.Transports...)
 		out[k] = v
 	}
 	return out
@@ -250,7 +417,7 @@ func (cs CapabilitySet) Supported() []Capability {
 	// Include custom capabilities a third-party driver may have declared.
 	var extra []Capability
 	for c, s := range cs {
-		if s.Support != Unsupported && !isKnownCapability(c) {
+		if s.Accessible() && !isKnownCapability(c) {
 			extra = append(extra, c)
 		}
 	}

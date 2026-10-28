@@ -30,8 +30,8 @@ func reportCopy(c *cursor, text string) {
 func renderTestReportControls(c *cursor, d *diag.Session) {
 	report := d.ReportSnapshot(time.Now()).Scope(d.Active)
 	c.pills("", 0, []choice{
-		{ID: "copy_test_summary", Label: "Test Özetini Kopyala", OnSelect: func() { reportCopy(c, report.SummaryText()) }},
-		{ID: "copy_test_report", Label: "Bu Testi Kopyala", OnSelect: func() { reportCopy(c, report.TestText()) }},
+		{ID: "copy_test_summary", Label: i18n.T("Copy Test Summary"), OnSelect: func() { reportCopy(c, report.SummaryText()) }},
+		{ID: "copy_test_report", Label: i18n.T("Copy This Test"), OnSelect: func() { reportCopy(c, report.TestText()) }},
 		{ID: "diag_show_test_report", Label: i18n.T("Test Report"), Selected: d.ShowTestReport, OnSelect: func() { d.ShowTestReport = !d.ShowTestReport }},
 	})
 }
@@ -41,21 +41,21 @@ func renderHealthReport(c *cursor, d *diag.Session, pc PanelContext, report diag
 	individual := d.Active != diag.CatHealthReport
 	var controls []choice
 	if individual {
-		controls = append(controls, choice{ID: "copy_detailed_test_report", Label: "Bu Testi Kopyala", OnSelect: func() { reportCopy(c, report.TestText()) }})
+		controls = append(controls, choice{ID: "copy_detailed_test_report", Label: i18n.T("Copy This Test"), OnSelect: func() { reportCopy(c, report.TestText()) }})
 	} else {
-		controls = append(controls, choice{ID: "copy_full_report", Label: "Raporu Kopyala", OnSelect: func() { reportCopy(c, report.Text()) }}, choice{ID: "copy_warnings_only", Label: "Yalnızca Uyarıları Kopyala", OnSelect: func() { reportCopy(c, report.WarningsText()) }})
+		controls = append(controls, choice{ID: "copy_full_report", Label: i18n.T("Copy Report"), OnSelect: func() { reportCopy(c, report.Text()) }}, choice{ID: "copy_warnings_only", Label: i18n.T("Copy Warnings Only"), OnSelect: func() { reportCopy(c, report.WarningsText()) }})
 	}
 	c.pills("", 0, controls)
 	c.pills("", 0, []choice{
-		{ID: "copy_technical_report", Label: "Teknik Raporu Kopyala", OnSelect: func() { reportCopy(c, report.TechnicalText()) }},
-		{ID: "show_technical_report", Label: "Teknik Rapor", Selected: d.ShowTechnicalReport, OnSelect: func() { d.ShowTechnicalReport = !d.ShowTechnicalReport }},
-		{ID: "report_raw_logs", Label: "Ham Kayıtlar", OnSelect: func() { d.Suspend(); c.s.Mode = state.ModeAdvanced; c.s.ActivePanel = state.PanelLogs }},
+		{ID: "copy_technical_report", Label: i18n.T("Copy Technical Report"), OnSelect: func() { reportCopy(c, report.TechnicalText()) }},
+		{ID: "show_technical_report", Label: i18n.T("Technical Report"), Selected: d.ShowTechnicalReport, OnSelect: func() { d.ShowTechnicalReport = !d.ShowTechnicalReport }},
+		{ID: "report_raw_logs", Label: i18n.T("Raw Logs"), OnSelect: func() { d.Suspend(); c.s.Mode = state.ModeAdvanced; c.s.ActivePanel = state.PanelLogs }},
 	})
 	if pc.CB.OnExportReport != nil {
-		c.pills("", 0, []choice{{ID: "health_report_export", Label: "Dışa Aktar: TXT / Markdown / JSON", OnSelect: pc.CB.OnExportReport}})
+		c.pills("", 0, []choice{{ID: "health_report_export", Label: i18n.T("Export: TXT / Markdown / JSON"), OnSelect: pc.CB.OnExportReport}})
 	}
 	if !individual {
-		c.pills("", 0, []choice{{ID: "health_report_refresh", Label: "Güncel Rapor Oluştur", OnSelect: func() { d.Select(diag.CatHealthReport); d.GenerateHealthReport(time.Now()) }}})
+		c.pills("", 0, []choice{{ID: "health_report_refresh", Label: i18n.T("Generate Current Report"), OnSelect: func() { d.Select(diag.CatHealthReport); d.GenerateHealthReport(time.Now()) }}})
 		renderHistoryControls(c, d, pc)
 	}
 	if d.PreviousReport != nil && !individual {

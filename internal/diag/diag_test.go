@@ -165,8 +165,8 @@ func TestPlanCapabilityDriven(t *testing.T) {
 	bt.Info.Connection = device.ConnBluetooth
 	bt.Caps = bt.Desc.Capabilities.WithoutFeature(device.CapAudio, device.FeatSpeaker, "")
 	p = Plan(bt)
-	if p[CatAudioIn].Status != Unavailable || !strings.Contains(p[CatAudioIn].Reason, "USB") {
-		t.Errorf("over Bluetooth audio must explain the USB requirement, got %+v", p[CatAudioIn])
+	if p[CatAudioIn].Status != Inaccessible || !p[CatAudioIn].Hidden() || !strings.Contains(p[CatAudioIn].Reason, "USB") {
+		t.Errorf("over Bluetooth audio exists but is out of reach: hidden, with the USB requirement kept for Driver & Compatibility, got %+v", p[CatAudioIn])
 	}
 
 	x := xboxmock.Descriptor()

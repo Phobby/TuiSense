@@ -14,51 +14,65 @@ const (
 )
 
 var dualSenseRegions = []device.Region{
-	{ID: device.RegionLeftTrigger, Label: "L2 Adaptive Trigger", Badge: "L2 Trigger", Capability: device.CapAdaptiveTriggers, Slot: device.SlotTopLeft,
+	{ID: device.RegionLeftTrigger, Label: "L2 Adaptive Trigger", Badge: "L2 Trigger", Capability: device.CapAdaptiveTriggers,
 		Description: "Configure adaptive trigger resistance modes, weapon snap points, and force feedback curves."},
-	{ID: device.RegionRightTrigger, Label: "R2 Adaptive Trigger", Badge: "R2 Trigger", Capability: device.CapAdaptiveTriggers, Slot: device.SlotTopRight,
+	{ID: device.RegionRightTrigger, Label: "R2 Adaptive Trigger", Badge: "R2 Trigger", Capability: device.CapAdaptiveTriggers,
 		Description: "Configure adaptive trigger resistance modes, weapon snap points, and force feedback curves."},
-	{ID: device.RegionLight, Label: "Touchpad & Lightbar", Badge: "Lightbar", Capability: device.CapLighting, Slot: device.SlotTopCenter,
+	{ID: device.RegionLight, Label: "Touchpad & Lightbar", Badge: "Lightbar", Capability: device.CapLighting,
 		Description: "Customize lightbar RGB color, brightness, animations, and player indicator LEDs."},
-	{ID: device.RegionLeftStick, Label: "Left Analog Stick", Badge: "L-Stick", Capability: device.CapSticks, Slot: device.SlotMidLeft,
+	{ID: device.RegionLeftStick, Label: "Left Analog Stick", Badge: "L-Stick", Capability: device.CapSticks,
 		Description: "Tune deadzones and response curves, and inspect live stick drift."},
-	{ID: device.RegionRightStick, Label: "Right Analog Stick", Badge: "R-Stick", Capability: device.CapSticks, Slot: device.SlotMidRight,
+	{ID: device.RegionRightStick, Label: "Right Analog Stick", Badge: "R-Stick", Capability: device.CapSticks,
 		Description: "Tune deadzones and response curves, and inspect live stick drift."},
-	{ID: device.RegionHaptics, Label: "Haptic Actuators", Badge: "Haptics", Capability: device.CapHaptics, Slot: device.SlotLowLeft,
+	{ID: device.RegionHaptics, Label: "Haptic Actuators", Badge: "Haptics", Capability: device.CapHaptics,
 		Description: "Adjust dual voice-coil actuator intensity and fire live test pulses."},
-	{ID: device.RegionAudio, Label: "Microphone & Speaker", Badge: "Mic/Audio", Capability: device.CapAudio, Slot: device.SlotLowRight,
+	{ID: device.RegionAudio, Label: "Microphone & Speaker", Badge: "Mic/Audio", Capability: device.CapAudio,
 		Description: "Control the mute LED, microphone gain, speaker, and headset volume."},
-	{ID: device.RegionMotion, Label: "6-Axis Motion Sensor", Badge: "Gyro/IMU", Capability: device.CapMotion, Slot: device.SlotBottomCenter,
+	{ID: device.RegionMotion, Label: "6-Axis Motion Sensor", Badge: "Gyro/IMU", Capability: device.CapMotion,
 		Description: "Toggle gyroscope/accelerometer, sensitivity, and 3D tilt sync."},
 }
 
+// Access constants used by the DualSense declarations. Every setting below is
+// sent to the controller in its output report and is not stored on it: it is
+// re-applied on every connection.
+const (
+	readTest    = device.AccessRead | device.AccessTest
+	configTest  = device.AccessTest | device.AccessConfigDevice
+	hidraw      = "dualsense-hidraw"
+	automatedV  = device.VerifiedAutomated
+	usbOnlyNote = "Controller audio is a USB audio device; connect with a USB cable."
+)
+
 func baseCapabilities() device.CapabilitySet {
 	return device.NewCapabilitySet(
-		device.CapabilitySpec{ID: device.CapBattery, Support: device.Full},
-		device.CapabilitySpec{ID: device.CapConnection, Support: device.Full},
-		device.CapabilitySpec{ID: device.CapFirmwareInfo, Support: device.Full},
-		device.CapabilitySpec{ID: device.CapHaptics, Support: device.Full,
+		device.CapabilitySpec{ID: device.CapBattery, Support: device.Full, Access: device.AccessRead, Backend: hidraw, Verification: automatedV},
+		device.CapabilitySpec{ID: device.CapConnection, Support: device.Full, Access: device.AccessRead, Backend: hidraw, Verification: automatedV},
+		device.CapabilitySpec{ID: device.CapFirmwareInfo, Support: device.Full, Access: device.AccessRead, Backend: hidraw, Verification: automatedV},
+		device.CapabilitySpec{ID: device.CapHaptics, Support: device.Full, Access: configTest, Backend: hidraw, Verification: automatedV,
 			Features: []device.Feature{device.FeatDualMotors, device.FeatTestPulse, device.FeatMotorConfig}},
-		device.CapabilitySpec{ID: device.CapAdaptiveTriggers, Support: device.Full},
-		device.CapabilitySpec{ID: device.CapLighting, Support: device.Full,
+		device.CapabilitySpec{ID: device.CapAdaptiveTriggers, Support: device.Full, Access: configTest, Backend: hidraw, Verification: automatedV},
+		device.CapabilitySpec{ID: device.CapLighting, Support: device.Full, Access: device.AccessConfigDevice, Backend: hidraw, Verification: automatedV,
 			Features: []device.Feature{device.FeatLightbarRGB, device.FeatPlayerLEDs, device.FeatMicLED, device.FeatLEDBrightness, device.FeatLEDAnimation}},
-		device.CapabilitySpec{ID: device.CapSticks, Support: device.Full,
-			Features: []device.Feature{device.FeatDeadzones, device.FeatResponseCurve}},
-		device.CapabilitySpec{ID: device.CapMotion, Support: device.Full,
+		device.CapabilitySpec{ID: device.CapSticks, Support: device.Full, Access: readTest | device.AccessPreview, Backend: hidraw, Verification: automatedV,
+			Features: []device.Feature{device.FeatDeadzones, device.FeatResponseCurve},
+			Note:     "Deadzones and curves are previews: TuiSense has no input-processing backend, so games receive the raw stick values."},
+		device.CapabilitySpec{ID: device.CapMotion, Support: device.Full, Access: readTest | device.AccessPreview, Backend: hidraw, Verification: automatedV,
 			Features: []device.Feature{device.FeatGyro, device.FeatAccel}},
-		device.CapabilitySpec{ID: device.CapAudio, Support: device.Full,
+		device.CapabilitySpec{ID: device.CapTouchpad, Support: device.Full, Access: readTest, Backend: hidraw, Verification: automatedV},
+		device.CapabilitySpec{ID: device.CapAudio, Support: device.Full, Access: configTest, Backend: "dualsense-hidraw + alsa", Verification: automatedV,
+			Transports: []device.ConnectionType{device.ConnUSB}, Note: usbOnlyNote,
 			Features: []device.Feature{device.FeatSpeaker, device.FeatHeadset, device.FeatMicrophone}},
-		device.CapabilitySpec{ID: device.CapProfiles, Support: device.Full},
-		device.CapabilitySpec{ID: device.CapDiagnostics, Support: device.Full,
+		device.CapabilitySpec{ID: device.CapProfiles, Support: device.Full, Access: device.AccessConfigDevice, Backend: "tuisense-profiles", Verification: automatedV,
+			Note: "Profiles are stored by TuiSense and applied to the controller when it connects."},
+		device.CapabilitySpec{ID: device.CapDiagnostics, Support: device.Full, Access: readTest, Backend: hidraw, Verification: automatedV,
 			Features: []device.Feature{device.FeatRawReports, device.FeatTouchpad}},
-		device.CapabilitySpec{ID: device.CapFirmwareUpdate, Support: device.Unsupported,
-			Note: "TuiSense never installs firmware. Use Sony's official updater (PlayStation Accessories on Windows, or a PS5)."},
-		device.CapabilitySpec{ID: device.CapFirmwareCheck, Support: device.Full,
+		device.InaccessibleSpec(device.CapFirmwareUpdate, device.RequiresBackend,
+			"TuiSense never installs firmware. Use Sony's official updater (PlayStation Accessories on Windows, or a PS5)."),
+		device.CapabilitySpec{ID: device.CapFirmwareCheck, Support: device.Full, Access: device.AccessRead, Backend: "sony-firmware-metadata", Verification: automatedV,
 			Note: "Read-only comparison with Sony's published firmware metadata."},
-		device.CapabilitySpec{ID: device.CapRemapping, Support: device.Unsupported,
-			Note: "Button remapping requires the DualSense Edge."},
-		device.CapabilitySpec{ID: device.CapCalibration, Support: device.Unsupported,
-			Note: "Stick calibration is not implemented yet (planned)."},
+		device.AbsentSpec(device.CapRemapping),
+		device.AbsentSpec(device.CapRearControls),
+		device.InaccessibleSpec(device.CapCalibration, device.RequiresBackend, "Stick calibration is not implemented yet (planned)."),
 	)
 }
 
@@ -141,6 +155,7 @@ func Descriptor() device.Descriptor {
 		Actions:        dualSenseActions,
 		DefaultConfig:  device.DefaultConfig,
 		DefaultProfile: "Astro Standard",
+		LinuxDrivers:   []string{"playstation"},
 	}
 }
 
@@ -150,12 +165,16 @@ func EdgeDescriptor() device.Descriptor {
 	d.ModelID = ModelDualSenseEdge
 	d.DisplayName = "DualSense Edge Wireless Controller"
 	d.ShortName = "DualSense Edge"
+	d.VisualID = "dualsense_edge"
 	d.ProductIDs = []uint16{system.DualSenseEdgePID}
 	caps := baseCapabilities()
-	caps[device.CapProfiles] = device.CapabilitySpec{ID: device.CapProfiles, Support: device.Full,
-		Features: []device.Feature{device.FeatHardwareSlots}}
-	caps[device.CapRemapping] = device.CapabilitySpec{ID: device.CapRemapping, Support: device.Limited,
-		Note: "Hardware Fn profile slots are detected; on-device remapping editor is planned."}
+	profiles := caps[device.CapProfiles]
+	profiles.Features = []device.Feature{device.FeatHardwareSlots}
+	caps[device.CapProfiles] = profiles
+	caps[device.CapRemapping] = device.InaccessibleSpec(device.CapRemapping, device.RequiresBackend,
+		"On-controller remapping and Fn profile slots use Sony's protocol, which TuiSense does not write; use a PS5 or the PlayStation Accessories app.")
+	caps[device.CapRearControls] = device.CapabilitySpec{ID: device.CapRearControls, Support: device.Full, Access: readTest, Backend: hidraw,
+		Verification: device.VerifiedAutomated, Note: "Back buttons and Fn buttons are read from the input report (bit layout covered by protocol tests)."}
 	d.Capabilities = caps
 	d.Inputs = dualSenseInputs(true)
 	return d
@@ -163,9 +182,5 @@ func EdgeDescriptor() device.Descriptor {
 
 // runtimeCapabilities narrows the baseline for the active transport.
 func runtimeCapabilities(base device.CapabilitySet, conn device.ConnectionType) device.CapabilitySet {
-	if conn == device.ConnBluetooth {
-		return base.WithoutFeature(device.CapAudio, device.FeatSpeaker,
-			"Internal speaker routing is only available over USB-C.")
-	}
-	return base
+	return base.ForConnection(conn)
 }

@@ -86,61 +86,31 @@ var buttonLabels = map[device.ButtonID]string{
 	device.ButtonL3: "LS (click)", device.ButtonR3: "RS (click)",
 }
 
-func regions() []device.Region {
-	return []device.Region{
-		{ID: device.RegionLeftTrigger, Label: "LT Trigger", Badge: "LT", Capability: device.CapDiagnostics, Slot: device.SlotTopLeft,
-			Description: "Open the trigger diagnostics (analog or digital, depending on the input mode)."},
-		{ID: device.RegionRightTrigger, Label: "RT Trigger", Badge: "RT", Capability: device.CapDiagnostics, Slot: device.SlotTopRight,
-			Description: "Open the trigger diagnostics (analog or digital, depending on the input mode)."},
-		{ID: device.RegionLeftStick, Label: "Left Stick", Badge: "L-Stick", Capability: device.CapDiagnostics, Slot: device.SlotMidLeft,
-			Description: "Open the stick and deadzone diagnostics."},
-		{ID: device.RegionRightStick, Label: "Right Stick", Badge: "R-Stick", Capability: device.CapDiagnostics, Slot: device.SlotMidRight,
-			Description: "Open the stick and deadzone diagnostics."},
-		{ID: device.RegionHaptics, Label: "Vibration Motors", Badge: "Rumble", Capability: device.CapDiagnostics, Slot: device.SlotLowLeft,
-			Description: "Open the vibration test (only when Linux exposes rumble)."},
-	}
+// Spec is the GC20 V2's physical description. It is wired-only (no battery),
+// has two vibration motors and no lighting, motion, touchpad, audio or rear
+// controls (MSI datasheet and manual).
+var Spec = gamepad.ModelSpec{
+	ID: ModelID, Family: Family, Brand: "MSI", DisplayName: "MSI Force GC20 V2", ShortName: "GC20 V2",
+	VisualID: "msi_gc20", Accent: device.RGB{R: 220, G: 60, B: 60},
+	Labels:        buttonLabels,
+	StickLabels:   [2]string{"Left stick", "Right stick"},
+	TriggerLabels: [2]string{"LT", "RT"},
+	Hardware:      gamepad.Hardware{Rumble: true},
+	ModeGuide:     ModeGuide,
+	KernelDrivers: []string{"xpad", "hid-generic"},
+	ModeHint:      ModeHint,
 }
 
 // Describe builds the runtime descriptor from the observed mapping.
-func Describe(m gamepad.Mapping, d evdev.InputDevice, rumble bool) device.Descriptor {
-	in := m.Inputs([2]string{"Left stick", "Right stick"}, [2]string{"LT", "RT"})
-	for i := range in.Buttons {
-		if l, ok := buttonLabels[in.Buttons[i].ID]; ok && in.Buttons[i].Group != "Unmapped" {
-			in.Buttons[i].Label = l
-		}
-	}
-	desc := device.Descriptor{
-		ModelID:      ModelID,
-		Family:       Family,
-		Brand:        "MSI",
-		DisplayName:  "MSI Force GC20 V2",
-		ShortName:    "GC20 V2",
-		VisualID:     "msi_gc20",
-		Accent:       device.RGB{R: 220, G: 60, B: 60},
-		VendorID:     d.Vendor,
-		Regions:      regions(),
-		Inputs:       in,
-		Capabilities: gamepad.Capabilities(m, rumble),
-		ModeGuide:    ModeGuide,
-	}
-	if d.Product != 0 {
-		desc.ProductIDs = []uint16{d.Product}
-	}
-	if !rumble {
-		desc.Regions = desc.Regions[:4]
-	} else {
-		desc.Actions = []device.Action{gamepad.PulseAction()}
-	}
-	return desc
+func Describe(m gamepad.Mapping, d evdev.InputDevice, rt gamepad.Runtime) device.Descriptor {
+	return Spec.Describe(m, d, rt)
 }
 
-// Model returns the matcher registered with the gamepad driver.
+// Model returns the matcher registered with the gamepad driver. MSI keeps
+// its own identification (USB strings, MSI's vendor ID, or the SDL-documented
+// shared Xbox 360 ID as a probable match).
 func Model() gamepad.Model {
-	return gamepad.Model{
-		ID:       ModelID,
-		Static:   Describe(gamepad.Mapping{}, evdev.InputDevice{}, false),
-		Identify: Identify,
-		Describe: Describe,
-		ModeHint: ModeHint,
-	}
+	m := Spec.Model()
+	m.Identify = Identify
+	return m
 }

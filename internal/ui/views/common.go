@@ -18,7 +18,44 @@ func panelFrame(f *terminal.Frame, area cell.Rect, s *state.AppState, title stri
 		return cell.Rect{}
 	}
 	f.Buffer.SetStringWithin(area.X+2, area.Y, title, s.Theme.SectionHeaderStyle(), area.Width-4)
+	// Settings panels state what their controls change: the controller,
+	// software input processing, or only a preview inside TuiSense.
+	if scope := scopeLabel(s); scope != "" {
+		tw := uint16(cell.StringWidth(title))
+		if area.Width > tw+8 {
+			f.Buffer.SetStringWithin(area.X+2+tw+2, area.Y, scope, s.Theme.MutedStyle(), area.Width-tw-6)
+		}
+	}
 	return cell.NewRect(area.X+2, area.Y+2, area.Width-4, area.Height-2)
+}
+
+// scopeLabel describes the effect of the active settings panel's controls.
+func scopeLabel(s *state.AppState) string {
+	var c device.Capability
+	for _, spec := range state.PanelCatalog {
+		if spec.ID == s.ActivePanel && spec.Access != 0 {
+			c = spec.Capability
+		}
+	}
+	if c == "" || s.Gallery.Active {
+		return ""
+	}
+	scope, ok := device.SettingScope(s.Caps, c)
+	if !ok {
+		return ""
+	}
+	switch scope {
+	case device.ScopeDevice:
+		if s.Caps.Spec(c).Persistent {
+			return i18n.T("· saved on the controller")
+		}
+		return i18n.T("· applied to the controller (re-applied on connect)")
+	case device.ScopeSoftware:
+		return i18n.T("· software input processing")
+	case device.ScopePreview:
+		return i18n.T("· preview only — games are not affected")
+	}
+	return ""
 }
 
 // supportBanner prints a one-line notice when capability c is limited or

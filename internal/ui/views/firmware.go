@@ -49,7 +49,7 @@ func renderFirmware(f *terminal.Frame, area cell.Rect, pc PanelContext, advanced
 		id    state.FirmwareSection
 		label string
 	}
-	sections := []section{{state.FirmwareStatus, i18n.T("Overview")}}
+	sections := []section{{state.FirmwareStatus, i18n.T("Overview")}, {state.FirmwareCompat, i18n.T("Driver & Compatibility")}}
 	if fv.Supported {
 		sections = append(sections, section{state.FirmwareGuide, i18n.T("How to update")}, section{state.FirmwareLinks, i18n.T("Official links")})
 	}
@@ -82,6 +82,8 @@ func renderFirmware(f *terminal.Frame, area cell.Rect, pc PanelContext, advanced
 		renderFirmwareLinks(c, pc)
 	case state.FirmwareDetails:
 		renderFirmwareDetails(c, pc)
+	case state.FirmwareCompat:
+		renderCompat(c, pc)
 	default:
 		renderFirmwareStatus(c, pc, advanced)
 	}

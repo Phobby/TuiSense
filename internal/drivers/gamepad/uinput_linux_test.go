@@ -198,8 +198,8 @@ func TestUinputVirtualPadEndToEnd(t *testing.T) {
 			}
 			return NoMatch, ""
 		},
-		Describe: func(m Mapping, d evdev.InputDevice, rumble bool) device.Descriptor {
-			desc := GenericDescriptor(m, d, rumble)
+		Describe: func(m Mapping, d evdev.InputDevice, rt Runtime) device.Descriptor {
+			desc := GenericDescriptor(m, d, rt)
 			desc.ModelID = "test.msi_like"
 			return desc
 		},

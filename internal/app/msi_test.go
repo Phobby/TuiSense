@@ -53,7 +53,7 @@ func xpadCaps() (evdev.InputDevice, map[uint16]evdev.AbsInfo) {
 func newFakeMSI(_ *logging.Logger) device.Device {
 	d, abs := xpadCaps()
 	m := gamepad.InferMapping(d, abs)
-	f := &fakeMSI{desc: msigc20.Describe(m, d, true)}
+	f := &fakeMSI{desc: msigc20.Describe(m, d, gamepad.RuntimeWith(true))}
 	f.info = device.Info{ID: "event23", Name: d.Name, Model: "MSI Force GC20 V2", VendorID: 0x045e, ProductID: 0x028e,
 		InputDevicePath: d.EventPath, Connection: device.ConnUSBWired, Connected: true, KernelDriver: "xpad", EventDriven: true,
 		IdentityKey: d.HardwareKey(), IdentityState: "probable", Identification: "USB ID 045e:028e version 0210 matches the SDL community entry for the MSI GC20 V2 (shared with other Xbox 360-compatible pads)",
@@ -87,7 +87,7 @@ func newMSIApp(t *testing.T, mode state.UXMode) *Application {
 	_ = reg.RegisterVirtual(dualsense.MockVirtual())
 	_ = reg.RegisterVirtual(xboxmock.Virtual())
 	_ = reg.RegisterVirtual(device.VirtualDevice{Key: msiKey, Source: device.SourceTest, AutoAttach: true,
-		Descriptor: msigc20.Describe(gamepad.Mapping{}, evdev.InputDevice{}, true), New: newFakeMSI})
+		Descriptor: msigc20.Describe(gamepad.Mapping{}, evdev.InputDevice{}, gamepad.RuntimeWith(true)), New: newFakeMSI})
 	a := newTestApp(t, newDirs(t), Options{ForceMock: true, AllowMock: true, Registry: reg})
 	a.State.SetMode(mode)
 	a.SelectDevice(msiKey)
@@ -97,7 +97,7 @@ func newMSIApp(t *testing.T, mode state.UXMode) *Application {
 func TestMSIControllerUIIsCapabilityDriven(t *testing.T) {
 	a := newMSIApp(t, state.ModeAdvanced)
 	page := uitest.Run(t, 160, 48, a.Draw)
-	page.Expect(page.GetByRole("image", "MSI Force GC20 V2 3D")).ToBeVisible()
+	page.Expect(page.GetByRole("image", "MSI Force GC20 V2")).ToBeVisible()
 
 	// Only panels backed by real functionality are offered.
 	page.Expect(page.GetByRole("tab", "2 Diagnostics")).ToBeVisible()
@@ -151,9 +151,9 @@ func TestMSIControllerUIIsCapabilityDriven(t *testing.T) {
 func TestSwitchingBetweenMSIDualSenseAndXbox(t *testing.T) {
 	a := newMSIApp(t, state.ModeEZ)
 	page := uitest.Run(t, 160, 48, a.Draw)
-	page.Expect(page.GetByRole("image", "MSI Force GC20 V2 3D")).ToBeVisible()
+	page.Expect(page.GetByRole("image", "MSI Force GC20 V2")).ToBeVisible()
 	a.SelectDevice(dualsense.MockKey)
-	page.Expect(page.GetByRole("image", "Sony DualSense 3D")).ToBeVisible()
+	page.Expect(page.GetByRole("image", "Sony DualSense Wireless Controller")).ToBeVisible()
 	if !a.State.Caps.Supports(device.CapAdaptiveTriggers) {
 		t.Fatal("DualSense capabilities must come back after switching")
 	}

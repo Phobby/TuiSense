@@ -82,7 +82,10 @@ type PanelSpec struct {
 	Capability device.Capability
 	// Feature, when set, is additionally required (e.g. configurable motors).
 	Feature device.Feature
-	Modes   ModeMask
+	// Access, when set, requires at least one of these operations: a panel of
+	// settings never appears for hardware TuiSense can only read.
+	Access device.Access
+	Modes  ModeMask
 	// NeedsDevice hides an otherwise ungated panel when no controller is
 	// attached (an empty capability set).
 	NeedsDevice bool
@@ -95,13 +98,13 @@ var PanelCatalog = []PanelSpec{
 	{ID: PanelOverview, Title: "Overview", EZTitle: "Home", Modes: InBoth},
 	{ID: PanelCustomize, Title: "Customize", Modes: InBoth, NeedsDevice: true},
 	{ID: PanelDiagnostics, Title: "Diagnostics", EZTitle: "Diagnostics", Capability: device.CapDiagnostics, Modes: InBoth},
-	{ID: PanelLighting, Title: "Lighting", EZTitle: "Lights", Capability: device.CapLighting, Modes: InBoth},
-	{ID: PanelHaptics, Title: "Haptics", EZTitle: "Vibration", Capability: device.CapHaptics, Feature: device.FeatMotorConfig, Modes: InBoth},
-	{ID: PanelTriggers, Title: "Triggers", EZTitle: "Triggers", Capability: device.CapAdaptiveTriggers, Modes: InBoth},
-	{ID: PanelSticks, Title: "Sticks", Capability: device.CapSticks, Feature: device.FeatDeadzones, Modes: InAdvanced},
-	{ID: PanelMotion, Title: "Motion", Capability: device.CapMotion, Modes: InAdvanced},
-	{ID: PanelAudio, Title: "Audio", Capability: device.CapAudio, Modes: InAdvanced},
-	{ID: PanelProfiles, Title: "Profiles", EZTitle: "Profiles", Capability: device.CapProfiles, Modes: InBoth},
+	{ID: PanelLighting, Title: "Lighting", EZTitle: "Lights", Capability: device.CapLighting, Access: device.AccessConfigDevice, Modes: InBoth},
+	{ID: PanelHaptics, Title: "Haptics", EZTitle: "Vibration", Capability: device.CapHaptics, Feature: device.FeatMotorConfig, Access: device.AccessConfigDevice, Modes: InBoth},
+	{ID: PanelTriggers, Title: "Triggers", EZTitle: "Triggers", Capability: device.CapAdaptiveTriggers, Access: device.AccessConfigDevice, Modes: InBoth},
+	{ID: PanelSticks, Title: "Sticks", Capability: device.CapSticks, Feature: device.FeatDeadzones, Access: device.AccessPreview | device.AccessConfigSoftware, Modes: InAdvanced},
+	{ID: PanelMotion, Title: "Motion", Capability: device.CapMotion, Access: device.AccessPreview | device.AccessConfigSoftware, Modes: InAdvanced},
+	{ID: PanelAudio, Title: "Audio", Capability: device.CapAudio, Access: device.AccessConfigDevice, Modes: InAdvanced},
+	{ID: PanelProfiles, Title: "Profiles", EZTitle: "Profiles", Capability: device.CapProfiles, Access: device.AccessConfigDevice | device.AccessConfigSoftware, Modes: InBoth},
 	{ID: PanelDevice, Title: "Device", Capability: device.CapConnection, Modes: InAdvanced},
 	{ID: PanelLogs, Title: "Logs", Capability: device.CapDiagnostics, Modes: InAdvanced},
 	{ID: PanelSettings, Title: "Settings", EZTitle: "Settings", Modes: InBoth},
@@ -141,10 +144,13 @@ func VisiblePanels(caps device.CapabilitySet, mode UXMode) []PanelEntry {
 		}
 		support := device.Full
 		if spec.Capability != "" {
-			support = caps.Level(spec.Capability)
-			if support == device.Unsupported {
+			if !caps.Supports(spec.Capability) {
 				continue
 			}
+			if spec.Access != 0 && caps.Spec(spec.Capability).Access&spec.Access == 0 {
+				continue
+			}
+			support = caps.Level(spec.Capability)
 			if spec.Feature != "" && !caps.HasFeature(spec.Capability, spec.Feature) {
 				continue
 			}

@@ -1,0 +1,39 @@
+name: Controller report
+description: Help add or verify support for a controller model
+labels: [controller]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Reports from real hardware let us mark features as verified. The commands
+        below print no serial numbers or MAC addresses.
+  - type: input
+    id: model
+    attributes:
+      label: Controller model
+      placeholder: 8BitDo Ultimate Bluetooth Controller
+    validations:
+      required: true
+  - type: dropdown
+    id: connection
+    attributes:
+      label: Connection
+      options: [USB cable, Bluetooth, Wireless dongle]
+    validations:
+      required: true
+  - type: textarea
+    id: devices
+    attributes:
+      label: Output of `tuisense debug devices`
+      render: text
+    validations:
+      required: true
+  - type: textarea
+    id: inputs
+    attributes:
+      label: Output of `tuisense debug inputs --watch 15` (press every button once)
+      render: text
+  - type: textarea
+    id: notes
+    attributes:
+      label: What works and what doesn't?

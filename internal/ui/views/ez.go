@@ -296,6 +296,8 @@ func renderEZSettings(f *terminal.Frame, area cell.Rect, pc PanelContext) {
 	y := renderModeChooser(f, inner, inner.Y, s, pc.CB)
 	y = renderLanguageChooser(f, inner, y+1, s, pc.CB)
 	y++
+	y = renderUpdates(f, inner, y, s, pc.CB, false)
+	y++
 	if y < inner.Y+inner.Height {
 		f.RenderWidget(widgets.Checkbox{
 			ID: "cb_settings_autorot", Checked: &s.AutoRotate, Label: i18n.T("Slowly rotate the controller"),
@@ -317,5 +319,11 @@ func renderEZSettings(f *terminal.Frame, area cell.Rect, pc PanelContext) {
 			}
 			pc.prefsChanged()
 		}
+		y += 2
+	}
+	if y < inner.Y+inner.Height {
+		pillRow(f, inner.X, y, inner.X+inner.Width, s, "", 0, []choice{{
+			ID: "btn_open_gallery", Label: i18n.T("Controller Gallery (visual preview)"), OnSelect: s.OpenGallery,
+		}})
 	}
 }

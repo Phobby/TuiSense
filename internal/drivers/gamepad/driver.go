@@ -14,8 +14,10 @@ import (
 // DriverID is the registry ID of the evdev gamepad driver.
 const DriverID = "evdev_gamepad"
 
-// excludedVendors are handled by dedicated drivers (Sony → hidraw DualSense driver).
-var excludedVendors = map[uint16]bool{0x054c: true}
+// excludedIDs are handled by dedicated drivers: the DualSense and DualSense
+// Edge use the hidraw protocol driver. Other Sony controllers (DualShock 4)
+// are served here through the kernel's hid-playstation / hid-sony drivers.
+var excludedIDs = map[[2]uint16]bool{{0x054c, 0x0ce6}: true, {0x054c, 0x0df2}: true}
 
 // Discovered is the payload of a candidate.
 type Discovered struct {
@@ -59,7 +61,7 @@ func (d *Driver) Scan() ([]Discovered, error) {
 	var out []Discovered
 	seen := map[string]bool{}
 	for _, dev := range devs {
-		if !dev.IsGamepad() || excludedVendors[dev.Vendor] || (dev.Virtual() && !d.IncludeVirtual) {
+		if !dev.IsGamepad() || excludedIDs[[2]uint16{dev.Vendor, dev.Product}] || (dev.Virtual() && !d.IncludeVirtual) {
 			continue
 		}
 		if dev.SysfsPath != "" {

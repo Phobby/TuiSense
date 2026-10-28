@@ -4,8 +4,13 @@ import (
 	"context"
 	"fmt"
 	"github.com/Phobby/TuiSense/internal/clipboard"
+	"github.com/Phobby/TuiSense/internal/compat"
 	"github.com/Phobby/TuiSense/internal/i18n"
+	"github.com/Phobby/TuiSense/internal/update"
+	"github.com/Phobby/TuiSense/internal/version"
 	"math"
+	"os"
+	"path/filepath"
 	"runtime"
 	"sync"
 	"time"
@@ -53,6 +58,14 @@ type Options struct {
 	OpenURL   func(url string) error
 	CopyText  func(text string) error
 	Clipboard clipboard.ClipboardService
+	// CompatEnv and CompatRunner override the Driver & Compatibility system
+	// access (tests); nil = the real, read-only system view and exec runner.
+	CompatEnv    compat.Env
+	CompatRunner compat.Runner
+	// UpdateSource overrides the application update server (tests use a
+	// local mock); Updater replaces the whole manager.
+	UpdateSource *update.Source
+	Updater      *update.Manager
 }
 
 // Application coordinates AppState, the device session, the dispatcher, and the Limoni render loop.
@@ -68,6 +81,11 @@ type Application struct {
 	copying           bool
 	diagnosticBusy    bool
 	diagnosticResults chan diagnosticCompletion
+	compatResults     chan string
+	// Updater is the application (not firmware) update manager.
+	Updater       *update.Manager
+	updateSeen    update.Status
+	updateChecked time.Time
 
 	eventsMu sync.Mutex
 	events   []session.DeviceEvent
@@ -102,6 +120,9 @@ func New(opts Options) *Application {
 	}
 	if opts.ConfigDir == "" {
 		opts.ConfigDir = system.ConfigDir()
+	}
+	if opts.Version == "" {
+		opts.Version = version.String()
 	}
 	logger := logging.New(500)
 	s := state.NewAppState(opts.ProfileDir, logger)
@@ -147,6 +168,15 @@ func New(opts Options) *Application {
 	a.Firmware = firmware.NewService(firmware.NewStore(opts.ConfigDir), providers...)
 	a.fwResults = map[string]firmware.Result{}
 	a.fwAutoCheck = prefs.FirmwareAutoCheck == nil || *prefs.FirmwareAutoCheck
+	s.AppVersion = opts.Version
+	a.Updater = opts.Updater
+	if a.Updater == nil {
+		a.Updater = newUpdater(opts, prefs)
+	}
+	a.Updater.OnChange = limoni.Wakeup
+	a.updateChecked = prefs.UpdateLastCheck
+	s.Update = a.Updater.Snapshot()
+	a.updateSeen = s.Update.Status
 	a.confirmed = map[string]string{}
 	for k, v := range prefs.ConfirmedModels {
 		a.confirmed[k] = v
@@ -156,6 +186,14 @@ func New(opts Options) *Application {
 	reg := opts.Registry
 	if reg == nil {
 		reg = drivers.NewBuiltinRegistry(drivers.RegistryOptions{Hardware: true, Mock: opts.ForceMock || opts.AllowMock, TestDevices: opts.TestDevices && !opts.NoTestDevices})
+	}
+	// The gallery states real support from the built-in hardware drivers'
+	// static descriptors — independent of what is connected or registered.
+	s.HardwareModels = map[string]device.Descriptor{}
+	for _, drv := range drivers.NewBuiltinRegistry(drivers.RegistryOptions{Hardware: true}).Drivers() {
+		for _, d := range drv.Models() {
+			s.HardwareModels[d.ModelID] = d
+		}
 	}
 
 	a.Manager = session.NewManager(reg, session.Options{
@@ -182,6 +220,13 @@ func New(opts Options) *Application {
 
 	a.copyResults = make(chan copyCompletion, 1)
 	a.diagnosticResults = make(chan diagnosticCompletion, 1)
+	a.compatResults = make(chan string, 1)
+	if a.Opts.CompatEnv == nil {
+		a.Opts.CompatEnv = compat.SystemEnv{}
+	}
+	if a.Opts.CompatRunner == nil {
+		a.Opts.CompatRunner = compat.ExecRunner{}
+	}
 	s.Copy.OnCopy = a.CopyText
 	a.syncActiveDevice()
 	return a
@@ -247,6 +292,7 @@ func (a *Application) syncActiveDevice() {
 		}
 	}
 	defer a.refreshFirmware()
+	defer a.refreshCompat()
 	if dev == nil {
 		s.Diag = nil
 		s.ActivateDevice("", device.PlaceholderDescriptor(), device.NewCapabilitySet(),
@@ -411,6 +457,16 @@ func (a *Application) savePrefs() {
 	if len(a.confirmed) > 0 {
 		p.ConfirmedModels = a.confirmed
 	}
+	us := a.Updater.Snapshot().Settings
+	if !us.Check {
+		off := false
+		p.UpdateChecks = &off
+	}
+	p.UpdateAutoDownload = us.AutoDownload
+	if us.Channel == update.Prerelease {
+		p.UpdateChannel = string(update.Prerelease)
+	}
+	p.UpdateLastCheck = a.updateChecked
 	if err := a.Prefs.Save(p); err != nil {
 		a.Logger.Warn("PREFS", "Could not save %s: %v", a.Prefs.Path(), err)
 	}
@@ -508,6 +564,7 @@ func (a *Application) simulator() (device.Simulator, bool) {
 
 func (a *Application) refreshActive() {
 	defer a.refreshFirmware()
+	defer a.refreshCompat()
 	if dev := a.Manager.Active(); dev != nil {
 		a.State.DeviceInfo = dev.Info()
 		a.State.Telemetry = dev.Telemetry()
@@ -618,6 +675,11 @@ func (a *Application) callbacks() views.Callbacks {
 		OnConfirmIdentity:          a.ConfirmIdentity,
 
 		OnCheckFirmware:        a.CheckFirmware,
+		OnCheckDrivers:         a.refreshCompat,
+		OnCheckUpdates:         a.CheckForUpdates,
+		OnDownloadUpdate:       a.DownloadUpdate,
+		OnSetUpdateSettings:    a.SetUpdateSettings,
+		OnRunCompatAction:      a.RunCompatAction,
 		OnSetFirmwareAutoCheck: a.SetFirmwareAutoCheck,
 		OnSetFirmwareSection:   a.SetFirmwareSection,
 		OnSetDetailGroup:       a.SetDetailGroup,
@@ -632,6 +694,8 @@ func (a *Application) callbacks() views.Callbacks {
 func (a *Application) Draw(f *terminal.Frame, ev *driver.Event) bool {
 	a.drainEvents()
 	a.drainFirmware()
+	a.drainCompat()
+	a.syncUpdater()
 	a.drainCopies()
 
 	now := time.Now()
@@ -649,10 +713,17 @@ func (a *Application) Draw(f *terminal.Frame, ev *driver.Event) bool {
 
 	a.tickDiagnostics(now)
 
-	if a.State.AutoRotate && a.State.DeviceInfo.Connected {
-		a.State.ShowcasePhase += a.State.AutoRotateSpeed * dt
-		a.State.RotY = 22.0 * math.Sin(a.State.ShowcasePhase)
-		a.State.RotX = -20.0 + 5.0*math.Cos(a.State.ShowcasePhase*0.7)
+	s := a.State
+	s.StepCamera(dt)
+	if s.AutoRotate && (s.DeviceInfo.Connected || s.Gallery.Active) {
+		// Sway around whichever side (front or rear) is being inspected.
+		base := s.StageSpec().Front
+		if s.ViewingRear() {
+			base = s.StageSpec().Rear
+		}
+		s.ShowcasePhase += s.AutoRotateSpeed * dt
+		s.RotY = base.RotY + 22.0*math.Sin(s.ShowcasePhase)
+		s.RotX = base.RotX + 5.0*math.Cos(s.ShowcasePhase*0.7)
 	}
 
 	views.RenderDashboard(f, a.State, a.Dispatcher.Dispatch, a.callbacks())
@@ -667,6 +738,9 @@ func (a *Application) Run(ctx context.Context) error {
 	defer cancel()
 	a.ctx, a.started = runCtx, true
 	a.maybeAutoCheck()
+	// The application update check runs in the background after the UI is
+	// up; offline or slow networks never delay start-up.
+	a.Updater.CheckAsync(false)
 
 	go a.Manager.Start(runCtx)
 	go a.Dispatcher.Start(runCtx)
@@ -682,4 +756,139 @@ func (a *Application) Run(ctx context.Context) error {
 	a.suspendAllDiagnostics()
 	a.Dispatcher.FlushNow()
 	return err
+}
+
+// refreshCompat re-runs the read-only Driver & Compatibility analysis for
+// the active controller (on connect, transport change, or on request).
+func (a *Application) refreshCompat() {
+	s := a.State
+	dev := a.Manager.Active()
+	if dev == nil {
+		s.Compat, s.CompatReview = compat.Report{}, ""
+		return
+	}
+	s.Compat = compat.Analyze(a.Opts.CompatEnv, compat.Input{Desc: dev.Descriptor(), Caps: dev.Capabilities(), Info: dev.Info(), Simulated: a.isSimulated(s.ActiveDeviceKey)})
+	if _, ok := s.Compat.Action(s.CompatReview); !ok {
+		s.CompatReview = ""
+	}
+}
+
+// RunCompatAction executes an allowlisted remedy. It runs only for the action
+// the user is currently reviewing (the explicit approval step), never at
+// startup, and off the UI goroutine because polkit asks for a password.
+func (a *Application) RunCompatAction(id string) {
+	s := a.State
+	if s.CompatBusy || s.CompatReview != id {
+		return
+	}
+	act, ok := s.Compat.Action(id)
+	if !ok || act.Manual {
+		return
+	}
+	if id == compat.ActionUdevDualSense {
+		if err := compat.StageRule(); err != nil {
+			s.CompatStatus = err.Error()
+			return
+		}
+	}
+	s.CompatBusy = true
+	a.Logger.Info("COMPAT", "Running approved action %s", id)
+	env, run := a.Opts.CompatEnv, a.Opts.CompatRunner
+	go func() {
+		err := compat.Execute(env, run, act, true, func() bool { return env.Exists(compat.UdevRulePath) })
+		msg := "Done. Reconnect the controller to apply the change."
+		if err != nil {
+			msg = "The action did not complete: " + err.Error()
+		}
+		a.compatResults <- msg
+		limoni.Wakeup()
+	}()
+}
+
+func (a *Application) drainCompat() {
+	select {
+	case msg := <-a.compatResults:
+		a.State.CompatBusy = false
+		a.State.CompatStatus = msg
+		a.State.CompatReview = ""
+		a.Logger.Info("COMPAT", "%s", msg)
+		a.refreshCompat()
+	default:
+	}
+}
+
+func newUpdater(opts Options, prefs state.Preferences) *update.Manager {
+	settings := update.Settings{
+		Check:        prefs.UpdateChecks == nil || *prefs.UpdateChecks,
+		AutoDownload: prefs.UpdateAutoDownload,
+		Channel:      update.Stable,
+	}
+	if prefs.UpdateChannel == string(update.Prerelease) {
+		settings.Channel = update.Prerelease
+	}
+	exe, err := os.Executable()
+	if err == nil {
+		if resolved, err := filepath.EvalSymlinks(exe); err == nil {
+			exe = resolved
+		}
+	}
+	m := update.NewManager(opts.Version, settings, prefs.UpdateLastCheck, filepath.Join(system.DataDir(), "updates"), exe)
+	if opts.UpdateSource != nil {
+		m.Source = *opts.UpdateSource
+	}
+	return m
+}
+
+// syncUpdater mirrors the updater into AppState and announces real state
+// changes only: a release found, an update downloaded and verified, or a
+// discarded download. It never claims an update is installed.
+func (a *Application) syncUpdater() {
+	s := a.State
+	snap := a.Updater.Snapshot()
+	s.Update = snap
+	if snap.CheckedAt.After(a.updateChecked) {
+		a.updateChecked = snap.CheckedAt
+		a.savePrefs()
+	}
+	if snap.Status == a.updateSeen {
+		return
+	}
+	a.updateSeen = snap.Status
+	if s.Toasts == nil {
+		return
+	}
+	switch snap.Status {
+	case update.StatusAvailable:
+		s.Toasts.Info(i18n.T("Update"), i18n.T("A new TuiSense version is available."))
+	case update.StatusReady:
+		s.Toasts.Success(i18n.T("Update"), i18n.T("A new TuiSense version is ready. It will be applied when you restart the app."))
+	case update.StatusFailed:
+		s.Toasts.Warning(i18n.T("Update"), i18n.T("The update could not be verified and was discarded. The installed version is unchanged."))
+	}
+}
+
+// CheckForUpdates runs a manual application update check.
+func (a *Application) CheckForUpdates() { a.Updater.CheckAsync(true) }
+
+// DownloadUpdate stages the update found by the last check.
+func (a *Application) DownloadUpdate() { a.Updater.DownloadAsync() }
+
+// SetUpdateSettings changes and persists the update preferences.
+func (a *Application) SetUpdateSettings(us update.Settings) {
+	a.Updater.SetSettings(us)
+	a.State.Update = a.Updater.Snapshot()
+	a.savePrefs()
+}
+
+// ApplyStagedUpdate installs a verified, staged update after the UI exited
+// normally. It returns a message for the terminal ("" = nothing to do).
+func (a *Application) ApplyStagedUpdate() string {
+	installed, err := a.Updater.ApplyPending(update.RunVersion)
+	switch {
+	case err != nil:
+		return "TuiSense update was not applied: " + err.Error() + "\nThe installed version is unchanged."
+	case installed != "":
+		return "TuiSense was updated to v" + installed + ". The previous version is kept for recovery (tuisense update --rollback)."
+	}
+	return ""
 }

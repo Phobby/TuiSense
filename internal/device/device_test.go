@@ -9,8 +9,8 @@ import (
 
 func TestCapabilitySetLevelsAndFeatures(t *testing.T) {
 	caps := NewCapabilitySet(
-		CapabilitySpec{ID: CapLighting, Support: Full, Features: []Feature{FeatLightbarRGB, FeatPlayerLEDs}},
-		CapabilitySpec{ID: CapAudio, Support: Limited, Features: []Feature{FeatHeadset}},
+		CapabilitySpec{ID: CapLighting, Support: Full, Access: AccessConfigDevice, Features: []Feature{FeatLightbarRGB, FeatPlayerLEDs}},
+		CapabilitySpec{ID: CapAudio, Support: Limited, Access: AccessTest, Features: []Feature{FeatHeadset}},
 	)
 	if caps.Level(CapMotion) != Unsupported || caps.Supports(CapMotion) {
 		t.Fatalf("absent capability must be Unsupported")
@@ -32,7 +32,7 @@ func TestCapabilitySetLevelsAndFeatures(t *testing.T) {
 }
 
 func TestAvailabilityCombinesStateAndSupport(t *testing.T) {
-	caps := NewCapabilitySet(CapabilitySpec{ID: CapHaptics, Support: Full})
+	caps := NewCapabilitySet(CapabilitySpec{ID: CapHaptics, Support: Full, Access: AccessTest})
 	connected := Info{Connected: true}
 
 	if lvl, _ := Availability(connected, caps, CapHaptics); lvl != Full {
@@ -130,5 +130,47 @@ func TestAxisNormalization(t *testing.T) {
 	l := InputLayout{StickRange: ds, StickAxes: [4]AxisRange{3: wide}}
 	if l.StickAxis(0) != ds || l.StickAxis(3) != wide {
 		t.Error("per-axis ranges override the shared range")
+	}
+}
+
+// Physical presence and TuiSense's ability to use a feature are separate facts.
+func TestPresenceAndAccessAreSeparate(t *testing.T) {
+	caps := NewCapabilitySet(
+		AbsentSpec(CapBattery),
+		InaccessibleSpec(CapMotion, RequiresBackend, "separate node"),
+		CapabilitySpec{ID: CapSticks, Support: Full, Access: AccessRead | AccessTest | AccessPreview},
+		CapabilitySpec{ID: CapLighting, Support: Full}, // declared without any access
+	)
+	for c, want := range map[Capability]SupportState{
+		CapBattery: StateHardwareAbsent, CapMotion: StateDetected, CapSticks: StatePreviewOnly, CapLighting: StateReadOnly,
+	} {
+		if got := caps.Spec(c).State(); got != want && !(c == CapLighting && got == StateDetected) {
+			t.Errorf("%s: state %s, want %s", c, got, want)
+		}
+	}
+	for _, c := range []Capability{CapBattery, CapMotion, CapLighting} {
+		if caps.Supports(c) {
+			t.Errorf("%s must not be usable", c)
+		}
+	}
+	if caps.Spec(CapMotion).Physical() != Present || caps.Spec(CapBattery).Physical() != Absent {
+		t.Fatal("presence lost")
+	}
+	if !caps.HasAccess(CapSticks, AccessPreview) || caps.HasAccess(CapSticks, AccessConfigSoftware) {
+		t.Fatal("a preview must never count as a software configuration")
+	}
+}
+
+func TestForConnectionNarrowsTransportBoundCapabilities(t *testing.T) {
+	caps := NewCapabilitySet(CapabilitySpec{ID: CapAudio, Support: Full, Access: AccessTest, Transports: []ConnectionType{ConnUSB}})
+	if !caps.ForConnection(ConnUSB).Supports(CapAudio) || !caps.ForConnection(ConnUSBWired).Supports(CapAudio) {
+		t.Fatal("audio must stay available over USB")
+	}
+	bt := caps.ForConnection(ConnBluetooth).Spec(CapAudio)
+	if bt.Accessible() || bt.Requires != RequiresConnection || bt.Physical() != Present {
+		t.Fatalf("over Bluetooth audio is present but needs another connection: %+v", bt)
+	}
+	if !caps.Supports(CapAudio) {
+		t.Fatal("ForConnection must not mutate the original set")
 	}
 }

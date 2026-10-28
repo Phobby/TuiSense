@@ -41,7 +41,7 @@ func TestIdentify(t *testing.T) {
 
 func TestDescriptorShowsOnlyRealHardware(t *testing.T) {
 	m := gamepad.Mapping{}
-	d := Describe(m, evdev.InputDevice{Vendor: 0x045e, Product: 0x028e}, false)
+	d := Describe(m, evdev.InputDevice{Vendor: 0x045e, Product: 0x028e}, gamepad.Runtime{})
 	if d.ModelID != ModelID || d.Family == "xbox" || d.VisualID != "msi_gc20" || d.Brand != "MSI" {
 		t.Fatalf("unexpected MSI descriptor %+v", d)
 	}
@@ -61,7 +61,7 @@ func TestDescriptorShowsOnlyRealHardware(t *testing.T) {
 	if len(d.ModeGuide) != 4 {
 		t.Fatal("the documented four input modes should be listed")
 	}
-	if d2 := Describe(m, evdev.InputDevice{}, true); !d2.Capabilities.Supports(device.CapHaptics) || len(d2.Actions) != 1 {
+	if d2 := Describe(m, evdev.InputDevice{}, gamepad.RuntimeWith(true)); !d2.Capabilities.Supports(device.CapHaptics) || len(d2.Actions) != 1 {
 		t.Fatal("rumble support should enable the vibration capability and test action")
 	}
 }

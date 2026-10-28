@@ -54,7 +54,7 @@ func TestOnlyDevicesWithARealImplementationAreSupported(t *testing.T) {
 		t.Fatal("the Xbox test device has no firmware check")
 	}
 	// MSI Force GC20 V2: no capability, no provider.
-	desc := msigc20.Describe(gamepad.Mapping{}, evdev.InputDevice{Vendor: 0x0db0, Product: 0x1234}, false)
+	desc := msigc20.Describe(gamepad.Mapping{}, evdev.InputDevice{Vendor: 0x0db0, Product: 0x1234}, gamepad.Runtime{})
 	sub := firmware.Subject{Key: "msi", Descriptor: desc, Caps: desc.Capabilities,
 		Info: device.Info{VendorID: 0x0db0, ProductID: 0x1234, Connected: true}}
 	if svc.Supported(sub) {

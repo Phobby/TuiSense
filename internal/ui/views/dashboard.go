@@ -35,30 +35,15 @@ func RenderDashboard(f *terminal.Frame, s *state.AppState, dispatch func(device.
 		}
 	}
 
-	grid := ui.ComputeLayout(total, s.ActivePanel == state.PanelDiagnostics)
+	grid := ui.ComputeLayout(total, s.ActivePanel == state.PanelDiagnostics && !s.Gallery.Active)
 	pc := PanelContext{S: s, Dispatch: dispatch, CB: cb}
 
 	renderHeader(f, grid.HeaderArea, s, cb)
-	renderPanelTabs(f, grid.TabsArea, s)
-
-	if s.ActivePanel == state.PanelOverview || s.ActivePanel == state.PanelDiagnostics {
-		uiwidgets.RenderControllerStage(f, grid.Stage3DArea, s, uiwidgets.StageCallbacks{OnSelectRegion: s.SelectRegion})
-		if s.ActivePanel == state.PanelOverview {
-			if s.ActiveDeviceKey != "" {
-				renderHome(f, grid.InspectorArea, pc)
-			}
-		} else {
-			RenderPanel(f, grid.InspectorArea, pc)
-		}
+	if s.Gallery.Active {
+		renderGallery(f, grid, s)
 	} else {
-		area := cell.NewRect(total.X, total.Y+3, total.Width, total.Height-4)
-		area = renderSubnav(f, area, s)
-		if total.Width >= 140 && state.PrimaryPanel(s.ActivePanel) == state.PanelCustomize && s.ActivePanel != state.PanelCustomize {
-			stage := cell.NewRect(area.X, area.Y, area.Width-72, area.Height)
-			uiwidgets.RenderControllerStage(f, stage, s, uiwidgets.StageCallbacks{OnSelectRegion: s.SelectRegion})
-			area = cell.NewRect(stage.X+stage.Width, area.Y, 72, area.Height)
-		}
-		RenderPanel(f, area, pc)
+		renderPanelTabs(f, grid.TabsArea, s)
+		renderBody(f, total, grid, pc)
 	}
 
 	uiwidgets.RenderHelpBar(f, grid.FooterArea, s)
@@ -77,6 +62,29 @@ func RenderDashboard(f *terminal.Frame, s *state.AppState, dispatch func(device.
 		s.Toasts.Update(time.Now())
 		s.Toasts.Draw(cell.NewContext(total, p.CanvasStyle()), f.Buffer)
 	}
+}
+
+// renderBody draws the controller stage and the active panel.
+func renderBody(f *terminal.Frame, total cell.Rect, grid ui.DashboardLayout, pc PanelContext) {
+	s := pc.S
+	stageCB := uiwidgets.StageCallbacks{OnSelectComponent: s.SelectComponent}
+	if s.ActivePanel == state.PanelOverview || s.ActivePanel == state.PanelDiagnostics {
+		uiwidgets.RenderControllerStage(f, grid.Stage3DArea, s, stageCB)
+		if s.ActivePanel == state.PanelDiagnostics {
+			RenderPanel(f, grid.InspectorArea, pc)
+		} else if s.ActiveDeviceKey != "" {
+			renderHome(f, grid.InspectorArea, pc)
+		}
+		return
+	}
+	area := cell.NewRect(total.X, total.Y+3, total.Width, total.Height-4)
+	area = renderSubnav(f, area, s)
+	if total.Width >= 140 && state.PrimaryPanel(s.ActivePanel) == state.PanelCustomize && s.ActivePanel != state.PanelCustomize {
+		stage := cell.NewRect(area.X, area.Y, area.Width-72, area.Height)
+		uiwidgets.RenderControllerStage(f, stage, s, stageCB)
+		area = cell.NewRect(stage.X+stage.Width, area.Y, 72, area.Height)
+	}
+	RenderPanel(f, area, pc)
 }
 
 func openSelector(s *state.AppState) {
@@ -115,11 +123,16 @@ func renderHeader(f *terminal.Frame, area cell.Rect, s *state.AppState, cb Callb
 	if len(s.Devices) > 1 {
 		pill += " ▾"
 	}
+	if s.Gallery.Active {
+		// The connected device stays active underneath; the header says so.
+		pill = " ◇ " + i18n.T("Controller Gallery") + " "
+		accent = p.AccentBlue
+	}
 	pw := uint16(cell.StringWidth(pill))
 	if x+pw < area.X+area.Width {
 		rect := cell.NewRect(x, area.Y, pw, 1)
 		f.Buffer.SetStringWithin(x, area.Y, pill, cell.Style{Fg: accent, Bg: p.BgElevated, Modifier: cell.ModifierBold}, pw)
-		if len(s.Devices) > 1 {
+		if len(s.Devices) > 1 && !s.Gallery.Active {
 			f.RegisterClickHandler(rect, func(_ driver.MouseEvent) { openSelector(s) })
 		}
 		f.RegisterAccessibility(accessibility.AccessibilityNode{
@@ -143,8 +156,16 @@ func renderHeader(f *terminal.Frame, area cell.Rect, s *state.AppState, cb Callb
 	for _, sg := range segs {
 		width += uint16(cell.StringWidth(sg.label))
 	}
-	mx := area.X + area.Width - width - 2
-	if mx <= x+1 {
+	// The installed version sits in the top-right corner, small and muted.
+	ver := displayVersion(s.AppVersion)
+	vw := uint16(cell.StringWidth(ver))
+	if area.Width > vw+2 {
+		f.Buffer.SetStringWithin(area.X+area.Width-vw-1, area.Y, ver, cell.Style{Fg: p.FgMuted, Bg: p.BgElevated}, vw)
+		f.RegisterAccessibility(accessibility.AccessibilityNode{ID: "app_version", Role: accessibility.RoleGeneric, Label: "TuiSense " + ver,
+			Bounds: cell.NewRect(area.X+area.Width-vw-1, area.Y, vw, 1)})
+	}
+	mx := area.X + area.Width - width - vw - 3
+	if mx <= x+1 || mx > area.X+area.Width {
 		return
 	}
 	for _, sg := range segs {

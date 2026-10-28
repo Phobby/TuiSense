@@ -33,7 +33,10 @@ func reportState() *state.AppState {
 func TestClipboardReportFormattingMissingValuesAndPrivacy(t *testing.T) {
 	s := reportState()
 	report := BuildClipboardReport(s, false, "test", s.LastErrorAt)
-	for _, want := range []string{"TuiSense Diagnostic Report", "Universal Controller", "Example", "0x0630", "0x00000413", "3.20 %", "Possible drift detected", "Release sticks before measuring", "Capability not reported", "Not measured", "Unavailable: not reported", "2026-10-25T10:00:00Z", "0x0123", "/dev/input/event7"} {
+	if strings.Contains(report, "Capability not reported") {
+		t.Errorf("hardware the controller does not have must not appear in reports:\n%s", report)
+	}
+	for _, want := range []string{"TuiSense Diagnostic Report", "Universal Controller", "Example", "0x0630", "0x00000413", "3.20 %", "Possible drift detected", "Release sticks before measuring", "Not measured", "Unavailable: not reported", "2026-10-25T10:00:00Z", "0x0123", "/dev/input/event7"} {
 		if !strings.Contains(report, want) {
 			t.Errorf("missing %q:\n%s", want, report)
 		}

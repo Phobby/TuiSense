@@ -13,6 +13,8 @@ const (
 	FirmwareGuide   FirmwareSection = "guide"
 	FirmwareLinks   FirmwareSection = "links"
 	FirmwareDetails FirmwareSection = "details"
+	// FirmwareCompat is the Driver & Compatibility section.
+	FirmwareCompat FirmwareSection = "compat"
 )
 
 // FirmwareView is the Device Details panel's snapshot for the active device:

@@ -38,7 +38,13 @@ type Backend struct {
 	dropped  uint64
 	readErrs uint64
 
-	rumble   bool
+	rumble  bool
+	battery string // kernel power_supply directory ("" = none)
+	batAt   time.Time
+	bat     struct {
+		pct            int
+		charging, full bool
+	}
 	effectID int16
 	stopAt   time.Time
 }
@@ -72,12 +78,25 @@ func OpenBackend(f Discovered, logger *logging.Logger) (*Backend, error) {
 	}
 	b.m = InferMapping(d, abs)
 	b.rumble = b.dev != nil && b.dev.Writable && d.HasFF(evdev.FFRumble)
+	b.battery = FindPowerSupply(d.SysfsPath)
+	b.bat.pct = -1
+	if b.battery != "" {
+		if pct, charging, full, ok := ReadPowerSupply(b.battery); ok {
+			b.bat.pct, b.bat.charging, b.bat.full = pct, charging, full
+		}
+		b.batAt = time.Now()
+	}
 
 	res := f.Resolution
+	rt := Runtime{Rumble: b.rumble, RumbleFF: d.HasFF(evdev.FFRumble), Battery: b.battery != "", Readable: b.dev != nil, Conn: connectionFor(f)}
+	if res.Model != nil && res.Model.Spec != nil && len(res.Model.Spec.Hardware.RearInputs) > 0 {
+		// Rear inputs are polled like any other button once mapped.
+		rt.RearMapped = b.m.MapExtra(d, res.Model.Spec.Hardware.RearInputs)
+	}
 	if res.Model != nil {
-		b.desc = res.Model.Describe(b.m, d, b.rumble)
+		b.desc = res.Model.Describe(b.m, d, rt)
 	} else {
-		b.desc = GenericDescriptor(b.m, d, b.rumble)
+		b.desc = GenericDescriptor(b.m, d, rt)
 	}
 	b.fillInfo(f, abs)
 	b.tel = b.snapshot(time.Now())
@@ -90,10 +109,7 @@ func OpenBackend(f Discovered, logger *logging.Logger) (*Backend, error) {
 
 func (b *Backend) fillInfo(f Discovered, abs map[uint16]evdev.AbsInfo) {
 	d, res := f.Dev, f.Resolution
-	conn := device.ConnUSBWired
-	if d.Bus == evdev.BusBluetooth {
-		conn = device.ConnBluetooth
-	}
+	conn := connectionFor(f)
 	b.info.ID = d.EventName
 	b.info.Name = d.Name
 	b.info.Model = b.desc.DisplayName
@@ -184,6 +200,25 @@ func (b *Backend) fillInfo(f Discovered, abs map[uint16]evdev.AbsInfo) {
 	}
 }
 
+// connectionOf maps the input bus to a transport. A proprietary 2.4 GHz
+// dongle enumerates as USB; known dongle IDs are reported by the model.
+func connectionOf(d evdev.InputDevice) device.ConnectionType {
+	if d.Bus == evdev.BusBluetooth {
+		return device.ConnBluetooth
+	}
+	return device.ConnUSBWired
+}
+
+// connectionFor prefers the transport a model knows from its dongle IDs.
+func connectionFor(f Discovered) device.ConnectionType {
+	if m := f.Resolution.Model; m != nil && m.Spec != nil {
+		if c := m.Spec.Connection(f.Dev); c != "" {
+			return c
+		}
+	}
+	return connectionOf(f.Dev)
+}
+
 func (b *Backend) Descriptor() device.Descriptor { return b.desc }
 
 func (b *Backend) Info() device.Info {
@@ -255,11 +290,14 @@ func (b *Backend) snapshot(now time.Time) device.Telemetry {
 	l := b.desc.Inputs
 	s := b.rawSample(now, false)
 	tel := device.Telemetry{
-		Buttons:   s.Buttons,
-		Raw:       device.RawInput{Valid: true, Sticks: s.Sticks, Triggers: s.Triggers},
-		UpdatedAt: b.tel.UpdatedAt,
-		PacketsRx: b.syns,
-		PacketsTx: b.tel.PacketsTx,
+		BatteryPercent: b.bat.pct,
+		Charging:       b.bat.charging,
+		FullyCharged:   b.bat.full,
+		Buttons:        s.Buttons,
+		Raw:            device.RawInput{Valid: true, Sticks: s.Sticks, Triggers: s.Triggers},
+		UpdatedAt:      b.tel.UpdatedAt,
+		PacketsRx:      b.syns,
+		PacketsTx:      b.tel.PacketsTx,
 	}
 	if l.HasSticks() {
 		n := func(i int) float64 { return l.StickAxis(i).NormalizeBipolar(float64(s.Sticks[i])) }
@@ -308,6 +346,12 @@ func (b *Backend) Poll(_ context.Context) (device.Telemetry, error) {
 		return b.tel, nil
 	}
 	b.expireRumble(now)
+	if b.battery != "" && now.Sub(b.batAt) > 5*time.Second {
+		b.batAt = now
+		if pct, charging, full, ok := ReadPowerSupply(b.battery); ok {
+			b.bat.pct, b.bat.charging, b.bat.full = pct, charging, full
+		}
+	}
 	events, err := b.dev.ReadEvents(maxEventsPerPoll)
 	var samples []device.RawSample
 	var latched device.ButtonSet

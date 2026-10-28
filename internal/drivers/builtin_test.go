@@ -36,23 +36,36 @@ func TestDescriptorsAreConsistent(t *testing.T) {
 		if d.ModelID == "" || d.Family == "" || d.ShortName == "" || d.VisualID == "" {
 			t.Errorf("%s: incomplete identity", d.ModelID)
 		}
-		v := visual.Lookup(d.VisualID)
-		if v == nil {
+		spec, ok := visual.Spec(d.VisualID)
+		if !ok {
 			t.Fatalf("%s: no visual registered for %q", d.ModelID, d.VisualID)
 		}
 		anchors := map[device.RegionID]bool{}
-		for _, a := range v.Anchors() {
-			anchors[a.Region] = true
+		for _, c := range spec.Components {
+			if c.Pickable() {
+				anchors[c.Region] = true
+			}
 		}
 		for _, reg := range d.Regions {
 			if _, ok := state.PanelForCapability(reg.Capability); !ok {
 				t.Errorf("%s: region %s capability %s has no panel", d.ModelID, reg.ID, reg.Capability)
 			}
 			if !anchors[reg.ID] {
-				t.Errorf("%s: region %s has no 3D anchor on visual %s", d.ModelID, reg.ID, d.VisualID)
+				t.Errorf("%s: region %s has no selectable component on visual %s", d.ModelID, reg.ID, d.VisualID)
 			}
 			if reg.Badge == "" || reg.Label == "" {
 				t.Errorf("%s: region %s missing labels", d.ModelID, reg.ID)
+			}
+		}
+		// Every button the descriptor declares must exist as a bound component,
+		// so live input can light it up.
+		for _, b := range d.Inputs.Buttons {
+			found := false
+			for _, c := range spec.Components {
+				found = found || (c.Bound && c.Button == b.ID)
+			}
+			if !found {
+				t.Errorf("%s: button %q has no component on visual %s", d.ModelID, b.Label, d.VisualID)
 			}
 		}
 		for c := range d.Capabilities {
@@ -141,5 +154,36 @@ func TestExplicitDualSenseTestDeviceIsOptionalAndSimulated(t *testing.T) {
 	}
 	if _, ok := NewBuiltinRegistry(RegistryOptions{}).Virtual("test:dualsense"); ok {
 		t.Fatal("test device must respect disabled test devices")
+	}
+}
+
+// TestVisualHardwareLinks keeps the gallery honest: a visual may only claim
+// hardware support for real driver models that actually render with it, and
+// the two production hardware visuals must keep their links.
+func TestVisualHardwareLinks(t *testing.T) {
+	hw := map[string]device.Descriptor{}
+	for _, drv := range NewBuiltinRegistry(RegistryOptions{Hardware: true}).Drivers() {
+		for _, d := range drv.Models() {
+			hw[d.ModelID] = d
+		}
+	}
+	claimed := map[string]string{}
+	for _, spec := range visual.Gallery() {
+		for _, id := range spec.HardwareModelIDs {
+			d, ok := hw[id]
+			if !ok {
+				t.Errorf("visual %s claims unknown hardware model %s", spec.ID, id)
+				continue
+			}
+			if d.VisualID != spec.ID {
+				t.Errorf("visual %s claims %s, which renders with %s", spec.ID, id, d.VisualID)
+			}
+			claimed[id] = spec.ID
+		}
+	}
+	for id, want := range map[string]string{"sony.dualsense": "dualsense", "sony.dualsense_edge": "dualsense_edge", "msi.force_gc20_v2": "msi_gc20"} {
+		if claimed[id] != want {
+			t.Errorf("hardware model %s must be linked to visual %s, got %q", id, want, claimed[id])
+		}
 	}
 }
