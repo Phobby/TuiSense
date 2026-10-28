@@ -123,7 +123,8 @@ trap 'rm -rf "$tmp"' EXIT INT TERM
 
 # --- release ----------------------------------------------------------------
 if [ -z "$VERSION" ]; then
-    meta="$(fetch_stdout "$API_URL/repos/$REPO/releases/latest")" || die "could not reach the GitHub release API"
+    meta="$(fetch_stdout "$API_URL/repos/$REPO/releases/latest" 2>/dev/null)" \
+        || die "no published TuiSense release was found (or GitHub could not be reached). See https://github.com/$REPO/releases"
     VERSION="$(printf '%s' "$meta" | sed -n 's/.*"tag_name"[[:space:]]*:[[:space:]]*"v\{0,1\}\([^"]*\)".*/\1/p' | head -n 1)"
     [ -n "$VERSION" ] || die "could not determine the latest release"
 fi

@@ -83,7 +83,11 @@ New-Item -ItemType Directory -Path $tmp | Out-Null
 try {
     # --- release ------------------------------------------------------------
     if (-not $Version) {
-        $meta = Invoke-RestMethod -UseBasicParsing -Uri "$ApiUrl/repos/$Repo/releases/latest" -Headers @{ 'User-Agent' = 'tuisense-installer' }
+        try {
+            $meta = Invoke-RestMethod -UseBasicParsing -Uri "$ApiUrl/repos/$Repo/releases/latest" -Headers @{ 'User-Agent' = 'tuisense-installer' }
+        } catch {
+            Fail "no published TuiSense release was found (or GitHub could not be reached). See https://github.com/$Repo/releases"
+        }
         $Version = $meta.tag_name
     }
     $Version = $Version.TrimStart('v')
