@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"github.com/Phobby/TuiSense/internal/clipboard"
 	"github.com/Phobby/TuiSense/internal/compat"
+	"github.com/Phobby/TuiSense/internal/demo"
 	"github.com/Phobby/TuiSense/internal/i18n"
 	"github.com/Phobby/TuiSense/internal/update"
 	"github.com/Phobby/TuiSense/internal/version"
@@ -66,6 +67,11 @@ type Options struct {
 	// local mock); Updater replaces the whole manager.
 	UpdateSource *update.Source
 	Updater      *update.Manager
+	// WebDemo runs the normal interface on simulated controllers only (see
+	// webdemo.go): no hardware driver is registered and every host-facing
+	// action — updates, driver installation, audio devices, network checks,
+	// opening a browser — is disabled.
+	WebDemo bool
 }
 
 // Application coordinates AppState, the device session, the dispatcher, and the Limoni render loop.
@@ -134,6 +140,9 @@ func New(opts Options) *Application {
 	if opts.Version == "" {
 		opts.Version = version.String()
 	}
+	if opts.WebDemo {
+		opts = webDemoOptions(opts)
+	}
 	logger := logging.New(500)
 	s := state.NewAppState(opts.ProfileDir, logger)
 
@@ -146,7 +155,7 @@ func New(opts Options) *Application {
 		diagSessions: map[string]*diag.Session{},
 		simAudio:     map[string]*audio.Simulated{},
 	}
-	if opts.AudioBackend == nil && runtime.GOOS == "linux" {
+	if opts.AudioBackend == nil && runtime.GOOS == "linux" && !opts.WebDemo {
 		a.Opts.AudioBackend = audio.NewALSA()
 	}
 
@@ -181,10 +190,14 @@ func New(opts Options) *Application {
 	}
 	a.Firmware = firmware.NewService(firmware.NewStore(opts.ConfigDir), providers...)
 	a.fwResults = map[string]firmware.Result{}
-	a.fwAutoCheck = prefs.FirmwareAutoCheck == nil || *prefs.FirmwareAutoCheck
+	a.fwAutoCheck = (prefs.FirmwareAutoCheck == nil || *prefs.FirmwareAutoCheck) && !opts.WebDemo
 	s.AppVersion = opts.Version
+	s.WebDemo = opts.WebDemo
 	a.Updater = opts.Updater
 	if a.Updater == nil {
+		if opts.WebDemo {
+			prefs.UpdateChecks, prefs.UpdateAutoDownload = new(bool), false
+		}
 		a.Updater = newUpdater(opts, prefs)
 	}
 	a.Updater.OnChange = limoni.Wakeup
@@ -210,10 +223,14 @@ func New(opts Options) *Application {
 		}
 	}
 
+	preferred := prefs.LastDevice
+	if opts.WebDemo && !demo.IsDemoKey(preferred) {
+		preferred = demo.DefaultKey
+	}
 	a.Manager = session.NewManager(reg, session.Options{
 		ForceMock:    opts.ForceMock,
 		AllowMock:    opts.AllowMock,
-		PreferredKey: prefs.LastDevice,
+		PreferredKey: preferred,
 	}, logger, func(ev session.DeviceEvent) {
 		// Device events arrive on the session goroutine; they are applied to
 		// AppState on the render goroutine at the start of the next frame.
@@ -781,18 +798,23 @@ func (a *Application) Run(ctx context.Context) error {
 	a.maybeAutoCheck()
 	// The application update check runs in the background after the UI is
 	// up; offline or slow networks never delay start-up.
-	a.Updater.CheckAsync(false)
+	if !a.Opts.WebDemo {
+		a.Updater.CheckAsync(false)
+	}
 
 	go a.Manager.Start(runCtx)
 	go a.Dispatcher.Start(runCtx)
 
-	err := limoni.RunWithContext(
-		runCtx,
-		a.Draw,
+	opts := []limoni.AppOption{
 		limoni.WithTitle("TuiSense — Controller Control Center"),
 		limoni.WithFPS(a.Opts.TargetFPS),
-		limoni.WithSuspend(),
-	)
+	}
+	if !a.Opts.WebDemo {
+		// The web demo runs without a shell: a suspended process could
+		// never be resumed, so Ctrl+Z stays a normal key there.
+		opts = append(opts, limoni.WithSuspend())
+	}
+	err := limoni.RunWithContext(runCtx, a.Draw, opts...)
 	// Never leave vibration, trigger resistance, or audio running on exit.
 	a.suspendAllDiagnostics()
 	a.Dispatcher.FlushNow()
@@ -820,6 +842,11 @@ func (a *Application) refreshCompat() {
 func (a *Application) RunCompatAction(id string) {
 	s := a.State
 	if s.CompatBusy || s.CompatReview != id {
+		return
+	}
+	if a.Opts.WebDemo {
+		s.CompatStatus = webDemoDisabled
+		s.CompatReview = ""
 		return
 	}
 	act, ok := s.Compat.Action(id)
@@ -913,13 +940,24 @@ func (a *Application) syncUpdater() {
 }
 
 // CheckForUpdates runs a manual application update check.
-func (a *Application) CheckForUpdates() { a.Updater.CheckAsync(true) }
+func (a *Application) CheckForUpdates() {
+	if !a.Opts.WebDemo {
+		a.Updater.CheckAsync(true)
+	}
+}
 
 // DownloadUpdate stages the update found by the last check.
-func (a *Application) DownloadUpdate() { a.Updater.DownloadAsync() }
+func (a *Application) DownloadUpdate() {
+	if !a.Opts.WebDemo {
+		a.Updater.DownloadAsync()
+	}
+}
 
 // SetUpdateSettings changes and persists the update preferences.
 func (a *Application) SetUpdateSettings(us update.Settings) {
+	if a.Opts.WebDemo {
+		return
+	}
 	a.Updater.SetSettings(us)
 	a.State.Update = a.Updater.Snapshot()
 	a.savePrefs()
@@ -928,6 +966,9 @@ func (a *Application) SetUpdateSettings(us update.Settings) {
 // ApplyStagedUpdate installs a verified, staged update after the UI exited
 // normally. It returns a message for the terminal ("" = nothing to do).
 func (a *Application) ApplyStagedUpdate() string {
+	if a.Opts.WebDemo {
+		return ""
+	}
 	installed, err := a.Updater.ApplyPending(update.RunVersion)
 	switch {
 	case err != nil:

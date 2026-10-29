@@ -191,7 +191,15 @@ func renderHeader(f *terminal.Frame, area cell.Rect, s *state.AppState, cb Callb
 	// Clicking it opens Settings, where the update details live.
 	ver := displayVersion(s.AppVersion)
 	label := ver
-	if badge := updateBadge(s.Update); badge != "" {
+	if s.WebDemo {
+		// The browser demo says so quietly where the update state would be.
+		for _, l := range []string{i18n.T("WEB DEMO — SIMULATED CONTROLLERS") + " · " + ver, i18n.T("WEB DEMO") + " · " + ver} {
+			label = l
+			if area.X+area.Width >= x+width+uint16(cell.StringWidth(label))+6 {
+				break
+			}
+		}
+	} else if badge := updateBadge(s.Update); badge != "" {
 		label = badge + "  " + ver
 		if area.X+area.Width < x+width+uint16(cell.StringWidth(label))+6 {
 			label = ver // too narrow: keep the mode switch visible

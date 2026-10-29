@@ -145,13 +145,14 @@ func (m *Manager) attachVirtualLocked(v device.VirtualDevice) *entry {
 	return e
 }
 
-// defaultActiveLocked picks: preferred → first hardware → first mock → none.
+// defaultActiveLocked picks: preferred → first hardware → first mock →
+// first web-demo simulation → none.
 // Test devices are never auto-selected; the user chooses them explicitly.
 func (m *Manager) defaultActiveLocked() string {
 	if m.opts.PreferredKey != "" && m.findLocked(m.opts.PreferredKey) != nil {
 		return m.opts.PreferredKey
 	}
-	for _, src := range []device.Source{device.SourceHardware, device.SourceMock} {
+	for _, src := range []device.Source{device.SourceHardware, device.SourceMock, device.SourceSimulated} {
 		for _, e := range m.entries {
 			if e.source == src {
 				return e.key
