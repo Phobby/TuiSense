@@ -316,7 +316,8 @@ const hoverFade = 120 * time.Millisecond
 // enter and out on leave. It works from the frame's semantic tree, so every
 // button, tab and checkbox gets it, including those inside scrolled panels.
 func renderHover(f *terminal.Frame, s *state.AppState, first int, now time.Time) {
-	nodes := f.Accessibility[min(first, len(f.Accessibility)):]
+	tree := f.AccessibilityTree()
+	nodes := tree[min(first, len(tree)):]
 	id, area := "", cell.Rect{}
 	if s.PointerIn {
 		// The last node drawn is on top.

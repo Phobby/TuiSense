@@ -51,10 +51,9 @@ func RenderDashboard(f *terminal.Frame, s *state.AppState, dispatch func(device.
 
 	uiwidgets.RenderHelpBar(f, grid.FooterArea, s)
 	// Under an open dialog only the dialog's own controls take hover.
-	firstControl := len(f.Accessibility)
-	overlay := s.ShowDeviceSelector || s.ShowHelp || s.ShowCopyFallback || s.ShowQuitConfirm
-	if !overlay {
-		firstControl = 0
+	firstControl := 0
+	if s.ShowDeviceSelector || s.ShowHelp || s.ShowCopyFallback || s.ShowQuitConfirm {
+		firstControl = len(f.AccessibilityTree())
 	}
 
 	if s.ShowDeviceSelector {
