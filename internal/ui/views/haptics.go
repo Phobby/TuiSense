@@ -7,7 +7,6 @@ import (
 
 	"github.com/Phobby/TuiSense/internal/device"
 	"github.com/Phobby/TuiSense/internal/state"
-	uiwidgets "github.com/Phobby/TuiSense/internal/ui/widgets"
 	"github.com/thebanri/limoni/core/cell"
 	"github.com/thebanri/limoni/core/terminal"
 	"github.com/thebanri/limoni/widgets"
@@ -44,7 +43,7 @@ func RenderHapticsPanel(f *terminal.Frame, area cell.Rect, s *state.AppState, di
 	}
 	y++
 
-	labelW := uint16(19)
+	labelW := sliderColumn(4, i18n.T("Master Gain:"), i18n.T("Left Motor:"), i18n.T("Right Motor:"), i18n.T("LT Impulse:"), i18n.T("RT Impulse:"))
 	sliderW := inner.Width - labelW - 2
 	if sliderW < 8 {
 		sliderW = 8
@@ -61,7 +60,7 @@ func RenderHapticsPanel(f *terminal.Frame, area cell.Rect, s *state.AppState, di
 
 	// Master Haptic Intensity (0..100%)
 	if y < inner.Y+inner.Height {
-		f.Buffer.SetStringWithin(inner.X, y, i18n.Tf("Master Gain:   %3d%%", s.Config.Haptics.MasterIntensity), p.LabelStyle(), labelW)
+		sliderLabel(f, cell.NewRect(inner.X, y, labelW, 1), s, i18n.T("Master Gain:"), fmt.Sprintf("%d%%", s.Config.Haptics.MasterIntensity))
 		f.RenderWidget(widgets.Slider{
 			ID:           "slider_hap_master",
 			State:        s.MasterHapSlider,
@@ -81,7 +80,7 @@ func RenderHapticsPanel(f *terminal.Frame, area cell.Rect, s *state.AppState, di
 
 	// Left Motor (0..255)
 	if hasDual && y < inner.Y+inner.Height {
-		f.Buffer.SetStringWithin(inner.X, y, i18n.Tf("Left Motor:     %3d", s.Config.Haptics.LeftMotor), p.LabelStyle(), labelW)
+		sliderLabel(f, cell.NewRect(inner.X, y, labelW, 1), s, i18n.T("Left Motor:"), fmt.Sprint(s.Config.Haptics.LeftMotor))
 		f.RenderWidget(widgets.Slider{
 			ID:           "slider_hap_left",
 			State:        s.LeftMotorSlider,
@@ -105,7 +104,7 @@ func RenderHapticsPanel(f *terminal.Frame, area cell.Rect, s *state.AppState, di
 
 	// Right Motor (0..255)
 	if hasDual && y < inner.Y+inner.Height {
-		f.Buffer.SetStringWithin(inner.X, y, i18n.Tf("Right Motor:    %3d", s.Config.Haptics.RightMotor), p.LabelStyle(), labelW)
+		sliderLabel(f, cell.NewRect(inner.X, y, labelW, 1), s, i18n.T("Right Motor:"), fmt.Sprint(s.Config.Haptics.RightMotor))
 		f.RenderWidget(widgets.Slider{
 			ID:           "slider_hap_right",
 			State:        s.RightMotorSlider,
@@ -133,7 +132,7 @@ func RenderHapticsPanel(f *terminal.Frame, area cell.Rect, s *state.AppState, di
 			if y >= inner.Y+inner.Height {
 				return
 			}
-			f.Buffer.SetStringWithin(inner.X, y, fmt.Sprintf("%-14s %3d", label, *val), p.LabelStyle(), labelW)
+			sliderLabel(f, cell.NewRect(inner.X, y, labelW, 1), s, label, fmt.Sprint(*val))
 			f.RenderWidget(widgets.Slider{
 				ID:           id,
 				State:        st,
@@ -153,63 +152,34 @@ func RenderHapticsPanel(f *terminal.Frame, area cell.Rect, s *state.AppState, di
 		trigSlider("slider_hap_lt", i18n.T("LT Impulse:"), &s.Config.Haptics.LeftTriggerMotor, s.LTMotorSlider)
 		trigSlider("slider_hap_rt", i18n.T("RT Impulse:"), &s.Config.Haptics.RightTriggerMotor, s.RTMotorSlider)
 	}
-	y++
+	y += 2 // a blank row, then the buttons' top edge
 
 	// Live Test Vibration Buttons
 	if y < inner.Y+inner.Height {
-		btnLight := widgets.Button{
-			ID:           "btn_test_light_pulse",
-			Label:        i18n.T("⚡ Light Pulse"),
-			Disabled:     !s.DeviceInfo.Connected,
-			Style:        p.ButtonStyle(false),
-			FocusedStyle: p.ButtonFocusedStyle(),
-			OnPress: func() {
+		off := !s.DeviceInfo.Connected
+		pillRow(f, inner.X, y, inner.X+inner.Width, s, "", 0, []choice{
+			{ID: "btn_test_light_pulse", Label: i18n.T("Light Pulse"), Disabled: off, OnSelect: func() {
 				if dispatch != nil {
 					dispatch(device.Command{Type: device.CmdPulseHaptics, PulseLeft: 95, PulseRight: 120, PulseDur: 240 * time.Millisecond})
 				}
 				if s.Toasts != nil {
 					s.Toasts.Info(i18n.T("Haptic Test"), i18n.T("Fired light dual-actuator pulse (240ms)"))
 				}
-			},
-		}
-		btnHeavy := widgets.Button{
-			ID:           "btn_test_heavy_rumble",
-			Label:        i18n.T("💥 Heavy Impact"),
-			Disabled:     !s.DeviceInfo.Connected,
-			Style:        p.ButtonStyle(true),
-			FocusedStyle: p.ButtonFocusedStyle(),
-			OnPress: func() {
+			}},
+			{ID: "btn_test_heavy_rumble", Label: i18n.T("Heavy Impact"), Disabled: off, OnSelect: func() {
 				if dispatch != nil {
 					dispatch(device.Command{Type: device.CmdPulseHaptics, PulseLeft: 250, PulseRight: 250, PulseDur: 450 * time.Millisecond})
 				}
 				if s.Toasts != nil {
 					s.Toasts.Success(i18n.T("Haptic Test"), i18n.T("Fired heavy impact vibration (450ms)"))
 				}
-			},
-		}
-		btnStop := widgets.Button{
-			ID:           "btn_stop_rumble",
-			Label:        i18n.T("⏹ Stop Motors"),
-			Disabled:     !s.DeviceInfo.Connected,
-			Style:        p.ButtonStyle(false),
-			FocusedStyle: p.ButtonFocusedStyle(),
-			OnPress: func() {
+			}},
+			{ID: "btn_stop_rumble", Label: i18n.T("Stop Motors"), Disabled: off, OnSelect: func() {
 				s.Config.Haptics.LeftMotor = 0
 				s.Config.Haptics.RightMotor = 0
 				s.SyncWidgetsFromConfig()
 				sendHaptics()
-			},
-		}
-
-		w1, _ := btnLight.SizeHint(inner)
-		w2, _ := btnHeavy.SizeHint(inner)
-		w3, _ := btnStop.SizeHint(inner)
-		uiwidgets.RenderButton(f, cell.NewRect(inner.X, y, w1, 1), btnLight)
-		if inner.X+w1+1+w2 <= inner.X+inner.Width {
-			uiwidgets.RenderButton(f, cell.NewRect(inner.X+w1+1, y, w2, 1), btnHeavy)
-		}
-		if inner.X+w1+w2+2+w3 <= inner.X+inner.Width {
-			uiwidgets.RenderButton(f, cell.NewRect(inner.X+w1+w2+2, y, w3, 1), btnStop)
-		}
+			}},
+		})
 	}
 }

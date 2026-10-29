@@ -41,15 +41,13 @@ func TestHealthReportUIAndCopyActions(t *testing.T) {
 	if !strings.Contains(copied[2], "Test: Tetikler") || strings.Contains(copied[2], "Analog çubuklar") {
 		t.Fatal("individual report copied unrelated tests")
 	}
-	page.GetByID("copy_test_summary").Click()
-	waitForCopy(t, a)
-	if !strings.Contains(copied[3], "Test edilmedi") {
+	if !strings.Contains(copied[2], "Test edilmedi") {
 		t.Fatal("unperformed test must remain explicit")
 	}
 	page.GetByID("diag_show_test_report").Click()
 	page.GetByID("copy_detailed_test_report").Click()
 	waitForCopy(t, a)
-	if !strings.Contains(copied[4], "Değerlendirme:") {
+	if !strings.Contains(copied[3], "Değerlendirme:") {
 		t.Fatal("detailed report needs assessment criteria")
 	}
 }

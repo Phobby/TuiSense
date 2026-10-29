@@ -54,7 +54,8 @@ func ComputeLayout(total cell.Rect, tallInspector bool) DashboardLayout {
 	}
 
 	footer := cell.NewRect(total.X, total.Y+total.Height-1, total.Width, 1)
-	bodyY, bodyH := total.Y+3, total.Height-4
+	// Header row, the page tabs' roof, labels and base line, then the body.
+	bodyY, bodyH := total.Y+4, total.Height-5
 	kind := LayoutStacked
 	if total.Width < 100 {
 		kind = LayoutCompact
@@ -66,7 +67,7 @@ func ComputeLayout(total cell.Rect, tallInspector bool) DashboardLayout {
 	stageH := bodyH - inspectorH
 	return DashboardLayout{Kind: kind, Compact: kind == LayoutCompact,
 		HeaderArea:    cell.NewRect(total.X, total.Y, total.Width, 1),
-		TabsArea:      cell.NewRect(total.X, total.Y+1, total.Width, 1),
+		TabsArea:      cell.NewRect(total.X, total.Y+2, total.Width, 1),
 		Stage3DArea:   cell.NewRect(total.X, bodyY, total.Width, stageH),
 		InspectorArea: cell.NewRect(total.X, bodyY+stageH, total.Width, inspectorH), FooterArea: footer}
 }

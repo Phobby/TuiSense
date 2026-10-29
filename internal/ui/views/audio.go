@@ -19,7 +19,7 @@ func renderAudioPanel(f *terminal.Frame, area cell.Rect, pc PanelContext) {
 	y := supportBanner(f, inner, inner.Y, s, device.CapAudio)
 	y++
 
-	labelW := uint16(19)
+	labelW := sliderColumn(4, i18n.T("Speaker:"), i18n.T("Headset:"), i18n.T("Mic Gain:"))
 	sliderW := inner.Width - labelW - 2
 	if sliderW < 8 {
 		sliderW = 8
@@ -31,7 +31,7 @@ func renderAudioPanel(f *terminal.Frame, area cell.Rect, pc PanelContext) {
 		if y >= inner.Y+inner.Height {
 			return
 		}
-		copyValue(f, cell.NewRect(inner.X, y, labelW, 1), s, fmt.Sprintf("%-14s%3d%%", label, *val), fmt.Sprintf("%d%%", *val), p.LabelStyle())
+		sliderLabel(f, cell.NewRect(inner.X, y, labelW, 1), s, label, fmt.Sprintf("%d%%", *val))
 		f.RenderWidget(widgets.Slider{
 			ID:           id,
 			State:        st,
@@ -65,6 +65,7 @@ func renderAudioPanel(f *terminal.Frame, area cell.Rect, pc PanelContext) {
 		for _, mm := range []device.MicLEDMode{device.MicLEDOff, device.MicLEDSolid, device.MicLEDPulse} {
 			mode := mm
 			items = append(items, choice{
+				Kind:     kindOption,
 				ID:       "mic_led_" + mode.String(),
 				Label:    i18n.T(mode.String()),
 				Selected: s.Config.Lighting.MicLED == mode,

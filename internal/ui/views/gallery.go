@@ -26,8 +26,14 @@ func renderGallery(f *terminal.Frame, grid ui.DashboardLayout, s *state.AppState
 	}
 	spec := s.StageSpec()
 	renderGalleryTitle(f, grid.TabsArea, s, len(specs))
-	uiwidgets.RenderControllerStage(f, grid.Stage3DArea, s, uiwidgets.StageCallbacks{OnSelectComponent: s.SelectComponent})
-	renderGalleryInspector(f, grid.InspectorArea, s, spec, cb)
+	// The inspector takes two stage rows for its three-row Preview button.
+	stage, info := grid.Stage3DArea, grid.InspectorArea
+	if stage.Height > 10 {
+		stage.Height -= 2
+		info.Y, info.Height = info.Y-2, info.Height+2
+	}
+	uiwidgets.RenderControllerStage(f, stage, s, uiwidgets.StageCallbacks{OnSelectComponent: s.SelectComponent})
+	renderGalleryInspector(f, info, s, spec, cb)
 }
 
 func renderGalleryTitle(f *terminal.Frame, area cell.Rect, s *state.AppState, n int) {
@@ -116,14 +122,15 @@ func renderGalleryInspector(f *terminal.Frame, area cell.Rect, s *state.AppState
 		if c, ok := s.StageComponent(false); ok && c.Region != device.RegionNone {
 			label = i18n.Tf("▶ Preview %s settings", i18n.T(c.Label))
 		}
-		if y < area.Y+area.Height && cb.OnPreviewModel != nil {
+		if y+2 < area.Y+area.Height && cb.OnPreviewModel != nil {
+			y++ // room for the button's top edge
 			pillRow(f, x, y, x+w, s, "", 0, []choice{{ID: "gallery_preview", Label: label, OnSelect: cb.OnPreviewModel}})
-			hint := "  " + i18n.T("settings only · nothing is sent to a controller")
-			used := uint16(cell.StringWidth(label)) + 2
+			hint := " " + i18n.T("settings only · nothing is sent to a controller")
+			used := pillWidth(choice{Label: label}) + 1
 			if used < w {
 				f.Buffer.SetStringWithin(x+used, y, hint, p.MutedStyle(), w-used)
 			}
-			y++
+			y += 2
 		}
 	} else {
 		line(i18n.T("Visual preview only — TuiSense cannot communicate with this controller."), cell.Style{Fg: p.Warning, Bg: p.BgCanvas})

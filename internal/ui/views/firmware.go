@@ -35,11 +35,12 @@ func renderFirmware(f *terminal.Frame, area cell.Rect, pc PanelContext, advanced
 	fv := s.Firmware
 	inner := panelFrame(f, area, s, i18n.T("Device Details"))
 	c := newCursor(f, inner, s)
-	renderCopyActions(c, true)
+	var extra []choice
 	if s.Diag != nil && s.Diag.Ctx.Caps.Supports(device.CapFirmwareInfo) {
 		report := diag.BuildReport(s.Diag, "", false, time.Now()).Scope(diag.CatFirmware)
-		c.pills("", 0, []choice{{ID: "firmware_copy_test_report", Label: i18n.T("Copy Test Report"), OnSelect: func() { reportCopy(c, report.TestText()) }}, {ID: "firmware_copy_test_summary", Label: i18n.T("Copy Test Summary"), OnSelect: func() { reportCopy(c, report.SummaryText()) }}})
+		extra = append(extra, choice{ID: "firmware_copy_test_report", Label: i18n.T("Copy Test Report"), OnSelect: func() { reportCopy(c, report.TestText()) }})
 	}
+	renderCopyActions(c, true, extra...)
 	if !fv.Connected {
 		c.wrap(i18n.T("No controller is connected. Connect one to see its details."), s.Theme.MutedStyle(), 3)
 		return
@@ -60,19 +61,21 @@ func renderFirmware(f *terminal.Frame, area cell.Rect, pc PanelContext, advanced
 	if !slices.ContainsFunc(sections, func(sec section) bool { return sec.id == active }) {
 		active = state.FirmwareStatus
 	}
-	var items []choice
+	// The sections are tabs, drawn like every other tab row.
+	x := c.r.X
 	for _, sec := range sections {
 		id := sec.id
-		items = append(items, choice{
-			ID: "fw_section_" + string(id), Label: sec.label, Selected: active == id,
-			OnSelect: func() {
-				if pc.CB.OnSetFirmwareSection != nil {
-					pc.CB.OnSetFirmwareSection(id)
-				}
-			},
-		})
+		if w := tabChipWidth(sec.label); x+w > c.limit() && x > c.r.X {
+			c.y++
+			x = c.r.X
+		}
+		x += tabItem(f, s, x, c.y, "fw_section_"+string(id), sec.label, s.Theme.FgSecondary, active == id, func() {
+			if pc.CB.OnSetFirmwareSection != nil {
+				pc.CB.OnSetFirmwareSection(id)
+			}
+		}) + 1
 	}
-	c.pills("", 0, items)
+	c.y++
 	c.gap()
 
 	switch active {
@@ -162,13 +165,13 @@ func renderFirmwareStatus(c *cursor, pc PanelContext, advanced bool) {
 	left, right := splitColumns(c, s, 96)
 
 	// Left: what the controller is, as read from it.
-	left.line(i18n.T("DEVICE INFORMATION"), p.SectionHeaderStyle())
+	left.section(i18n.T("Device information"))
 	renderDetailRows(left, fv, advanced, kw, "model", "manufacturer", "connection", "usb_id")
 	if advanced {
 		renderDetailRows(left, fv, advanced, kw, "hidraw", "driver")
 	}
 	left.gap()
-	left.line(i18n.T("HARDWARE & BUILD"), p.SectionHeaderStyle())
+	left.section(i18n.T("Hardware & build"))
 	if advanced {
 		renderDetailRows(left, fv, advanced, kw, "fw_build", "fw_date")
 	}
@@ -184,7 +187,7 @@ func renderFirmwareStatus(c *cursor, pc PanelContext, advanced bool) {
 	}
 
 	// Right: the firmware version and the read-only update check.
-	right.line(i18n.T("FIRMWARE"), p.SectionHeaderStyle())
+	right.section(i18n.T("Firmware"))
 	installed := i18n.T("unknown")
 	instStyle := p.MutedStyle()
 	if d, ok := fv.Detail("fw_version"); ok && !d.Unavailable {
@@ -404,7 +407,7 @@ func renderFirmwareDetails(c *cursor, pc PanelContext) {
 	var items []choice
 	for _, grp := range detailGroupTitles {
 		g := grp.g
-		items = append(items, choice{ID: "fw_group_" + string(g), Label: i18n.T(grp.title), Selected: g == group, OnSelect: func() {
+		items = append(items, choice{Kind: kindOption, ID: "fw_group_" + string(g), Label: i18n.T(grp.title), Selected: g == group, OnSelect: func() {
 			if pc.CB.OnSetDetailGroup != nil {
 				pc.CB.OnSetDetailGroup(g)
 			}
@@ -420,8 +423,8 @@ func renderFirmwareDetails(c *cursor, pc PanelContext) {
 			}
 		}
 		c.pills(i18n.T("Daily automatic check:"), 0, []choice{
-			{ID: "fw_autocheck_on", Label: i18n.T("On"), Selected: fv.AutoCheck, OnSelect: setAuto(true)},
-			{ID: "fw_autocheck_off", Label: i18n.T("Off"), Selected: !fv.AutoCheck, OnSelect: setAuto(false)},
+			{Kind: kindOption, ID: "fw_autocheck_on", Label: i18n.T("On"), Selected: fv.AutoCheck, OnSelect: setAuto(true)},
+			{Kind: kindOption, ID: "fw_autocheck_off", Label: i18n.T("Off"), Selected: !fv.AutoCheck, OnSelect: setAuto(false)},
 		})
 	}
 

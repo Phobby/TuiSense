@@ -40,6 +40,7 @@ func namedCanvas(id string) *widgets.Canvas {
 }
 
 func progressLine(c *cursor, label string, frac float64, onCancel func()) {
+	c.gap() // room for the Cancel button's top edge
 	if !c.ok() {
 		return
 	}
@@ -61,7 +62,7 @@ func progressLine(c *cursor, label string, frac float64, onCancel func()) {
 			cell.NewRect(c.r.X+lw, c.y, c.r.Width-lw-cancelW-1, 1))
 		pillRow(c.f, c.r.X+c.r.Width-cancelW, c.y, c.limit(), c.s, "", 0, []choice{{ID: "diag_cancel", Label: i18n.T("✕ Cancel"), OnSelect: onCancel}})
 	}
-	c.y++
+	c.y += 2 // past the Cancel button's bottom edge
 }
 
 // ---- Buttons ---------------------------------------------------------------
@@ -243,7 +244,7 @@ func renderHapticDiag(c *cursor, d *diag.Session, now time.Time) {
 	var levels []choice
 	for i, lv := range diag.HapticIntensities {
 		i := i
-		levels = append(levels, choice{ID: "haptic_level_" + lv.Name, Label: i18n.T(lv.Name), Selected: h.Intensity == i, OnSelect: func() { h.Intensity = i }})
+		levels = append(levels, choice{Kind: kindOption, ID: "haptic_level_" + lv.Name, Label: i18n.T(lv.Name), Selected: h.Intensity == i, OnSelect: func() { h.Intensity = i }})
 	}
 	c.pills(i18n.T("Strength"), 10, levels)
 	var pats []choice
@@ -263,8 +264,8 @@ func renderHapticDiag(c *cursor, d *diag.Session, now time.Time) {
 		}
 		id := h.LastPlayed
 		c.pills(i18n.Tf("Felt \"%s\"?", i18n.T(label)), uint16(cell.StringWidth(i18n.T(label))+12), []choice{
-			{ID: "haptic_felt_yes", Label: i18n.T("Yes"), Selected: feedbackIs(h.Feedback, id, true), OnSelect: func() { h.Feedback[id] = true }},
-			{ID: "haptic_felt_no", Label: i18n.T("No"), Selected: feedbackIs(h.Feedback, id, false), OnSelect: func() { h.Feedback[id] = false }},
+			{Kind: kindOption, ID: "haptic_felt_yes", Label: i18n.T("Yes"), Selected: feedbackIs(h.Feedback, id, true), OnSelect: func() { h.Feedback[id] = true }},
+			{Kind: kindOption, ID: "haptic_felt_no", Label: i18n.T("No"), Selected: feedbackIs(h.Feedback, id, false), OnSelect: func() { h.Feedback[id] = false }},
 		})
 	}
 	if !h.Separate {
@@ -362,8 +363,8 @@ func renderSpeakerDiag(c *cursor, d *diag.Session) {
 	if sp.PlayCount() > 0 && !sp.Playing() {
 		yes, no := true, false
 		c.pills(i18n.T("Heard it?"), 11, []choice{
-			{ID: "speaker_heard_yes", Label: i18n.T("Yes"), Selected: sp.Heard != nil && *sp.Heard, OnSelect: func() { sp.Heard = &yes }},
-			{ID: "speaker_heard_no", Label: i18n.T("No sound"), Selected: sp.Heard != nil && !*sp.Heard, OnSelect: func() { sp.Heard = &no }},
+			{Kind: kindOption, ID: "speaker_heard_yes", Label: i18n.T("Yes"), Selected: sp.Heard != nil && *sp.Heard, OnSelect: func() { sp.Heard = &yes }},
+			{Kind: kindOption, ID: "speaker_heard_no", Label: i18n.T("No sound"), Selected: sp.Heard != nil && !*sp.Heard, OnSelect: func() { sp.Heard = &no }},
 		})
 	}
 	if n := d.SpeakerVolumeNote(); n != "" {

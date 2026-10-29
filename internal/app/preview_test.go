@@ -48,7 +48,7 @@ func TestGalleryPreviewWithoutController(t *testing.T) {
 	}
 
 	page.Press("2")
-	if snap := snapshotOf(a, 140, 40); !strings.Contains(snap, "not part of the settings preview") {
+	if snap := snapshotOf(a, 140, 40); !strings.Contains(snap, "Diagnostics measure a connected controller") {
 		t.Fatal("diagnostics must explain that they need the real controller")
 	}
 

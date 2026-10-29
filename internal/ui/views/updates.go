@@ -70,7 +70,9 @@ func renderUpdates(f *terminal.Frame, inner cell.Rect, y uint16, s *state.AppSta
 		}
 	}
 	u := s.Update
-	line(i18n.T("Application updates"), p.SectionHeaderStyle())
+	if y < limit {
+		y = sectionHeader(f, s, inner, y, i18n.T("Application updates"))
+	}
 	info := "TuiSense " + displayVersion(s.AppVersion)
 	if u.Latest != "" {
 		info += " · " + i18n.T("Latest") + " v" + u.Latest
@@ -103,8 +105,6 @@ func renderUpdates(f *terminal.Frame, inner cell.Rect, y uint16, s *state.AppSta
 			}
 		}})
 	}
-	pillRow(f, inner.X, y, inner.X+inner.Width, s, "", 0, items)
-	y++
 	set := func(fn func(*update.Settings)) func() {
 		return func() {
 			us := u.Settings
@@ -115,11 +115,11 @@ func renderUpdates(f *terminal.Frame, inner cell.Rect, y uint16, s *state.AppSta
 		}
 	}
 	toggles := []choice{
-		{ID: "update_auto_check", Label: checkbox(u.Settings.Check) + i18n.T("Check automatically"), OnSelect: set(func(us *update.Settings) { us.Check = !us.Check })},
-		{ID: "update_auto_download", Label: checkbox(u.Settings.AutoDownload) + i18n.T("Download automatically (verified, applied on restart)"), OnSelect: set(func(us *update.Settings) { us.AutoDownload = !us.AutoDownload })},
+		{ID: "update_auto_check", Kind: kindToggle, Label: i18n.T("Check automatically"), Selected: u.Settings.Check, OnSelect: set(func(us *update.Settings) { us.Check = !us.Check })},
+		{ID: "update_auto_download", Kind: kindToggle, Label: i18n.T("Download automatically (verified, applied on restart)"), Selected: u.Settings.AutoDownload, OnSelect: set(func(us *update.Settings) { us.AutoDownload = !us.AutoDownload })},
 	}
 	if advanced {
-		toggles = append(toggles, choice{ID: "update_prerelease", Label: checkbox(u.Settings.Channel == update.Prerelease) + i18n.T("Pre-releases"), OnSelect: set(func(us *update.Settings) {
+		toggles = append(toggles, choice{ID: "update_prerelease", Kind: kindToggle, Label: i18n.T("Pre-releases"), Selected: u.Settings.Channel == update.Prerelease, OnSelect: set(func(us *update.Settings) {
 			if us.Channel == update.Prerelease {
 				us.Channel = update.Stable
 			} else {
@@ -127,26 +127,16 @@ func renderUpdates(f *terminal.Frame, inner cell.Rect, y uint16, s *state.AppSta
 			}
 		})})
 	}
-	for _, t := range toggles {
-		if y >= limit {
-			break
-		}
-		pillRow(f, inner.X, y, inner.X+inner.Width, s, "", 0, []choice{t})
-		y++
-	}
+	// The actions and the toggles each form one wrapping group of buttons.
+	y = pillRows(f, inner.X, y+2, inner.X+inner.Width, s, "", 0, items)
+	y = pillRows(f, inner.X, y, inner.X+inner.Width, s, "", 0, toggles)
 	if advanced && u.Notes != "" && (u.Status == update.StatusAvailable || u.Status == update.StatusReady || u.Status == update.StatusDownloading) {
 		for _, n := range update.NotesExcerpt(u.Notes, 3) {
 			line("  "+n, p.MutedStyle())
 		}
+		y++ // the same blank row the buttons leave
 	}
 	return y
-}
-
-func checkbox(on bool) string {
-	if on {
-		return "[x] "
-	}
-	return "[ ] "
 }
 
 func displayVersion(v string) string {

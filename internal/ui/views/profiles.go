@@ -5,7 +5,6 @@ import (
 	"github.com/Phobby/TuiSense/internal/i18n"
 
 	"github.com/Phobby/TuiSense/internal/device"
-	uiwidgets "github.com/Phobby/TuiSense/internal/ui/widgets"
 	"github.com/thebanri/limoni/core/cell"
 	"github.com/thebanri/limoni/core/terminal"
 	"github.com/thebanri/limoni/widgets"
@@ -56,16 +55,12 @@ func renderProfilesPanel(f *terminal.Frame, area cell.Rect, pc PanelContext) {
 		WithStyle(p.PanelStyle()).
 		WithSelectedStyle(cell.Style{Fg: p.BgCanvas, Bg: p.AccentCyan, Modifier: cell.ModifierBold})
 	f.RenderWidget(listWidget, cell.NewRect(inner.X, y, inner.Width, listH))
-	y += listH + 1
+	y += listH + 2 // a blank row, then the buttons' top edge
 
 	// Action Buttons: Load, Reset Defaults, Delete
 	if y < inner.Y+inner.Height {
-		btnLoad := widgets.Button{
-			ID:           "btn_profile_load",
-			Label:        i18n.T("✓ Load Selected"),
-			Style:        p.ButtonStyle(true),
-			FocusedStyle: p.ButtonFocusedStyle(),
-			OnPress: func() {
+		pillRow(f, inner.X, y, inner.X+inner.Width, s, "", 0, []choice{
+			{ID: "btn_profile_load", Label: i18n.T("✓ Load Selected"), OnSelect: func() {
 				idx := s.ProfileListState.Selected
 				if idx >= 0 && idx < len(profiles) {
 					chosen := profiles[idx]
@@ -80,15 +75,8 @@ func renderProfilesPanel(f *terminal.Frame, area cell.Rect, pc PanelContext) {
 						s.Toasts.Success(i18n.T("Profile Loaded"), i18n.Tf("Applied profile %q", chosen.Name))
 					}
 				}
-			},
-		}
-
-		btnReset := widgets.Button{
-			ID:           "btn_profile_reset",
-			Label:        i18n.T("↺ Factory Reset"),
-			Style:        p.ButtonStyle(false),
-			FocusedStyle: p.ButtonFocusedStyle(),
-			OnPress: func() {
+			}},
+			{ID: "btn_profile_reset", Label: i18n.T("↺ Factory Reset"), OnSelect: func() {
 				s.Config = s.Descriptor.NewDefaultConfig()
 				s.ActiveProfile = "Factory Defaults"
 				s.SyncWidgetsFromConfig()
@@ -98,15 +86,8 @@ func renderProfilesPanel(f *terminal.Frame, area cell.Rect, pc PanelContext) {
 				if s.Toasts != nil {
 					s.Toasts.Info(i18n.T("Factory Reset"), i18n.Tf("Restored default %s configuration", i18n.T(s.Descriptor.ShortName)))
 				}
-			},
-		}
-
-		btnDelete := widgets.Button{
-			ID:           "btn_profile_delete",
-			Label:        i18n.T("✕ Delete"),
-			Style:        p.ButtonStyle(false),
-			FocusedStyle: p.ButtonFocusedStyle(),
-			OnPress: func() {
+			}},
+			{ID: "btn_profile_delete", Label: i18n.T("✕ Delete"), OnSelect: func() {
 				idx := s.ProfileListState.Selected
 				if idx >= 0 && idx < len(profiles) {
 					target := profiles[idx]
@@ -116,20 +97,9 @@ func renderProfilesPanel(f *terminal.Frame, area cell.Rect, pc PanelContext) {
 						s.Toasts.Warning(i18n.T("Profile Deleted"), i18n.Tf("Removed profile %q", target.Name))
 					}
 				}
-			},
-		}
-
-		w1, _ := btnLoad.SizeHint(inner)
-		w2, _ := btnReset.SizeHint(inner)
-		w3, _ := btnDelete.SizeHint(inner)
-		uiwidgets.RenderButton(f, cell.NewRect(inner.X, y, w1, 1), btnLoad)
-		if inner.X+w1+1+w2 <= inner.X+inner.Width {
-			uiwidgets.RenderButton(f, cell.NewRect(inner.X+w1+1, y, w2, 1), btnReset)
-		}
-		if inner.X+w1+w2+2+w3 <= inner.X+inner.Width {
-			uiwidgets.RenderButton(f, cell.NewRect(inner.X+w1+w2+2, y, w3, 1), btnDelete)
-		}
-		y += 2
+			}},
+		})
+		y += pillRowH
 	}
 
 	// Save New / Overwrite Profile Row
@@ -146,12 +116,8 @@ func renderProfilesPanel(f *terminal.Frame, area cell.Rect, pc PanelContext) {
 			WithFocusedStyle(cell.Style{Fg: p.AccentCyan, Bg: p.BgElevated, Modifier: cell.ModifierBold})
 		f.RenderWidget(ti, cell.NewRect(inner.X+11, y, inputW, 1))
 
-		btnSave := widgets.Button{
-			ID:           "btn_profile_save",
-			Label:        i18n.T("💾 Save Profile"),
-			Style:        p.ButtonStyle(true),
-			FocusedStyle: p.ButtonFocusedStyle(),
-			OnPress: func() {
+		pillRow(f, inner.X+11+inputW+1, y, inner.X+inner.Width, s, "", 0, []choice{
+			{ID: "btn_profile_save", Label: i18n.T("Save Profile"), OnSelect: func() {
 				name := s.ProfileNameInput.Value()
 				mac := ""
 				if s.BindToMAC {
@@ -170,13 +136,9 @@ func renderProfilesPanel(f *terminal.Frame, area cell.Rect, pc PanelContext) {
 				if s.Toasts != nil {
 					s.Toasts.Success(i18n.T("Profile Saved"), i18n.Tf("Saved %q to disk", prof.Name))
 				}
-			},
-		}
-		wSave, _ := btnSave.SizeHint(inner)
-		if inner.X+11+inputW+1+wSave <= inner.X+inner.Width {
-			uiwidgets.RenderButton(f, cell.NewRect(inner.X+11+inputW+1, y, wSave, 1), btnSave)
-		}
-		y++
+			}},
+		})
+		y += 2
 	}
 
 	if y < inner.Y+inner.Height {
