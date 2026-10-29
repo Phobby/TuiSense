@@ -309,3 +309,16 @@ func TestWebDemoSimulatedControlsWork(t *testing.T) {
 		t.Fatalf("a rumble test must only be recorded, got %q", tel.LastOutputHex)
 	}
 }
+
+func TestWebDemoIndicatorNeverCoversTheHeader(t *testing.T) {
+	a, _ := newWebDemoApp(t)
+	for _, w := range []uint16{200, 120, 100, 80, 61, 40} {
+		first := strings.SplitN(snapshotOf(a, w, 30), "\n", 2)[0]
+		if !strings.Contains(first, "DualSense") || !strings.Contains(first, "v9.9.9") {
+			t.Fatalf("width %d: the controller and the version must both stay readable: %q", w, first)
+		}
+		if w >= 120 && !strings.Contains(first, "WEB DEMO") {
+			t.Fatalf("width %d: the web demo indicator must be shown", w)
+		}
+	}
+}

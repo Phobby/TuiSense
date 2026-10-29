@@ -194,10 +194,11 @@ func renderHeader(f *terminal.Frame, area cell.Rect, s *state.AppState, cb Callb
 	ver := displayVersion(s.AppVersion)
 	label := ver
 	if s.WebDemo {
-		// The browser demo says so quietly where the update state would be.
+		// The browser demo says so quietly where the update state would be;
+		// a terminal too narrow for it keeps the version only, as natively.
 		for _, l := range []string{i18n.T("WEB DEMO — SIMULATED CONTROLLERS") + " · " + ver, i18n.T("WEB DEMO") + " · " + ver} {
-			label = l
-			if area.X+area.Width >= x+width+uint16(cell.StringWidth(label))+6 {
+			if area.X+area.Width >= x+width+uint16(cell.StringWidth(l))+6 {
+				label = l
 				break
 			}
 		}
