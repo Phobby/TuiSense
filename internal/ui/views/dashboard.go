@@ -136,6 +136,8 @@ func renderHeader(f *terminal.Frame, area cell.Rect, s *state.AppState, cb Callb
 	if s.IsPreviewDevice() {
 		pill += i18n.T(" PREVIEW ")
 		accent = p.AccentBlue
+	} else if s.IsSimulatedDevice() && s.WebDemo {
+		pill += i18n.T(" SIMULATED ")
 	} else if s.IsSimulatedDevice() {
 		pill += i18n.T(" MOCK ")
 	}

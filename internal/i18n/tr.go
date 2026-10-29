@@ -147,6 +147,7 @@ var turkish = map[string]string{
 	" Health ":                    " Sağlık ",
 	" Keyboard & Mouse ":          " Klavye ve Fare ",
 	" MOCK ":                      " MOCK ",
+	" SIMULATED ":                 " SİMÜLE ",
 	" Mode":                       " Modu",
 	" NO CONTROLLER CONNECTED ":   " BAĞLI KONTROLCÜ YOK ",
 	" Off ":                       " Kapalı ",
