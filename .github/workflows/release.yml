@@ -53,7 +53,7 @@ jobs:
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
           EXT=""; [ "$GOOS" = windows ] && EXT=".exe"
-          go build -trimpath -ldflags "-s -w -X github.com/Phobby/TuiSense/internal/version.Version=${VERSION}" -o "build/tuisense${EXT}" ./cmd/tuisense
+          go build -trimpath -ldflags "-s -w -X github.com/Phobby/TuiSense/internal/version.Version=${VERSION} -X github.com/Phobby/TuiSense/internal/version.Commit=${GITHUB_SHA}" -o "build/tuisense${EXT}" ./cmd/tuisense
           echo "VERSION=$VERSION" >> "$GITHUB_ENV"
           echo "BIN=build/tuisense${EXT}" >> "$GITHUB_ENV"
       - name: Smoke test on the native runner

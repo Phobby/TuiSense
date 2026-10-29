@@ -1,0 +1,48 @@
+# TuiSense web demo: static website + /api (WebSocket terminal) proxy.
+# DEMO_DOMAIN gets an automatic HTTPS certificate, so the terminal runs
+# over WSS. For a local test without TLS set DEMO_DOMAIN=:80.
+{
+	admin off
+	servers {
+		timeouts {
+			read_header 10s
+			idle 2m
+		}
+	}
+}
+
+{$DEMO_DOMAIN:localhost} {
+	encode zstd gzip
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options nosniff
+		X-Frame-Options DENY
+		Referrer-Policy no-referrer
+		Cross-Origin-Opener-Policy same-origin
+		Permissions-Policy "camera=(), microphone=(), geolocation=(), usb=(), hid=(), serial=(), bluetooth=(), gamepad=()"
+		Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self' wss: ws:; frame-ancestors 'none'; base-uri 'none'; form-action 'none'"
+		-Server
+	}
+
+	# The backend checks the WebSocket Origin and limits requests per client
+	# address (from X-Forwarded-For, which Caddy sets).
+	handle /api/* {
+		reverse_proxy backend:8080 {
+			flush_interval -1
+			stream_timeout 2h
+			stream_close_delay 0
+		}
+	}
+	handle /healthz {
+		reverse_proxy backend:8080
+	}
+
+	handle {
+		root * /srv
+		@assets path /assets/*
+		header @assets Cache-Control "public, max-age=31536000, immutable"
+		try_files {path} /index.html
+		file_server
+	}
+}

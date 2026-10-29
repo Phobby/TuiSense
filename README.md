@@ -34,8 +34,26 @@ testing, and understanding your game controllers.
 
 ---
 
+## Try TuiSense Online
+
+Experience the real TuiSense terminal interface directly in your browser. No
+installation required. The demo uses simulated controllers and does not access
+physical hardware.
+
+<!-- TUISENSE_DEMO_LINK: replace docs/WEB_DEMO.md with the public demo URL once it is deployed. -->
+<p align="center"><a href="docs/WEB_DEMO.md"><b>▶ Launch Interactive Demo</b></a></p>
+
+A public instance is not deployed yet. The [web demo guide](docs/WEB_DEMO.md)
+shows how to run it locally (`make web-run`) or deploy it with Docker or
+systemd. Every visitor gets an isolated, sandboxed `tuisense --web-demo`
+process built from the same commit as the release, with all ten controller
+models simulated.
+
+---
+
 ## Contents
 
+- [Try TuiSense Online](#try-tuisense-online)
 - [Overview](#overview)
 - [Quick Install](#quick-install)
 - [Quick Start](#quick-start)

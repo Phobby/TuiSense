@@ -1,0 +1,60 @@
+# systemd unit for a VPS install without containers (behind Caddy or nginx
+# on the same host). Outside Docker, user namespaces are available, so the
+# strict sandbox applies: namespaces + Landlock for every session.
+#
+#   install -m 0755 tuisense tuisense-webd /usr/local/bin/
+#   install -m 0644 tuisense-webd.service /etc/systemd/system/
+#   install -m 0640 tuisense-web.env /etc/tuisense-web.env   # from .env.example
+#   systemctl daemon-reload && systemctl enable --now tuisense-webd
+
+[Unit]
+Description=TuiSense web demo backend
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/tuisense-webd
+EnvironmentFile=/etc/tuisense-web.env
+Environment=TUISENSE_WEB_LISTEN=127.0.0.1:8080
+Environment=TUISENSE_WEB_TRUST_PROXY=true
+Environment=TUISENSE_WEB_SANDBOX=strict
+Environment=TUISENSE_WEB_SESSION_ROOT=/tmp/tuisense-web
+Restart=on-failure
+
+# Unprivileged throw-away user; nothing persists between restarts.
+DynamicUser=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+# No hardware: no /dev/hidraw*, /dev/input/*, USB or sound devices.
+PrivateDevices=yes
+DevicePolicy=closed
+NoNewPrivileges=yes
+CapabilityBoundingSet=
+AmbientCapabilities=
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+ProtectProc=invisible
+ProcSubset=pid
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+RemoveIPC=yes
+UMask=0077
+# Sessions use their own user, PID, network, IPC and UTS namespaces.
+RestrictNamespaces=user pid net ipc uts
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+SystemCallArchitectures=native
+
+# Whole-service ceilings (each session has its own rlimits as well).
+MemoryMax=3G
+TasksMax=1024
+CPUQuota=400%
+
+[Install]
+WantedBy=multi-user.target

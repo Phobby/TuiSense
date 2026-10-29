@@ -692,3 +692,15 @@ identity uses a validated unique address (hashed), or a resolved physical sysfs
 ancestor, with a node-path fallback. A candidate's endpoint is separate from its
 identity: transport/node changes reopen the backend under the same stable key.
 Model names and VID/PID pairs are never used to merge physical devices.
+
+---
+
+## Web demo
+
+`tuisense --web-demo` runs this same application for the browser demo. Only
+the edges change: `internal/demo` provides a registry of ten simulated
+controllers (and no hardware driver), and `internal/app/webdemo.go` disables
+every host-facing action (updates, driver installation, host audio, firmware
+requests, opening links). `website/backend` runs one sandboxed instance per
+visitor behind a WebSocket, and `website/frontend` is the xterm.js terminal
+that displays it. See [WEB_DEMO.md](WEB_DEMO.md).
