@@ -44,7 +44,7 @@ func renderHome(f *terminal.Frame, area cell.Rect, pc PanelContext) {
 	}
 	width := uint16(0)
 	for _, it := range items {
-		width += uint16(cell.StringWidth(it.Label) + 3)
+		width += pillWidth(it) + 1
 	}
 	x := area.X
 	if width < area.Width {
@@ -77,7 +77,7 @@ func renderSubnav(f *terminal.Frame, area cell.Rect, s *state.AppState) cell.Rec
 			break
 		}
 		target := e.Spec.ID
-		x = pillRow(f, x, y, area.X+area.Width-2, s, "", 0, []choice{{ID: "nav_" + string(target), Label: label, Selected: target == s.ActivePanel, OnSelect: func() { s.ActivePanel = target }}})
+		x += tabItem(f, s, x, y, "nav_"+string(target), label, s.Theme.FgSecondary, target == s.ActivePanel, func() { s.ActivePanel = target }) + 1
 	}
 	used := min(area.Height, y-area.Y+2)
 	return cell.NewRect(area.X, area.Y+used, area.Width, area.Height-used)
@@ -86,7 +86,7 @@ func renderSubnav(f *terminal.Frame, area cell.Rect, s *state.AppState) cell.Rec
 func renderCustomize(f *terminal.Frame, area cell.Rect, pc PanelContext) {
 	s := pc.S
 	inner := panelFrame(f, area, s, i18n.T("Customize"))
-	y := inner.Y
+	y := inner.Y + 1 // the first button's frame stays clear of the title
 	for _, r := range s.Descriptor.Regions {
 		panel, ok := state.PanelForCapability(r.Capability)
 		if !ok || !state.PanelVisible(s.VisiblePanels(), panel) || state.PrimaryPanel(panel) != state.PanelCustomize {
@@ -97,6 +97,6 @@ func renderCustomize(f *terminal.Frame, area cell.Rect, pc PanelContext) {
 		}
 		region := r.ID
 		pillRow(f, inner.X, y, inner.X+inner.Width, s, "", 0, []choice{{ID: "region_" + string(r.ID), Label: i18n.T(r.Label), OnSelect: func() { s.SelectRegion(region) }}})
-		y++
+		y += pillRowH
 	}
 }

@@ -140,6 +140,9 @@ func TestHotplugAndTransportSimulation(t *testing.T) {
 	application := newMockApp(t, state.ModeAdvanced)
 	page := uitest.Run(t, 120, 40, application.Draw)
 	application.State.ActivePanel = state.PanelSettings
+	for range 6 { // the simulator sits at the bottom of Settings
+		page.Press("pgdn")
+	}
 
 	page.GetByID("btn_sim_hotplug").Click()
 	if application.State.DeviceInfo.Connected {

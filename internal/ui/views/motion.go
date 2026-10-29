@@ -61,14 +61,14 @@ func RenderMotionPanel(f *terminal.Frame, area cell.Rect, s *state.AppState) {
 	}, cell.NewRect(inner.X, y, inner.Width, 1))
 	y += 2
 
-	labelW := uint16(19)
+	labelW := sliderColumn(6, i18n.T("Gyro Sensitivity:"), i18n.T("Gyro Pitch:"), i18n.T("Gyro Yaw:"), i18n.T("Gyro Roll:"), i18n.T("Accel X:"))
 	sliderW := inner.Width - labelW - 2
 	if sliderW < 8 {
 		sliderW = 8
 	}
 
 	if y < inner.Y+inner.Height {
-		f.Buffer.SetStringWithin(inner.X, y, i18n.Tf("Gyro Sensitivity:%3d%%", s.Config.Motion.GyroSensitivity), p.LabelStyle(), labelW)
+		sliderLabel(f, cell.NewRect(inner.X, y, labelW, 1), s, i18n.T("Gyro Sensitivity:"), fmt.Sprintf("%d%%", s.Config.Motion.GyroSensitivity))
 		f.RenderWidget(widgets.Slider{
 			ID:           "slider_gyro_sens",
 			State:        s.GyroSensSlider,
@@ -97,8 +97,7 @@ func RenderMotionPanel(f *terminal.Frame, area cell.Rect, s *state.AppState) {
 			return
 		}
 		norm := math.Min(1.0, math.Max(0.0, (val+maxAbs)/(2.0*maxAbs)))
-		lbl := fmt.Sprintf("%-11s %+6.1f%s", name, val, unit)
-		copyValue(f, cell.NewRect(inner.X, y, labelW, 1), s, lbl, fmt.Sprintf("%+.1f%s", val, unit), p.LabelStyle())
+		sliderLabel(f, cell.NewRect(inner.X, y, labelW, 1), s, name, fmt.Sprintf("%+.1f%s", val, unit))
 		lg := widgets.LineGauge{
 			ID:            id,
 			Ratio:         norm,

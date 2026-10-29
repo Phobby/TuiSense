@@ -1,164 +1,86 @@
 package views
 
 import (
+	"fmt"
+	"strings"
+
 	"github.com/Phobby/TuiSense/internal/i18n"
 	"github.com/Phobby/TuiSense/internal/state"
 	"github.com/Phobby/TuiSense/internal/theme"
-	uiwidgets "github.com/Phobby/TuiSense/internal/ui/widgets"
 	"github.com/thebanri/limoni/core/cell"
-	"github.com/thebanri/limoni/core/driver"
 	"github.com/thebanri/limoni/core/terminal"
-	"github.com/thebanri/limoni/widgets"
 )
 
-// RenderSettingsPanel renders application preferences, 3D rendering options,
-// accessibility theme switching, and Mock Hardware Simulator controls.
-func RenderSettingsPanel(f *terminal.Frame, area cell.Rect, s *state.AppState, sim Callbacks) {
+// renderSettings is the Settings page in both modes: General and updates on
+// the left, the 3D view (and, for a simulated device, the simulator) on the
+// right, stacked in one column when the panel is narrow. Advanced adds the
+// renderer options.
+func renderSettings(f *terminal.Frame, area cell.Rect, pc PanelContext, advanced bool) {
 	if area.Width < 24 || area.Height < 8 {
 		return
 	}
-	p := s.Theme
-
+	s := pc.S
 	inner := panelFrame(f, area, s, i18n.T("Settings"))
-	y := inner.Y
+	lc, rc := splitColumns(newCursor(f, inner, s), s, 120)
+	left, right := lc.r, rc.r
 
-	y = renderModeChooser(f, inner, y, s, sim)
-	y = renderLanguageChooser(f, inner, y, s, sim)
-	y++
-	y = renderUpdates(f, inner, y, s, sim, true)
-	y++
+	y := sectionHeader(f, s, left, left.Y, i18n.T("General"))
+	y = renderModeChooser(f, left, y+1, s, pc.CB) // +1: the frame's top edge
+	y = renderLanguageChooser(f, left, y, s, pc.CB)
+	y = renderUpdates(f, left, y, s, pc.CB, advanced)
 
-	// 1. 3D Stage & Visual Preferences
-	f.Buffer.SetStringWithin(inner.X, y, i18n.T("3D Viewport & Accessibility"), p.SectionHeaderStyle(), inner.Width)
-	y++
-	pillRow(f, inner.X, y, inner.X+inner.Width, s, "", 0, []choice{{
+	if right.X != left.X {
+		y = right.Y
+	}
+	limit := right.X + right.Width
+	y = sectionHeader(f, s, right, y, i18n.T("3D view & accessibility"))
+	y++ // the frame's top edge
+	pillRow(f, right.X, y, limit, s, "", 0, []choice{{
 		ID: "btn_open_gallery", Label: i18n.T("Controller Gallery (visual preview)"), OnSelect: s.OpenGallery,
 	}})
-	y += 2
-
-	f.RenderWidget(widgets.Checkbox{
-		ID:           "cb_settings_autorot",
-		Checked:      &s.AutoRotate,
-		Label:        i18n.T("Continuous 3D Auto-Orbit"),
-		Style:        p.LabelStyle(),
-		FocusedStyle: p.ButtonFocusedStyle(),
-	}, cell.NewRect(inner.X, y, inner.Width, 1))
-	y++
-
-	// High Contrast Theme Toggle
-	prevHC := s.HighContrast
-	f.RenderWidget(widgets.Checkbox{
-		ID:           "cb_settings_high_contrast",
-		Checked:      &s.HighContrast,
-		Label:        i18n.T("High-Contrast Accessibility Theme"),
-		Style:        p.LabelStyle(),
-		FocusedStyle: p.ButtonFocusedStyle(),
-	}, cell.NewRect(inner.X, y, inner.Width, 1))
-	if s.HighContrast != prevHC {
-		if s.HighContrast {
-			s.Theme = theme.HighContrast()
-		} else {
-			s.Theme = theme.Default()
-		}
+	y += pillRowH
+	orbit, contrast := i18n.T("Slowly rotate the controller"), i18n.T("High-contrast colors")
+	if advanced {
+		orbit, contrast = i18n.T("Continuous 3D Auto-Orbit"), i18n.T("High-Contrast Accessibility Theme")
 	}
-	y += 2
-
-	// 3D Shading Mode Selector
-	if y < inner.Y+inner.Height {
-		f.Buffer.SetStringWithin(inner.X, y, i18n.T("3D Shading:"), p.MutedStyle(), 12)
-		sx := inner.X + 12
-		for _, mode := range []string{"Gouraud", "Lambert", "Flat", "Wireframe"} {
-			lbl := " " + mode + " "
-			mw := uint16(cell.StringWidth(lbl))
-			if sx+mw > inner.X+inner.Width {
-				break
+	y = pillRows(f, right.X, y, limit, s, "", 0, []choice{
+		{ID: "cb_settings_autorot", Kind: kindToggle, Label: orbit, Selected: s.AutoRotate, OnSelect: func() { s.AutoRotate = !s.AutoRotate }},
+		{ID: "cb_settings_high_contrast", Kind: kindToggle, Label: contrast, Selected: s.HighContrast, OnSelect: func() {
+			s.HighContrast = !s.HighContrast
+			if s.HighContrast {
+				s.Theme = theme.HighContrast()
+			} else {
+				s.Theme = theme.Default()
 			}
-			mRect := cell.NewRect(sx, y, mw, 1)
-			f.Buffer.SetStringWithin(sx, y, lbl, p.ButtonStyle(s.ShadingMode == mode), mw)
-			target := mode
-			f.RegisterClickHandler(mRect, func(_ driver.MouseEvent) {
-				s.ShadingMode = target
-			})
-			sx += mw + 1
-		}
-		y++
+			pc.prefsChanged()
+		}},
+	})
+	if !advanced {
+		return
 	}
 
-	// Sub-Cell Marker Resolution Selector
-	if y < inner.Y+inner.Height {
-		f.Buffer.SetStringWithin(inner.X, y, i18n.T("3D Marker:"), p.MutedStyle(), 12)
-		mx := inner.X + 12
-		markers := []struct {
-			idx  int
-			name string
-		}{
-			{0, i18n.T("Braille (2x4 Sub-Cell)")},
-			{1, i18n.T("Half-Block (1x2 Solid)")},
-			{2, i18n.T("Quadrant (2x2 Block)")},
-		}
-		for _, m := range markers {
-			lbl := " " + m.name + " "
-			mw := uint16(cell.StringWidth(lbl))
-			if mx+mw > inner.X+inner.Width {
-				break
-			}
-			mRect := cell.NewRect(mx, y, mw, 1)
-			f.Buffer.SetStringWithin(mx, y, lbl, p.ButtonStyle(s.RenderMarker == m.idx), mw)
-			targetIdx := m.idx
-			f.RegisterClickHandler(mRect, func(_ driver.MouseEvent) {
-				s.RenderMarker = targetIdx
-			})
-			mx += mw + 1
-		}
-		y += 2
+	var shading, markers []choice
+	for _, mode := range []string{"Gouraud", "Lambert", "Flat", "Wireframe"} {
+		target := mode
+		shading = append(shading, choice{Kind: kindOption, ID: "shading_" + strings.ToLower(mode), Label: mode, Selected: s.ShadingMode == mode, OnSelect: func() { s.ShadingMode = target }})
 	}
+	for i, name := range []string{i18n.T("Braille (2x4 Sub-Cell)"), i18n.T("Half-Block (1x2 Solid)"), i18n.T("Quadrant (2x2 Block)")} {
+		target := i
+		markers = append(markers, choice{Kind: kindOption, ID: fmt.Sprintf("marker_%d", i), Label: name, Selected: s.RenderMarker == i, OnSelect: func() { s.RenderMarker = target }})
+	}
+	y = pillRows(f, right.X, y, limit, s, i18n.T("3D Shading:"), 12, shading)
+	y = pillRows(f, right.X, y, limit, s, i18n.T("3D Marker:"), 12, markers)
 
 	// Simulation controls only belong to an explicitly selected virtual device.
 	if !s.IsSimulatedDevice() {
 		return
 	}
-	if y < inner.Y+inner.Height {
-		f.Buffer.SetStringWithin(inner.X, y, i18n.T("Simulator (mock & test devices)"), p.SectionHeaderStyle(), inner.Width)
-		y++
-	}
-
-	if y < inner.Y+inner.Height {
-		btnHotplug := widgets.Button{
-			ID:           "btn_sim_hotplug",
-			Label:        i18n.T("🔌 Toggle Connect / Disconnect [D]"),
-			Style:        p.ButtonStyle(s.DeviceInfo.Connected),
-			FocusedStyle: p.ButtonFocusedStyle(),
-			OnPress:      sim.OnToggleConnect,
-		}
-		w, _ := btnHotplug.SizeHint(inner)
-		uiwidgets.RenderButton(f, cell.NewRect(inner.X, y, w, 1), btnHotplug)
-		y++
-	}
-
-	if y < inner.Y+inner.Height {
-		btnTrans := widgets.Button{
-			ID:           "btn_sim_transport",
-			Label:        i18n.T("ᛒ Switch USB-C ↔ Bluetooth [B]"),
-			Style:        p.ButtonStyle(false),
-			FocusedStyle: p.ButtonFocusedStyle(),
-			OnPress:      sim.OnCycleTransport,
-		}
-		w, _ := btnTrans.SizeHint(inner)
-		uiwidgets.RenderButton(f, cell.NewRect(inner.X, y, w, 1), btnTrans)
-		y++
-	}
-
-	if y < inner.Y+inner.Height {
-		btnPerm := widgets.Button{
-			ID:           "btn_sim_permission",
-			Label:        i18n.T("🔒 Simulate udev Permission Error [U]"),
-			Style:        p.ButtonStyle(s.DeviceInfo.PermissionDenied),
-			FocusedStyle: p.ButtonFocusedStyle(),
-			OnPress:      sim.OnTogglePermission,
-		}
-		w, _ := btnPerm.SizeHint(inner)
-		uiwidgets.RenderButton(f, cell.NewRect(inner.X, y, w, 1), btnPerm)
-	}
+	y = sectionHeader(f, s, right, y, i18n.T("Simulator (mock & test devices)"))
+	pillRows(f, right.X, y+1, limit, s, "", 0, []choice{
+		{ID: "btn_sim_hotplug", Label: i18n.T("Toggle Connect / Disconnect [D]"), OnSelect: pc.CB.OnToggleConnect},
+		{ID: "btn_sim_transport", Label: i18n.T("ᛒ Switch USB-C ↔ Bluetooth [B]"), OnSelect: pc.CB.OnCycleTransport},
+		{ID: "btn_sim_permission", Label: i18n.T("Simulate udev Permission Error [U]"), OnSelect: pc.CB.OnTogglePermission},
+	})
 }
 
 // renderModeChooser draws the EZ / Advanced segmented choice used by both settings variants.
@@ -175,11 +97,11 @@ func renderModeChooser(f *terminal.Frame, inner cell.Rect, y uint16, s *state.Ap
 			}
 		}
 	}
-	pillRow(f, inner.X, y, inner.X+inner.Width, s, i18n.T("Mode:"), 7, []choice{
-		{ID: "settings_mode_ez", Label: i18n.T("EZ · simple"), Selected: s.Mode == state.ModeEZ, OnSelect: set(state.ModeEZ)},
-		{ID: "settings_mode_advanced", Label: i18n.T("Advanced · everything"), Selected: s.Mode == state.ModeAdvanced, OnSelect: set(state.ModeAdvanced)},
+	pillRow(f, inner.X, y, inner.X+inner.Width, s, i18n.T("Mode:"), 11, []choice{ // the same column as Language
+		{Kind: kindOption, ID: "settings_mode_ez", Label: i18n.T("EZ · simple"), Selected: s.Mode == state.ModeEZ, OnSelect: set(state.ModeEZ)},
+		{Kind: kindOption, ID: "settings_mode_advanced", Label: i18n.T("Advanced · everything"), Selected: s.Mode == state.ModeAdvanced, OnSelect: set(state.ModeAdvanced)},
 	})
-	return y + 1
+	return y + pillRowH
 }
 
 // renderLanguageChooser draws the clickable UI language switch (both modes).
@@ -191,7 +113,7 @@ func renderLanguageChooser(f *terminal.Frame, inner cell.Rect, y uint16, s *stat
 	var items []choice
 	for _, l := range i18n.Languages {
 		l := l
-		items = append(items, choice{ID: "settings_lang_" + string(l), Label: l.Name(), Selected: s.Language == l, OnSelect: func() {
+		items = append(items, choice{Kind: kindOption, ID: "settings_lang_" + string(l), Label: l.Name(), Selected: s.Language == l, OnSelect: func() {
 			if cb.OnSetLanguage != nil {
 				cb.OnSetLanguage(l)
 			} else {
@@ -201,5 +123,5 @@ func renderLanguageChooser(f *terminal.Frame, inner cell.Rect, y uint16, s *stat
 		}})
 	}
 	pillRow(f, inner.X, y, inner.X+inner.Width, s, i18n.T("Language:"), 11, items)
-	return y + 1
+	return y + pillRowH
 }

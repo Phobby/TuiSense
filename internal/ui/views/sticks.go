@@ -7,9 +7,7 @@ import (
 
 	"github.com/Phobby/TuiSense/internal/device"
 	"github.com/Phobby/TuiSense/internal/state"
-	uiwidgets "github.com/Phobby/TuiSense/internal/ui/widgets"
 	"github.com/thebanri/limoni/core/cell"
-	"github.com/thebanri/limoni/core/driver"
 	"github.com/thebanri/limoni/core/terminal"
 	"github.com/thebanri/limoni/widgets"
 )
@@ -23,39 +21,23 @@ func RenderSticksPanel(f *terminal.Frame, area cell.Rect, s *state.AppState) {
 	p := s.Theme
 
 	inner := panelFrame(f, area, s, i18n.T("Sticks & Drift"))
-	y := inner.Y
 	// TuiSense has no input-processing backend: these values are stored in
-	// the profile and visualized, but games never receive them.
-	f.Buffer.SetStringWithin(inner.X, y, i18n.T("Preview only — does not change game input."), cell.Style{Fg: p.Warning, Bg: p.BgPanel}, inner.Width)
-	y += 2
+	// the profile and visualized, but games never receive them; the panel's
+	// title already says "preview only".
+	y := inner.Y + 1 // the first button's frame stays clear of the title
 
 	// Row 0: Left vs Right Stick buttons + Link Sticks checkbox
-	btnL := widgets.Button{
-		ID:           "btn_stick_left",
-		Label:        i18n.T("Left Stick (L3)"),
-		Style:        p.ButtonStyle(!s.EditingRightStick),
-		FocusedStyle: p.ButtonFocusedStyle(),
-		OnPress: func() {
+	linkX := pillRow(f, inner.X, y, inner.X+inner.Width, s, "", 0, []choice{
+		{Kind: kindOption, ID: "btn_stick_left", Label: i18n.T("Left Stick (L3)"), Selected: !s.EditingRightStick, OnSelect: func() {
 			s.EditingRightStick = false
 			s.SelectedRegion = device.RegionLeftStick
-		},
-	}
-	btnR := widgets.Button{
-		ID:           "btn_stick_right",
-		Label:        i18n.T("Right Stick (R3)"),
-		Style:        p.ButtonStyle(s.EditingRightStick),
-		FocusedStyle: p.ButtonFocusedStyle(),
-		OnPress: func() {
+		}},
+		{Kind: kindOption, ID: "btn_stick_right", Label: i18n.T("Right Stick (R3)"), Selected: s.EditingRightStick, OnSelect: func() {
 			s.EditingRightStick = true
 			s.SelectedRegion = device.RegionRightStick
-		},
-	}
-	wL, _ := btnL.SizeHint(inner)
-	wR, _ := btnR.SizeHint(inner)
-	uiwidgets.RenderButton(f, cell.NewRect(inner.X, y, wL, 1), btnL)
-	uiwidgets.RenderButton(f, cell.NewRect(inner.X+wL+1, y, wR, 1), btnR)
-
-	if inner.X+wL+wR+3+16 <= inner.X+inner.Width {
+		}},
+	}) + 1
+	if linkX+16 <= inner.X+inner.Width {
 		cb := widgets.Checkbox{
 			ID:           "cb_link_sticks",
 			Checked:      &s.Config.Sticks.LinkSticks,
@@ -63,9 +45,9 @@ func RenderSticksPanel(f *terminal.Frame, area cell.Rect, s *state.AppState) {
 			Style:        p.LabelStyle(),
 			FocusedStyle: p.ButtonFocusedStyle(),
 		}
-		f.RenderWidget(cb, cell.NewRect(inner.X+wL+wR+3, y, inner.Width-wL-wR-3, 1))
+		f.RenderWidget(cb, cell.NewRect(linkX, y, inner.X+inner.Width-linkX, 1))
 	}
-	y += 2
+	y += pillRowH
 
 	activeStick := &s.Config.Sticks.Left
 	inSlider := s.LInnerDZSlider
@@ -94,26 +76,17 @@ func RenderSticksPanel(f *terminal.Frame, area cell.Rect, s *state.AppState) {
 	}
 
 	// Response Curve Selector
-	f.Buffer.SetStringWithin(inner.X, y, i18n.T("Curve:"), p.MutedStyle(), 7)
-	cx := inner.X + 7
+	var curves []choice
 	for _, curve := range device.AllStickCurves {
-		lbl := " " + i18n.T(string(curve)) + " "
-		cw := uint16(cell.StringWidth(lbl))
-		if cx+cw > inner.X+inner.Width {
-			break
-		}
-		cRect := cell.NewRect(cx, y, cw, 1)
-		f.Buffer.SetStringWithin(cx, y, lbl, p.ButtonStyle(activeStick.Curve == curve), cw)
-		targetCurve := curve
-		f.RegisterClickHandler(cRect, func(_ driver.MouseEvent) {
-			activeStick.Curve = targetCurve
+		target := curve
+		curves = append(curves, choice{Kind: kindOption, ID: "curve_" + string(curve), Label: i18n.T(string(curve)), Selected: activeStick.Curve == curve, OnSelect: func() {
+			activeStick.Curve = target
 			syncSticks()
-		})
-		cx += cw + 1
+		}})
 	}
-	y += 2
+	y = pillRows(f, inner.X, y, inner.X+inner.Width, s, i18n.T("Curve:"), 7, curves)
 
-	labelW := uint16(20)
+	labelW := sliderColumn(4, i18n.T("Inner Deadzone:"), i18n.T("Outer Max Zone:"), i18n.T("Sensitivity:"))
 	sliderW := inner.Width - labelW - 2
 	if sliderW < 8 {
 		sliderW = 8
@@ -121,7 +94,7 @@ func RenderSticksPanel(f *terminal.Frame, area cell.Rect, s *state.AppState) {
 
 	// Inner Deadzone (0..40%)
 	if y < inner.Y+inner.Height {
-		copyValue(f, cell.NewRect(inner.X, y, labelW, 1), s, i18n.Tf("Inner Deadzone: %2d%%", activeStick.InnerDeadzone), fmt.Sprintf("%d%%", activeStick.InnerDeadzone), p.LabelStyle())
+		sliderLabel(f, cell.NewRect(inner.X, y, labelW, 1), s, i18n.T("Inner Deadzone:"), fmt.Sprintf("%d%%", activeStick.InnerDeadzone))
 		f.RenderWidget(widgets.Slider{
 			ID:           "slider_" + prefix + "_inner_dz",
 			State:        inSlider,
@@ -141,7 +114,7 @@ func RenderSticksPanel(f *terminal.Frame, area cell.Rect, s *state.AppState) {
 
 	// Outer Threshold (70..100%)
 	if y < inner.Y+inner.Height {
-		copyValue(f, cell.NewRect(inner.X, y, labelW, 1), s, i18n.Tf("Outer Max Zone:%3d%%", activeStick.OuterDeadzone), fmt.Sprintf("%d%%", activeStick.OuterDeadzone), p.LabelStyle())
+		sliderLabel(f, cell.NewRect(inner.X, y, labelW, 1), s, i18n.T("Outer Max Zone:"), fmt.Sprintf("%d%%", activeStick.OuterDeadzone))
 		f.RenderWidget(widgets.Slider{
 			ID:           "slider_" + prefix + "_outer_dz",
 			State:        outSlider,
@@ -161,7 +134,7 @@ func RenderSticksPanel(f *terminal.Frame, area cell.Rect, s *state.AppState) {
 
 	// Sensitivity (50..150%)
 	if y < inner.Y+inner.Height {
-		copyValue(f, cell.NewRect(inner.X, y, labelW, 1), s, i18n.Tf("Sensitivity:   %3d%%", activeStick.Sensitivity), fmt.Sprintf("%d%%", activeStick.Sensitivity), p.LabelStyle())
+		sliderLabel(f, cell.NewRect(inner.X, y, labelW, 1), s, i18n.T("Sensitivity:"), fmt.Sprintf("%d%%", activeStick.Sensitivity))
 		f.RenderWidget(widgets.Slider{
 			ID:           "slider_" + prefix + "_sens",
 			State:        sensSlider,
@@ -179,62 +152,68 @@ func RenderSticksPanel(f *terminal.Frame, area cell.Rect, s *state.AppState) {
 		y += 2
 	}
 
-	// Live 2D XY Stick Drift & Deadzone Scope
+	// Live 2D stick scope: the full travel, the max-zone and deadzone rings,
+	// the raw position and what a game would receive, with the values beside it.
 	remainH := int(inner.Y+inner.Height) - int(y)
-	if remainH >= 4 && s.ScopeCanvas != nil {
+	if remainH >= 6 && s.ScopeCanvas != nil {
+		f.Buffer.SetStringWithin(inner.X, y, i18n.T("2D stick scope"), p.SectionHeaderStyle(), inner.Width)
+		y += 2
+		remainH -= 2
+		// Braille dots are square: two per column and four per row.
+		scopeH := uint16(min(remainH, 9))
+		scopeW := min(scopeH*2, inner.Width)
+		s.ScopeCanvas.Reset(scopeW, scopeH)
+		midX, midY := int(scopeW), int(scopeH)*2
+		rad := float64(min(midX, midY) - 1)
+		ring := func(r float64, st cell.Style) {
+			if r < 1 {
+				return
+			}
+			for a := 0.0; a < 2*math.Pi; a += 0.7 / r {
+				s.ScopeCanvas.Set(midX+int(math.Round(math.Cos(a)*r)), midY+int(math.Round(math.Sin(a)*r)), st)
+			}
+		}
+		grid := cell.Style{Fg: p.BgSubtle, Bg: p.BgPanel}
+		for d := -int(rad); d <= int(rad); d += 2 {
+			s.ScopeCanvas.Set(midX+d, midY, grid)
+			s.ScopeCanvas.Set(midX, midY+d, grid)
+		}
+		ring(rad, grid)
+		ring(rad*float64(activeStick.OuterDeadzone)/100, cell.Style{Fg: p.AccentBlue, Bg: p.BgPanel})
+		ring(rad*float64(activeStick.InnerDeadzone)/100, cell.Style{Fg: p.Warning, Bg: p.BgPanel})
+
 		mappedX := device.ApplyStickCurve(rawX, *activeStick)
 		mappedY := device.ApplyStickCurve(rawY, *activeStick)
-		driftMag := math.Hypot(rawX, rawY) * 100.0
-
-		text := i18n.Tf("2D Stick Scope │ Raw:(%+.2f,%+.2f) → Out:(%+.2f,%+.2f) │ Deflection:%4.1f%%",
-			rawX, rawY, mappedX, mappedY, driftMag)
-		copyValue(f, cell.NewRect(inner.X, y, inner.Width, 1), s, text, text, p.SectionHeaderStyle())
-		y++
-		remainH--
-
-		scopeW := min(inner.Width, uint16(36))
-		scopeH := uint16(min(remainH, 7))
-		s.ScopeCanvas.Reset(scopeW, scopeH)
-
-		virtW := int(scopeW) * 2
-		virtH := int(scopeH) * 4
-		midX := virtW / 2
-		midY := virtH / 2
-		rad := float64(min(midX, midY) - 2)
-
-		gridStyle := cell.Style{Fg: p.BgSubtle, Bg: p.BgPanel}
-		for gx := 0; gx < virtW; gx += 2 {
-			s.ScopeCanvas.Set(gx, midY, gridStyle)
-		}
-		for gy := 0; gy < virtH; gy += 2 {
-			s.ScopeCanvas.Set(midX, gy, gridStyle)
-		}
-
-		// Outer boundary circle & inner deadzone ring
-		dzRad := rad * (float64(activeStick.InnerDeadzone) / 100.0)
-		dzStyle := cell.Style{Fg: p.Warning, Bg: p.BgPanel}
-		outerStyle := cell.Style{Fg: p.AccentBlue, Bg: p.BgPanel}
-		for a := 0.0; a < 2*math.Pi; a += 0.08 {
-			ox := midX + int(math.Cos(a)*rad*1.4)
-			oy := midY + int(math.Sin(a)*rad)
-			s.ScopeCanvas.Set(ox, oy, outerStyle)
-			if dzRad >= 1.0 {
-				dx := midX + int(math.Cos(a)*dzRad*1.4)
-				dy := midY + int(math.Sin(a)*dzRad)
-				s.ScopeCanvas.Set(dx, dy, dzStyle)
+		dot := func(x, y float64, col cell.Color) {
+			cx, cy := midX+int(math.Round(x*rad)), midY+int(math.Round(y*rad))
+			st := cell.Style{Fg: col, Bg: p.BgPanel, Modifier: cell.ModifierBold}
+			for d := range 4 {
+				s.ScopeCanvas.Set(cx+d%2, cy+d/2, st)
 			}
 		}
-
-		// Live raw position dot & mapped position crosshair
-		px := midX + int(rawX*rad*1.4)
-		py := midY + int(rawY*rad)
-		dotStyle := cell.Style{Fg: p.AccentCyan, Bg: p.BgPanel, Modifier: cell.ModifierBold}
-		for dy := -1; dy <= 1; dy++ {
-			for dx := -1; dx <= 1; dx++ {
-				s.ScopeCanvas.Set(px+dx, py+dy, dotStyle)
-			}
-		}
-
+		dot(rawX, rawY, p.AccentCyan)
+		dot(mappedX, mappedY, p.Success)
 		f.RenderWidget(s.ScopeCanvas, cell.NewRect(inner.X, y, scopeW, scopeH))
+
+		// Values and legend to the right of the scope.
+		lx := inner.X + scopeW + 3
+		if lx+24 <= inner.X+inner.Width {
+			lw := inner.X + inner.Width - lx
+			row := func(dy uint16, mark string, col cell.Color, text, value string) {
+				if dy >= scopeH {
+					return // a short scope keeps only the first lines
+				}
+				f.Buffer.SetStringWithin(lx, y+dy, mark, cell.Style{Fg: col, Bg: p.BgPanel, Modifier: cell.ModifierBold}, 2)
+				copyValue(f, cell.NewRect(lx+2, y+dy, lw-2, 1), s, text, value, p.LabelStyle())
+			}
+			raw := fmt.Sprintf("%+.2f  %+.2f", rawX, rawY)
+			out := fmt.Sprintf("%+.2f  %+.2f", mappedX, mappedY)
+			deflection := fmt.Sprintf("%.1f%%", math.Hypot(rawX, rawY)*100)
+			row(1, "●", p.AccentCyan, i18n.T("Raw")+"     "+raw, raw)
+			row(2, "●", p.Success, i18n.T("Output")+"  "+out, out)
+			row(3, " ", p.FgMuted, i18n.Tf("Deflection %s", deflection), deflection)
+			row(5, "○", p.Warning, i18n.Tf("Deadzone %d%%", activeStick.InnerDeadzone), fmt.Sprintf("%d%%", activeStick.InnerDeadzone))
+			row(6, "○", p.AccentBlue, i18n.Tf("Max zone %d%%", activeStick.OuterDeadzone), fmt.Sprintf("%d%%", activeStick.OuterDeadzone))
+		}
 	}
 }

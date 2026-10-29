@@ -140,6 +140,8 @@ func TestContextualSettingsAndKeyboardActions(t *testing.T) {
 	if a.State.Mode != state.ModeAdvanced {
 		t.Fatal("mode shortcut failed")
 	}
+	a.State.ActivePanel = state.PanelLighting // a form taller than 24 rows
+	page.Press("pgdn")                        // the first frame measures the new form
 	page.Press("pgdn")
 	if a.State.PanelScroll == 0 {
 		t.Fatal("short forms must scroll")

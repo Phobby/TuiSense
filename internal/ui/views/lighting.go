@@ -7,9 +7,9 @@ import (
 	"github.com/Phobby/TuiSense/internal/device"
 	"github.com/Phobby/TuiSense/internal/state"
 	"github.com/thebanri/limoni/core/cell"
-	"github.com/thebanri/limoni/core/driver"
 	"github.com/thebanri/limoni/core/terminal"
 	"github.com/thebanri/limoni/widgets"
+	"strings"
 )
 
 type colorPreset struct {
@@ -72,118 +72,70 @@ func RenderLightingPanel(f *terminal.Frame, area cell.Rect, s *state.AppState, d
 	if hasRGB && inner.Width > 26 {
 		f.Buffer.SetStringWithin(inner.X+26, y, hexTxt, cell.Style{Fg: swatchCol, Bg: p.BgElevated, Modifier: cell.ModifierBold}, inner.Width-26)
 	}
-	y++
+	y += 3 // a blank row, then the first button row's top edge
 
-	// Row 1: Color Swatches
+	// Color swatches, brightness, animation and player LEDs: one button group each.
+	limit := inner.X + inner.Width
 	if hasRGB && y < inner.Y+inner.Height {
-		f.Buffer.SetStringWithin(inner.X, y, i18n.T("Swatches:"), p.MutedStyle(), 10)
-		sx := inner.X + 10
+		var items []choice
 		for _, sw := range colorSwatches {
-			pill := fmt.Sprintf(" ● %s ", i18n.T(sw.Name))
-			pw := uint16(cell.StringWidth(pill))
-			if sx+pw > inner.X+inner.Width {
-				sx = inner.X + 10
-				y++
-			}
-			sRect := cell.NewRect(sx, y, pw, 1)
-			col := cell.NewColorRGB(sw.R, sw.G, sw.B)
-			f.Buffer.SetStringWithin(sx, y, pill, cell.Style{Fg: col, Bg: p.BgElevated, Modifier: cell.ModifierBold}, pw)
 			r, g, b := sw.R, sw.G, sw.B
-			registerControl(f, sRect, s, "swatch_"+sw.Name, i18n.T(sw.Name), func(_ driver.MouseEvent) {
+			items = append(items, choice{ID: "swatch_" + sw.Name, Label: "● " + i18n.T(sw.Name), Fg: cell.NewColorRGB(r, g, b), OnSelect: func() {
 				s.Config.Lighting.Enabled = true
 				s.Config.Lighting.Animation = device.AnimSolid
 				s.Config.Lighting.Red, s.Config.Lighting.Green, s.Config.Lighting.Blue = r, g, b
 				s.ColorPickerState.SetRGB(r, g, b)
 				sendLighting()
-			})
-			sx += pw + 1
+			}})
 		}
-		y++
+		y = pillRows(f, inner.X, y, limit, s, i18n.T("Swatches:"), 12, items)
 	}
-
-	// Row 2: Brightness Presets
 	if hasBrightness && y < inner.Y+inner.Height {
-		f.Buffer.SetStringWithin(inner.X, y, i18n.T("Brightness:"), p.MutedStyle(), 12)
-		bx := inner.X + 12
-		levels := []device.BrightnessLevel{device.BrightnessHigh, device.BrightnessMedium, device.BrightnessLow}
-		for _, lvl := range levels {
-			lbl := " " + i18n.T(lvl.String()) + " "
-			lw := uint16(cell.StringWidth(lbl))
-			if bx+lw > inner.X+inner.Width {
-				bx = inner.X + 12
-				y++
-			}
-			bRect := cell.NewRect(bx, y, lw, 1)
-			f.Buffer.SetStringWithin(bx, y, lbl, p.ButtonStyle(s.Config.Lighting.Brightness == lvl), lw)
-			targetLvl := lvl
-			registerControl(f, bRect, s, fmt.Sprintf("brightness_%d", lvl), lbl, func(_ driver.MouseEvent) {
-				s.Config.Lighting.Brightness = targetLvl
+		var items []choice
+		for _, lvl := range []device.BrightnessLevel{device.BrightnessHigh, device.BrightnessMedium, device.BrightnessLow} {
+			target := lvl
+			items = append(items, choice{Kind: kindOption, ID: fmt.Sprintf("brightness_%d", lvl), Label: i18n.T(lvl.String()), Selected: s.Config.Lighting.Brightness == lvl, OnSelect: func() {
+				s.Config.Lighting.Brightness = target
 				sendLighting()
-			})
-			bx += lw + 1
+			}})
 		}
-		y++
+		y = pillRows(f, inner.X, y, limit, s, i18n.T("Brightness:"), 12, items)
 	}
-
-	// Row 3: Animation Mode Selector
 	if hasAnim && y < inner.Y+inner.Height {
-		f.Buffer.SetStringWithin(inner.X, y, i18n.T("Animation:"), p.MutedStyle(), 12)
-		ax := inner.X + 12
+		var items []choice
 		for _, anim := range device.AllLightbarAnimations {
-			lbl := " " + i18n.T(string(anim)) + " "
-			aw := uint16(cell.StringWidth(lbl))
-			if ax+aw > inner.X+inner.Width {
-				ax = inner.X + 12
-				y++
-			}
-			aRect := cell.NewRect(ax, y, aw, 1)
-			f.Buffer.SetStringWithin(ax, y, lbl, p.ButtonStyle(s.Config.Lighting.Animation == anim), aw)
-			targetAnim := anim
-			registerControl(f, aRect, s, "animation_"+string(anim), lbl, func(_ driver.MouseEvent) {
-				s.Config.Lighting.Animation = targetAnim
-				s.Config.Lighting.Enabled = targetAnim != device.AnimOff
+			target := anim
+			items = append(items, choice{Kind: kindOption, ID: "animation_" + string(anim), Label: i18n.T(string(anim)), Selected: s.Config.Lighting.Animation == anim, OnSelect: func() {
+				s.Config.Lighting.Animation = target
+				s.Config.Lighting.Enabled = target != device.AnimOff
 				sendLighting()
-			})
-			ax += aw + 1
+			}})
 		}
-		y++
+		y = pillRows(f, inner.X, y, limit, s, i18n.T("Animation:"), 12, items)
 	}
-
-	// Row 4: Player Indicator LEDs (P1..P4)
 	if hasPlayer && y < inner.Y+inner.Height {
-		f.Buffer.SetStringWithin(inner.X, y, i18n.T("Player LED:"), p.MutedStyle(), 12)
-		px := inner.X + 12
 		masks := []struct {
 			num  int
 			mask uint8
 			str  string
 		}{
-			{1, 0x04, " P1 (••█••) "},
-			{2, 0x0A, " P2 (•█•█•) "},
-			{3, 0x15, " P3 (█•█•█) "},
-			{4, 0x1B, " P4 (██•██) "},
-			{0, 0x00, i18n.T(" Off ")},
+			{1, 0x04, "P1 (••█••)"},
+			{2, 0x0A, "P2 (•█•█•)"},
+			{3, 0x15, "P3 (█•█•█)"},
+			{4, 0x1B, "P4 (██•██)"},
+			{0, 0x00, strings.TrimSpace(i18n.T(" Off "))},
 		}
+		var items []choice
 		for _, m := range masks {
-			mw := uint16(cell.StringWidth(m.str))
-			if px+mw > inner.X+inner.Width {
-				px = inner.X + 12
-				y++
-			}
-			pRect := cell.NewRect(px, y, mw, 1)
-			f.Buffer.SetStringWithin(px, y, m.str, p.ButtonStyle(s.Config.Lighting.PlayerMask == m.mask), mw)
-			targetNum, targetMask := m.num, m.mask
-			registerControl(f, pRect, s, fmt.Sprintf("player_%d", m.num), m.str, func(_ driver.MouseEvent) {
-				s.Config.Lighting.PlayerNumber = targetNum
-				s.Config.Lighting.PlayerMask = targetMask
+			num, mask := m.num, m.mask
+			items = append(items, choice{Kind: kindOption, ID: fmt.Sprintf("player_%d", m.num), Label: m.str, Selected: s.Config.Lighting.PlayerMask == m.mask, OnSelect: func() {
+				s.Config.Lighting.PlayerNumber = num
+				s.Config.Lighting.PlayerMask = mask
 				sendLighting()
-			})
-			px += mw + 1
+			}})
 		}
-		y++
+		y = pillRows(f, inner.X, y, limit, s, i18n.T("Player LED:"), 12, items)
 	}
-
-	y++
 
 	// Interactive 2D HSV ColorPicker (uses Limoni's built-in widgets.ColorPicker)
 	remainH := int(inner.Y+inner.Height) - int(y)

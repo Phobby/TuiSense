@@ -97,6 +97,9 @@ func TestLeavingDiagnosticsRestoresTriggersAndStopsEffects(t *testing.T) {
 	a, page := openDiagnostics(t, state.ModeAdvanced)
 	d := a.State.Diag
 	d.Active = diag.CatTriggers
+	for range 6 { // the button sits below the fold, as a user would scroll to it
+		page.Press("pgdn")
+	}
 	page.GetByID("resistance_start").Click()
 	a.Dispatcher.FlushNow()
 	mock := a.Manager.Active()

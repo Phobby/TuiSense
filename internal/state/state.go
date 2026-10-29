@@ -86,7 +86,14 @@ type AppState struct {
 	HoveredRegion     device.RegionID
 	SelectedComponent string // visual.Component ID on the stage model
 	HoveredComponent  string
-	Gallery           GalleryState
+	// Pointer is the last mouse position; buttons under it light up.
+	PointerX, PointerY uint16
+	PointerIn          bool
+	// HoverID is the control under the pointer since HoverAt; LastHoverID
+	// is the one it left at LastHoverAt, still fading out.
+	HoverID, LastHoverID string
+	HoverAt, LastHoverAt time.Time
+	Gallery              GalleryState
 	// HardwareModels are the static descriptors of real hardware drivers,
 	// keyed by ModelID (the gallery uses them to state actual support).
 	HardwareModels map[string]device.Descriptor
@@ -159,7 +166,6 @@ type AppState struct {
 	BindToMAC        bool
 
 	// Top Tabs, Logs, and Toasts
-	NavTabsState *widgets.TabsState
 	LogViewState *widgets.LogViewState
 	Logger       *logging.Logger
 	Toasts       *widgets.ToastManager
@@ -167,7 +173,6 @@ type AppState struct {
 	// Reusable 3D Viewer & Canvases
 	Viewer3D    *widgets.Viewer3D
 	StageCanvas *widgets.Canvas
-	CurveCanvas *widgets.Canvas
 	ScopeCanvas *widgets.Canvas
 }
 
@@ -226,13 +231,11 @@ func NewAppState(profileDir string, logger *logging.Logger) *AppState {
 		ProfileListState: widgets.NewListState(),
 		ProfileNameInput: nameInput,
 		BindToMAC:        true,
-		NavTabsState:     &widgets.TabsState{},
 		LogViewState:     widgets.NewLogViewState(),
 		Logger:           logger,
 		Toasts:           widgets.NewToastManager(widgets.ToastBottomRight),
 		Viewer3D:         &widgets.Viewer3D{ID: "stage_3d"},
 		StageCanvas:      widgets.NewCanvas(60, 24),
-		CurveCanvas:      widgets.NewCanvas(40, 8),
 		ScopeCanvas:      widgets.NewCanvas(28, 8),
 	}
 	s.ResetCamera()

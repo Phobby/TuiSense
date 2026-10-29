@@ -40,15 +40,22 @@ func RenderDashboard(f *terminal.Frame, s *state.AppState, dispatch func(device.
 	grid := ui.ComputeLayout(total, s.ActivePanel == state.PanelDiagnostics && !s.Gallery.Active)
 	pc := PanelContext{S: s, Dispatch: dispatch, CB: cb}
 
-	renderHeader(f, grid.HeaderArea, s, cb)
 	if s.Gallery.Active {
+		renderHeader(f, grid.HeaderArea, s, cb)
 		renderGallery(f, grid, s, cb)
 	} else {
+		renderHeader(f, grid.HeaderArea, s, cb)
 		renderPanelTabs(f, grid.TabsArea, s)
 		renderBody(f, total, grid, pc)
 	}
 
 	uiwidgets.RenderHelpBar(f, grid.FooterArea, s)
+	// Under an open dialog only the dialog's own controls take hover.
+	firstControl := len(f.Accessibility)
+	overlay := s.ShowDeviceSelector || s.ShowHelp || s.ShowCopyFallback || s.ShowQuitConfirm
+	if !overlay {
+		firstControl = 0
+	}
 
 	if s.ShowDeviceSelector {
 		renderDeviceSelector(f, total, s, cb)
@@ -63,6 +70,7 @@ func RenderDashboard(f *terminal.Frame, s *state.AppState, dispatch func(device.
 	if s.ShowQuitConfirm {
 		renderQuitConfirm(f, total, s)
 	}
+	renderHover(f, s, firstControl, time.Now())
 	if s.Toasts != nil {
 		s.Toasts.Update(time.Now())
 		s.Toasts.Draw(cell.NewContext(total, p.CanvasStyle()), f.Buffer)
@@ -73,6 +81,14 @@ func RenderDashboard(f *terminal.Frame, s *state.AppState, dispatch func(device.
 func renderBody(f *terminal.Frame, total cell.Rect, grid ui.DashboardLayout, pc PanelContext) {
 	s := pc.S
 	stageCB := uiwidgets.StageCallbacks{OnSelectComponent: s.SelectComponent}
+	if s.ActivePanel == state.PanelDiagnostics && total.Width >= 140 {
+		// Wide terminals: controller beside the results, as in Customize.
+		body := cell.NewRect(total.X, grid.Stage3DArea.Y, total.Width, grid.FooterArea.Y-grid.Stage3DArea.Y)
+		stage := cell.NewRect(body.X, body.Y, body.Width-96, body.Height)
+		uiwidgets.RenderControllerStage(f, stage, s, stageCB)
+		RenderPanel(f, cell.NewRect(stage.X+stage.Width, body.Y, 96, body.Height), pc)
+		return
+	}
 	if s.ActivePanel == state.PanelOverview || s.ActivePanel == state.PanelDiagnostics {
 		uiwidgets.RenderControllerStage(f, grid.Stage3DArea, s, stageCB)
 		if s.ActivePanel == state.PanelDiagnostics {
@@ -82,7 +98,7 @@ func renderBody(f *terminal.Frame, total cell.Rect, grid ui.DashboardLayout, pc 
 		}
 		return
 	}
-	area := cell.NewRect(total.X, total.Y+3, total.Width, total.Height-4)
+	area := cell.NewRect(total.X, grid.Stage3DArea.Y, total.Width, grid.FooterArea.Y-grid.Stage3DArea.Y)
 	area = renderSubnav(f, area, s)
 	if total.Width >= 140 && state.PrimaryPanel(s.ActivePanel) == state.PanelCustomize && s.ActivePanel != state.PanelCustomize {
 		stage := cell.NewRect(area.X, area.Y, area.Width-72, area.Height)
@@ -108,12 +124,8 @@ func renderHeader(f *terminal.Frame, area cell.Rect, s *state.AppState, cb Callb
 		return
 	}
 	p := s.Theme
-	bar := cell.Style{Fg: p.FgSecondary, Bg: p.BgElevated}
-	for x := area.X; x < area.X+area.Width; x++ {
-		f.Buffer.SetCell(x, area.Y, cell.Cell{Content: ' ', Style: bar})
-	}
 	x := area.X + 1
-	x += f.Buffer.SetStringWithin(x, area.Y, i18n.T(" TUISENSE "), cell.Style{Fg: p.FgPrimary, Bg: p.BgElevated, Modifier: cell.ModifierBold}, area.Width-2)
+	x += f.Buffer.SetStringWithin(x, area.Y, i18n.T(" TUISENSE "), cell.Style{Fg: p.FgPrimary, Bg: p.BgCanvas, Modifier: cell.ModifierBold}, area.Width-2)
 	x++
 
 	// Device selector pill
@@ -139,7 +151,7 @@ func renderHeader(f *terminal.Frame, area cell.Rect, s *state.AppState, cb Callb
 	pw := uint16(cell.StringWidth(pill))
 	if x+pw < area.X+area.Width {
 		rect := cell.NewRect(x, area.Y, pw, 1)
-		f.Buffer.SetStringWithin(x, area.Y, pill, cell.Style{Fg: accent, Bg: p.BgElevated, Modifier: cell.ModifierBold}, pw)
+		f.Buffer.SetStringWithin(x, area.Y, pill, cell.Style{Fg: accent, Bg: p.BgCanvas, Modifier: cell.ModifierBold}, pw)
 		if len(s.Devices) > 1 && !s.Gallery.Active {
 			f.RegisterClickHandler(rect, func(_ driver.MouseEvent) { openSelector(s) })
 		}
@@ -189,7 +201,7 @@ func renderHeader(f *terminal.Frame, area cell.Rect, s *state.AppState, cb Callb
 	vw := uint16(cell.StringWidth(label))
 	if area.Width > vw+2 {
 		vx := area.X + area.Width - vw - 1
-		st := cell.Style{Fg: p.FgMuted, Bg: p.BgElevated}
+		st := cell.Style{Fg: p.FgMuted, Bg: p.BgCanvas}
 		if s.Update.Status == update.StatusAvailable || s.Update.Status == update.StatusReady {
 			st.Fg = p.AccentBlue
 		}
@@ -231,10 +243,12 @@ func renderHeader(f *terminal.Frame, area cell.Rect, s *state.AppState, cb Callb
 	}
 }
 
-// renderPanelTabs shows the capability-filtered panels for the active device and mode.
-func renderPanelTabs(f *terminal.Frame, area cell.Rect, s *state.AppState) {
-	if area.Width == 0 {
-		return
+// renderPanelTabs draws the capability-filtered pages as folder tabs: the
+// selected page is framed, its top edge on the row above area, and opens into
+// a line drawn under all of them. It returns the x after the last tab.
+func renderPanelTabs(f *terminal.Frame, area cell.Rect, s *state.AppState) uint16 {
+	if area.Width == 0 || area.Y == 0 {
+		return area.X
 	}
 	p := s.Theme
 	panels := s.PrimaryPanels()
@@ -250,7 +264,7 @@ func renderPanelTabs(f *terminal.Frame, area cell.Rect, s *state.AppState) {
 				t += " ◐"
 			}
 			titles[i] = t
-			width += cell.StringWidth(t) + 3 // padding + divider
+			width += cell.StringWidth(t) + 4 // padding + the frame's two edges
 		}
 		return titles, width
 	}
@@ -258,28 +272,39 @@ func renderPanelTabs(f *terminal.Frame, area cell.Rect, s *state.AppState) {
 	if width > int(area.Width)-2 {
 		titles, _ = build(false) // drop "1 " prefixes before truncating titles
 	}
-	selected := -1
-	for i, e := range panels {
-		if e.Spec.ID == state.PrimaryPanel(s.ActivePanel) {
-			selected = i
+	base := area.Y + 1
+	line := cell.Style{Fg: p.BgSubtle, Bg: p.BgCanvas}
+	edge := cell.Style{Fg: p.AccentCyan, Bg: p.BgCanvas}
+	f.Buffer.SetStringWithin(area.X, base, strings.Repeat("─", int(area.Width)), line, area.Width)
+	x := area.X + 1
+	for i, t := range titles {
+		lbl := " " + t + " "
+		w := uint16(cell.StringWidth(lbl))
+		if x+w+2 > area.X+area.Width {
+			break
 		}
+		target := panels[i].Spec.ID
+		selected := target == state.PrimaryPanel(s.ActivePanel)
+		bar := strings.Repeat("─", int(w))
+		if selected {
+			f.Buffer.SetStringWithin(x, area.Y-1, "╭"+bar+"╮", edge, w+2)
+			f.Buffer.SetStringWithin(x, area.Y, "│", edge, 1)
+			f.Buffer.SetStringWithin(x+1, area.Y, lbl, cell.Style{Fg: p.FgPrimary, Bg: p.BgCanvas, Modifier: cell.ModifierBold}, w)
+			f.Buffer.SetStringWithin(x+w+1, area.Y, "│", edge, 1)
+			f.Buffer.SetStringWithin(x, base, "╯"+strings.Repeat(" ", int(w))+"╰", edge, w+2)
+		} else {
+			f.Buffer.SetStringWithin(x+1, area.Y, lbl, cell.Style{Fg: p.FgMuted, Bg: p.BgCanvas}, w)
+		}
+		rect := cell.NewRect(x, area.Y, w+2, 1)
+		f.RegisterClickHandler(rect, func(_ driver.MouseEvent) { s.ActivePanel = target })
+		st := accessibility.NodeState(0)
+		if selected {
+			st |= accessibility.StateSelected
+		}
+		f.RegisterAccessibility(accessibility.AccessibilityNode{ID: "page_" + string(target), Role: accessibility.RoleTab, Label: t, State: st, Bounds: rect})
+		x += w + 2
 	}
-	divider := " "
-	f.RenderWidget(widgets.Tabs{
-		ID:            "top_nav_tabs",
-		Titles:        titles,
-		Selected:      selected,
-		State:         s.NavTabsState,
-		Divider:       &divider,
-		Style:         cell.Style{Fg: p.FgMuted, Bg: p.BgCanvas},
-		SelectedStyle: cell.Style{Fg: p.FgPrimary, Bg: p.BgSubtle, Modifier: cell.ModifierBold},
-		DividerStyle:  cell.Style{Fg: p.BgSubtle, Bg: p.BgCanvas},
-		OnSelect: func(idx int) {
-			if idx >= 0 && idx < len(panels) {
-				s.ActivePanel = panels[idx].Spec.ID
-			}
-		},
-	}, cell.NewRect(area.X+1, area.Y, area.Width-2, 1))
+	return x
 }
 
 func renderDeviceSelector(f *terminal.Frame, total cell.Rect, s *state.AppState, cb Callbacks) {
@@ -372,10 +397,10 @@ func renderDeviceSelector(f *terminal.Frame, total cell.Rect, s *state.AppState,
 // the main screen.
 func renderQuitConfirm(f *terminal.Frame, total cell.Rect, s *state.AppState) {
 	p := s.Theme
-	yes, no := " "+i18n.T("Yes")+" ", " "+i18n.T("No")+" "
+	yes, no := i18n.T("Yes"), i18n.T("No")
 	title := i18n.T("Quit TuiSense?")
 	hint := i18n.T("Enter: quit · Esc: stay")
-	w := uint16(max(cell.StringWidth(title), cell.StringWidth(hint), cell.StringWidth(yes+"  "+no)) + 6)
+	w := uint16(max(cell.StringWidth(title), cell.StringWidth(hint), int(pillWidth(choice{Label: yes})+1+pillWidth(choice{Label: no}))) + 6)
 	if total.Width < w+2 || total.Height < 9 {
 		return
 	}
@@ -395,24 +420,11 @@ func renderQuitConfirm(f *terminal.Frame, total cell.Rect, s *state.AppState) {
 	center := func(text string) uint16 { return area.X + (w-uint16(cell.StringWidth(text)))/2 }
 	f.Buffer.SetStringWithin(center(title), area.Y+1, title, cell.Style{Fg: p.FgPrimary, Bg: p.BgElevated, Modifier: cell.ModifierBold}, w-2)
 
-	bx := center(yes + "  " + no)
-	buttons := []struct {
-		id, label string
-		x         uint16
-		selected  bool
-		onClick   func()
-	}{
-		{"quit_yes", yes, bx, true, func() { s.QuitRequested = true }},
-		{"quit_no", no, bx + uint16(cell.StringWidth(yes)) + 2, false, func() { s.ShowQuitConfirm = false }},
-	}
-	for _, b := range buttons {
-		bw := uint16(cell.StringWidth(b.label))
-		rect := cell.NewRect(b.x, area.Y+3, bw, 1)
-		f.Buffer.SetStringWithin(b.x, area.Y+3, b.label, p.ButtonStyle(b.selected), bw)
-		onClick := b.onClick
-		f.RegisterClickHandler(rect, func(_ driver.MouseEvent) { onClick() })
-		f.RegisterAccessibility(accessibility.AccessibilityNode{ID: b.id, Role: accessibility.RoleButton, Label: strings.TrimSpace(b.label), Bounds: rect})
-	}
+	bw := pillWidth(choice{Label: yes}) + 1 + pillWidth(choice{Label: no})
+	pillRow(f, area.X+(w-bw)/2, area.Y+3, area.X+w, s, "", 0, []choice{
+		{ID: "quit_yes", Label: yes, Selected: true, OnSelect: func() { s.QuitRequested = true }},
+		{ID: "quit_no", Label: no, OnSelect: func() { s.ShowQuitConfirm = false }},
+	})
 	f.Buffer.SetStringWithin(center(hint), area.Y+5, hint, cell.Style{Fg: p.FgMuted, Bg: p.BgElevated}, w-2)
 	f.RegisterAccessibility(accessibility.AccessibilityNode{ID: "quit_confirm", Role: accessibility.RoleGeneric, Label: title, Bounds: area})
 }

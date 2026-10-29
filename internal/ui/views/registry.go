@@ -119,9 +119,10 @@ var panelViews = map[state.PanelID]PanelView{
 	state.PanelProfiles: {EZ: renderEZProfiles, Advanced: renderProfilesPanel},
 	state.PanelDevice:   {Advanced: RenderDeviceInfoPanel},
 	state.PanelFirmware: {EZ: renderEZFirmware, Advanced: renderFirmwarePanel},
-	state.PanelSettings: {EZ: renderEZSettings, Advanced: func(f *terminal.Frame, a cell.Rect, pc PanelContext) {
-		RenderSettingsPanel(f, a, pc.S, pc.CB)
-	}},
+	state.PanelSettings: {
+		EZ:       func(f *terminal.Frame, a cell.Rect, pc PanelContext) { renderSettings(f, a, pc, false) },
+		Advanced: func(f *terminal.Frame, a cell.Rect, pc PanelContext) { renderSettings(f, a, pc, true) },
+	},
 	state.PanelLogs: {Advanced: func(f *terminal.Frame, a cell.Rect, pc PanelContext) {
 		RenderLogsPanel(f, a, pc.S)
 	}},
@@ -153,7 +154,7 @@ func RenderPanel(f *terminal.Frame, area cell.Rect, pc PanelContext) {
 	if pc.S.Mode == state.ModeEZ && v.EZ != nil {
 		r = v.EZ
 	}
-	if area.Height < 32 && pc.S.ActivePanel != state.PanelDiagnostics && pc.S.ActivePanel != state.PanelOverview && pc.S.ActivePanel != state.PanelLogs {
+	if pc.S.ActivePanel != state.PanelDiagnostics && pc.S.ActivePanel != state.PanelOverview && pc.S.ActivePanel != state.PanelLogs {
 		renderPanelViewport(f, area, pc, r)
 	} else {
 		pc.S.PanelScrollMax = 0

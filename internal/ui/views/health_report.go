@@ -30,10 +30,16 @@ func reportCopy(c *cursor, text string) {
 func renderTestReportControls(c *cursor, d *diag.Session) {
 	report := d.ReportSnapshot(time.Now()).Scope(d.Active)
 	c.pills("", 0, []choice{
-		{ID: "copy_test_summary", Label: i18n.T("Copy Test Summary"), OnSelect: func() { reportCopy(c, report.SummaryText()) }},
 		{ID: "copy_test_report", Label: i18n.T("Copy This Test"), OnSelect: func() { reportCopy(c, report.TestText()) }},
-		{ID: "diag_show_test_report", Label: i18n.T("Test Report"), Selected: d.ShowTestReport, OnSelect: func() { d.ShowTestReport = !d.ShowTestReport }},
+		{Kind: kindToggle, ID: "diag_show_test_report", Label: i18n.T("Test Report"), Selected: d.ShowTestReport, OnSelect: func() { d.ShowTestReport = !d.ShowTestReport }},
+		copyAllChoice(c),
 	})
+}
+
+// copyAllChoice copies every test's results; it sits beside the page's own
+// actions rather than taking a row of its own.
+func copyAllChoice(c *cursor) choice {
+	return choice{ID: "copy_all_diagnostics", Label: i18n.T("Copy All Diagnostics"), OnSelect: func() { reportCopy(c, BuildHealthClipboard(c.s, false, time.Now())) }}
 }
 
 func renderHealthReport(c *cursor, d *diag.Session, pc PanelContext, report diag.Report) {
@@ -45,17 +51,21 @@ func renderHealthReport(c *cursor, d *diag.Session, pc PanelContext, report diag
 	} else {
 		controls = append(controls, choice{ID: "copy_full_report", Label: i18n.T("Copy Report"), OnSelect: func() { reportCopy(c, report.Text()) }}, choice{ID: "copy_warnings_only", Label: i18n.T("Copy Warnings Only"), OnSelect: func() { reportCopy(c, report.WarningsText()) }})
 	}
+	// Three groups: copying, viewing/exporting, then history below.
+	controls = append(controls, choice{ID: "copy_technical_report", Label: i18n.T("Copy Technical Report"), OnSelect: func() { reportCopy(c, report.TechnicalText()) }})
 	c.pills("", 0, controls)
-	c.pills("", 0, []choice{
-		{ID: "copy_technical_report", Label: i18n.T("Copy Technical Report"), OnSelect: func() { reportCopy(c, report.TechnicalText()) }},
-		{ID: "show_technical_report", Label: i18n.T("Technical Report"), Selected: d.ShowTechnicalReport, OnSelect: func() { d.ShowTechnicalReport = !d.ShowTechnicalReport }},
+	view := []choice{
+		{Kind: kindToggle, ID: "show_technical_report", Label: i18n.T("Technical Report"), Selected: d.ShowTechnicalReport, OnSelect: func() { d.ShowTechnicalReport = !d.ShowTechnicalReport }},
 		{ID: "report_raw_logs", Label: i18n.T("Raw Logs"), OnSelect: func() { d.Suspend(); c.s.Mode = state.ModeAdvanced; c.s.ActivePanel = state.PanelLogs }},
-	})
+	}
 	if pc.CB.OnExportReport != nil {
-		c.pills("", 0, []choice{{ID: "health_report_export", Label: i18n.T("Export: TXT / Markdown / JSON"), OnSelect: pc.CB.OnExportReport}})
+		view = append(view, choice{ID: "health_report_export", Label: i18n.T("Export: TXT / Markdown / JSON"), OnSelect: pc.CB.OnExportReport})
 	}
 	if !individual {
-		c.pills("", 0, []choice{{ID: "health_report_refresh", Label: i18n.T("Generate Current Report"), OnSelect: func() { d.Select(diag.CatHealthReport); d.GenerateHealthReport(time.Now()) }}})
+		view = append(view, choice{ID: "health_report_refresh", Label: i18n.T("Generate Current Report"), OnSelect: func() { d.Select(diag.CatHealthReport); d.GenerateHealthReport(time.Now()) }})
+	}
+	c.pills("", 0, view)
+	if !individual {
 		renderHistoryControls(c, d, pc)
 	}
 	if d.PreviousReport != nil && !individual {

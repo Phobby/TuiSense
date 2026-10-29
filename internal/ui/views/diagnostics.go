@@ -3,6 +3,7 @@ package views
 import (
 	"fmt"
 	"github.com/Phobby/TuiSense/internal/i18n"
+	"slices"
 	"strings"
 	"time"
 
@@ -26,16 +27,32 @@ type cursor struct {
 	r cell.Rect
 	y uint16
 	s *state.AppState
+	// blank is the row just after the last blank line, so gaps never stack.
+	blank uint16
 }
 
 func newCursor(f *terminal.Frame, r cell.Rect, s *state.AppState) *cursor {
-	return &cursor{f: f, r: r, y: r.Y, s: s}
+	return &cursor{f: f, r: r, y: r.Y, s: s, blank: ^uint16(0)}
 }
 
-func (c *cursor) ok() bool         { return c.y < c.r.Y+c.r.Height }
-func (c *cursor) remaining() int   { return int(c.r.Y+c.r.Height) - int(c.y) }
-func (c *cursor) gap()             { c.y++ }
-func (c *cursor) limit() uint16    { return c.r.X + c.r.Width }
+func (c *cursor) ok() bool       { return c.y < c.r.Y+c.r.Height }
+func (c *cursor) remaining() int { return int(c.r.Y+c.r.Height) - int(c.y) }
+func (c *cursor) limit() uint16  { return c.r.X + c.r.Width }
+
+// section draws a ruled section title across the cursor's column.
+func (c *cursor) section(title string) {
+	if c.ok() {
+		c.y = sectionHeader(c.f, c.s, c.r, c.y, title)
+	}
+}
+
+// gap leaves one blank line; a second gap in a row adds nothing.
+func (c *cursor) gap() {
+	if c.y != c.blank {
+		c.y++
+		c.blank = c.y
+	}
+}
 func (c *cursor) p() theme.Palette { return c.s.Theme }
 
 func (c *cursor) line(text string, st cell.Style) {
@@ -59,30 +76,18 @@ func (c *cursor) wrap(text string, st cell.Style, maxLines int) {
 // pills renders a pill row, wrapping onto further lines (aligned after the
 // label) when the items do not fit.
 func (c *cursor) pills(label string, lw uint16, items []choice) {
-	if label != "" && uint16(cell.StringWidth(label)+1) > lw {
-		lw = uint16(cell.StringWidth(label) + 1)
+	if len(items) == 0 {
+		return
 	}
-	first := true
-	for len(items) > 0 && c.ok() {
-		x := c.r.X + lw
-		n := 0
-		for n < len(items) {
-			w := uint16(cell.StringWidth(items[n].Label) + 3)
-			if x+w > c.limit() && n > 0 {
-				break
-			}
-			x += w
-			n++
-		}
-		lbl := ""
-		if first {
-			lbl = label
-		}
-		pillRow(c.f, c.r.X, c.y, c.limit(), c.s, lbl, lw, items[:n])
-		items = items[n:]
-		first = false
-		c.y++
+	// Every button group stands apart from the text and groups around it.
+	if c.y > c.r.Y {
+		c.gap()
 	}
+	if c.remaining() < pillRowH {
+		return
+	}
+	c.y = pillRows(c.f, c.r.X, c.y+1, c.limit(), c.s, label, lw, items) // a blank row under the last frame
+	c.blank = c.y
 }
 
 // kv writes "key value", wrapping a long value onto up to two more lines
@@ -182,6 +187,8 @@ func shortCategory(c diag.Category) string {
 		return i18n.T("Power")
 	case diag.CatConnection:
 		return i18n.T("Link")
+	case diag.CatFirmware:
+		return i18n.T("Firmware")
 	}
 	return c.Label()
 }
@@ -199,13 +206,12 @@ func renderDiagnosticsPanel(f *terminal.Frame, area cell.Rect, pc PanelContext) 
 		// Tests measure a real controller's input; a preview has none.
 		inner := panelFrame(f, area, s, i18n.T("Diagnostics 2.0"))
 		c := newCursor(f, inner, s)
-		c.line(i18n.T("Diagnostics measure a connected controller's own input, so they are not part of the settings preview."), p.LabelStyle())
-		c.line(i18n.T("Connect this controller to test its sticks, triggers and buttons."), p.MutedStyle())
+		c.wrap(i18n.T("Diagnostics measure a connected controller's own input, so they are not part of the settings preview."), p.LabelStyle(), 3)
+		c.wrap(i18n.T("Connect this controller to test its sticks, triggers and buttons."), p.MutedStyle(), 3)
 		return
 	}
 	inner := panelFrame(f, area, s, title)
 	c := newCursor(f, inner, s)
-	renderCopyActions(c, true)
 	if d == nil {
 		c.line(i18n.T("Connect a controller (or choose one with [C]) to run diagnostics."), p.LabelStyle())
 		return
@@ -295,32 +301,38 @@ func renderDiagTabs(c *cursor, d *diag.Session) {
 		return
 	}
 	p := c.p()
-	x := c.r.X
-	draw := func(id, label string, st cell.Style, onClick func()) bool {
-		w := uint16(cell.StringWidth(label))
+	x, indent := c.r.X, c.r.X // indent: where a wrapped row of tabs starts
+	draw := func(id, text string, fg cell.Color, selected bool, onClick func()) bool {
+		w := tabChipWidth(text)
 		if x+w > c.limit() {
 			c.y++
-			x = c.r.X
+			x = indent
 			if !c.ok() {
 				return false
 			}
 		}
 		rect := cell.NewRect(x, c.y, w, 1)
-		c.f.Buffer.SetStringWithin(x, c.y, label, st, w)
+		drawTabChip(c.f, c.s, x, c.y, text, fg, selected)
 		c.f.RegisterClickHandler(rect, func(_ driver.MouseEvent) { onClick() })
-		c.f.RegisterAccessibility(accessibility.AccessibilityNode{ID: id, Role: accessibility.RoleTab, Label: strings.TrimSpace(label), Bounds: rect})
+		st := accessibility.NodeState(0)
+		if selected {
+			st |= accessibility.StateSelected
+		}
+		c.f.RegisterAccessibility(accessibility.AccessibilityNode{ID: id, Role: accessibility.RoleTab, Label: text, State: st, Bounds: rect})
 		x += w + 1
 		return true
 	}
-	sumStyle := cell.Style{Fg: p.FgSecondary, Bg: p.BgElevated}
-	if d.Active == "" {
-		sumStyle = p.ButtonStyle(true)
+	summary := func() {
+		draw("diag_tab_summary", i18n.T("◎ All"), p.FgSecondary, d.Active == "", func() { d.Select("") })
 	}
-	draw("diag_tab_summary", i18n.T(" ◎ All "), sumStyle, func() { d.Select("") })
-	draw("diag_tab_health_report", " "+i18n.T("Health Report")+" ", p.ButtonStyle(d.Active == diag.CatHealthReport), func() { d.Select(diag.CatHealthReport); d.GenerateHealthReport(time.Now()) })
+	health := func() {
+		draw("diag_tab_health_report", i18n.T("Health Report"), p.FgSecondary, d.Active == diag.CatHealthReport, func() { d.Select(diag.CatHealthReport); d.GenerateHealthReport(time.Now()) })
+	}
 	if c.r.Height < 16 {
+		summary()
+		health()
 		if d.Active != "" && d.Active != diag.CatHealthReport {
-			draw("diag_tab_"+string(d.Active), " "+d.Active.Label()+" ", p.ButtonStyle(true), func() {})
+			draw("diag_tab_"+string(d.Active), d.Active.Label(), p.FgSecondary, true, func() {})
 		}
 		cycle := func(delta int) {
 			categories := append([]diag.Category{"", diag.CatHealthReport}, d.Visible()...)
@@ -332,23 +344,57 @@ func renderDiagTabs(c *cursor, d *diag.Session) {
 			}
 			d.Select(categories[(index+delta+len(categories))%len(categories)])
 		}
-		draw("diag_category_prev", " ‹ ", p.ButtonStyle(false), func() { cycle(-1) })
-		draw("diag_category_next", " › ", p.ButtonStyle(false), func() { cycle(1) })
+		draw("diag_category_prev", "‹", p.FgSecondary, false, func() { cycle(-1) })
+		draw("diag_category_next", "›", p.FgSecondary, false, func() { cycle(1) })
 		c.y++
 		return
 	}
-	for _, cat := range d.Visible() {
-		st := d.Status(cat)
-		style := cell.Style{Fg: statusColor(p, st), Bg: p.BgElevated}
-		if st == diag.Unavailable {
-			style = cell.Style{Fg: p.FgMuted, Bg: p.BgPanel}
+	// One labelled row per kind of test, so 14 tabs read as four short lists.
+	groups := []struct {
+		label string
+		cats  []diag.Category
+	}{
+		{i18n.T("Input"), []diag.Category{diag.CatSticks, diag.CatDeadzone, diag.CatButtons, diag.CatTriggers, diag.CatTouchpad, diag.CatMotion}},
+		{i18n.T("Sound & feel"), []diag.Category{diag.CatHaptics, diag.CatAudioOut, diag.CatAudioIn}},
+		{i18n.T("Device"), []diag.Category{diag.CatBattery, diag.CatConnection, diag.CatFirmware}},
+	}
+	lw := uint16(cell.StringWidth(i18n.T("Overview")))
+	for _, g := range groups {
+		lw = max(lw, uint16(cell.StringWidth(g.label)))
+	}
+	lw += 2
+	row := func(label string) bool {
+		if !c.ok() {
+			return false
 		}
-		if d.Active == cat {
-			style = p.ButtonStyle(true)
-		}
-		cat := cat
-		if !draw("diag_tab_"+string(cat), " "+st.Icon()+" "+shortCategory(cat)+" ", style, func() { d.Select(cat) }) {
-			return
+		c.f.Buffer.SetStringWithin(c.r.X, c.y, label, p.MutedStyle(), lw)
+		x, indent = c.r.X+lw, c.r.X+lw
+		return true
+	}
+	if !row(i18n.T("Overview")) {
+		return
+	}
+	summary()
+	health()
+	visible := d.Visible()
+	for _, g := range groups {
+		first := true
+		for _, cat := range g.cats {
+			if !slices.Contains(visible, cat) {
+				continue
+			}
+			if first {
+				c.y++
+				if !row(g.label) {
+					return
+				}
+				first = false
+			}
+			st := d.Status(cat)
+			cat := cat
+			if !draw("diag_tab_"+string(cat), st.Icon()+" "+shortCategory(cat), statusColor(p, st), d.Active == cat, func() { d.Select(cat) }) {
+				return
+			}
 		}
 	}
 	c.y++
@@ -364,6 +410,7 @@ func renderDiagSummary(c *cursor, d *diag.Session, pc PanelContext) {
 		{ID: "diag_run_guided", Label: i18n.T("▶ Run guided check"), OnSelect: d.StartGuided},
 		{ID: "diag_generate_health_report", Label: i18n.T("Generate Health Report"), OnSelect: func() { d.Select(diag.CatHealthReport); d.GenerateHealthReport(time.Now()) }},
 		{ID: "diag_reset", Label: i18n.T("↻ Reset results"), OnSelect: func() { d.Reset(time.Now()) }},
+		copyAllChoice(c),
 	}
 	if pc.CB.OnExportReport != nil {
 		actions = append(actions, choice{ID: "diag_export", Label: i18n.T("⇩ Export report"), OnSelect: pc.CB.OnExportReport})
@@ -387,7 +434,10 @@ func renderDiagSummary(c *cursor, d *diag.Session, pc PanelContext) {
 		c.wrap(line, p.LabelStyle(), 3)
 	}
 	c.gap()
-	labelW := uint16(22)
+	labelW := uint16(0)
+	for _, cat := range diag.AllCategories {
+		labelW = max(labelW, uint16(cell.StringWidth(cat.Label())+4)) // icon, space, gap
+	}
 	for _, cat := range diag.AllCategories {
 		if !c.ok() {
 			break

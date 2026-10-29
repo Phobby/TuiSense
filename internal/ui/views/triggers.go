@@ -3,12 +3,11 @@ package views
 import (
 	"fmt"
 	"github.com/Phobby/TuiSense/internal/i18n"
+	"math"
 
 	"github.com/Phobby/TuiSense/internal/device"
 	"github.com/Phobby/TuiSense/internal/state"
-	uiwidgets "github.com/Phobby/TuiSense/internal/ui/widgets"
 	"github.com/thebanri/limoni/core/cell"
-	"github.com/thebanri/limoni/core/driver"
 	"github.com/thebanri/limoni/core/terminal"
 	"github.com/thebanri/limoni/widgets"
 )
@@ -22,37 +21,21 @@ func RenderTriggersPanel(f *terminal.Frame, area cell.Rect, s *state.AppState, d
 	p := s.Theme
 
 	inner := panelFrame(f, area, s, i18n.T("Adaptive Triggers"))
-	y := inner.Y
+	y := inner.Y + 1 // the first button's frame stays clear of the title
 
 	y = supportBanner(f, inner, y, s, device.CapAdaptiveTriggers)
 
 	// Row 1: L2 vs R2 Selector + Link Triggers Checkbox
-	l2Btn := widgets.Button{
-		ID:           "btn_trig_l2",
-		Label:        i18n.T("L2 Left Trigger"),
-		Style:        p.ButtonStyle(!s.EditingRightTrigger),
-		FocusedStyle: p.ButtonFocusedStyle(),
-		OnPress: func() {
+	linkX := pillRow(f, inner.X, y, inner.X+inner.Width, s, "", 0, []choice{
+		{Kind: kindOption, ID: "btn_trig_l2", Label: i18n.T("L2 Left Trigger"), Selected: !s.EditingRightTrigger, OnSelect: func() {
 			s.EditingRightTrigger = false
 			s.SelectedRegion = device.RegionLeftTrigger
-		},
-	}
-	r2Btn := widgets.Button{
-		ID:           "btn_trig_r2",
-		Label:        i18n.T("R2 Right Trigger"),
-		Style:        p.ButtonStyle(s.EditingRightTrigger),
-		FocusedStyle: p.ButtonFocusedStyle(),
-		OnPress: func() {
+		}},
+		{Kind: kindOption, ID: "btn_trig_r2", Label: i18n.T("R2 Right Trigger"), Selected: s.EditingRightTrigger, OnSelect: func() {
 			s.EditingRightTrigger = true
 			s.SelectedRegion = device.RegionRightTrigger
-		},
-	}
-	wL2, _ := l2Btn.SizeHint(inner)
-	wR2, _ := r2Btn.SizeHint(inner)
-	uiwidgets.RenderButton(f, cell.NewRect(inner.X, y, wL2, 1), l2Btn)
-	uiwidgets.RenderButton(f, cell.NewRect(inner.X+wL2+1, y, wR2, 1), r2Btn)
-
-	linkX := inner.X + wL2 + wR2 + 3
+		}},
+	}) + 1
 	if linkX+18 <= inner.X+inner.Width {
 		cb := widgets.Checkbox{
 			ID:           "cb_link_triggers",
@@ -63,7 +46,7 @@ func RenderTriggersPanel(f *terminal.Frame, area cell.Rect, s *state.AppState, d
 		}
 		f.RenderWidget(cb, cell.NewRect(linkX, y, inner.X+inner.Width-linkX, 1))
 	}
-	y += 2
+	y += pillRowH
 
 	activeTrig := &s.Config.LeftTrigger
 	startSlider := s.L2StartSlider
@@ -99,55 +82,29 @@ func RenderTriggersPanel(f *terminal.Frame, area cell.Rect, s *state.AppState, d
 		}
 	}
 
-	// Row 2: Mode Selector Pills
-	f.Buffer.SetStringWithin(inner.X, y, i18n.T("Mode:"), p.MutedStyle(), 6)
-	mx := inner.X + 6
+	// Row 2: mode, then curated presets, sharing one label column.
+	lw := uint16(max(cell.StringWidth(i18n.T("Mode:")), cell.StringWidth(i18n.T("Presets:"))) + 1)
+	var modes, presets []choice
 	for _, mode := range device.AllTriggerModes {
-		short := shortTriggerModeName(mode)
-		lbl := " " + short + " "
-		mw := uint16(cell.StringWidth(lbl))
-		if mx+mw > inner.X+inner.Width {
-			mx = inner.X + 6
-			y++
-		}
-		mRect := cell.NewRect(mx, y, mw, 1)
-		st := p.ButtonStyle(activeTrig.Mode == mode)
-		f.Buffer.SetStringWithin(mx, y, lbl, st, mw)
-		targetMode := mode
-		registerControl(f, mRect, s, "trigger_mode_"+string(mode), short, func(_ driver.MouseEvent) {
-			activeTrig.Mode = targetMode
+		target := mode
+		modes = append(modes, choice{Kind: kindOption, ID: "trigger_mode_" + string(mode), Label: shortTriggerModeName(mode), Selected: activeTrig.Mode == mode, OnSelect: func() {
+			activeTrig.Mode = target
 			syncAndDispatch()
-		})
-		mx += mw + 1
+		}})
 	}
-	y++
-
-	// Row 3: Curated Presets Row
-	if y < inner.Y+inner.Height {
-		f.Buffer.SetStringWithin(inner.X, y, i18n.T("Presets:"), p.MutedStyle(), 9)
-		px := inner.X + 9
-		for i, preset := range device.BuiltinTriggerPresets {
-			tag := fmt.Sprintf(" [%s] ", i18n.T(preset.Name))
-			tw := uint16(cell.StringWidth(tag))
-			if px+tw > inner.X+inner.Width {
-				px = inner.X + 9
-				y++
-			}
-			pRect := cell.NewRect(px, y, tw, 1)
-			f.Buffer.SetStringWithin(px, y, tag, cell.Style{Fg: p.AccentCyan, Bg: p.BgElevated}, tw)
-			idx := i
-			registerControl(f, pRect, s, fmt.Sprintf("trigger_preset_%d", i), i18n.T(preset.Name), func(_ driver.MouseEvent) {
-				*activeTrig = device.BuiltinTriggerPresets[idx].Config
-				s.SyncWidgetsFromConfig()
-				syncAndDispatch()
-			})
-			px += tw + 1
-		}
-		y += 2
+	for i, preset := range device.BuiltinTriggerPresets {
+		idx := i
+		presets = append(presets, choice{ID: fmt.Sprintf("trigger_preset_%d", i), Label: i18n.T(preset.Name), OnSelect: func() {
+			*activeTrig = device.BuiltinTriggerPresets[idx].Config
+			s.SyncWidgetsFromConfig()
+			syncAndDispatch()
+		}})
 	}
+	y = pillRows(f, inner.X, y, inner.X+inner.Width, s, i18n.T("Mode:"), lw, modes)
+	y = pillRows(f, inner.X, y, inner.X+inner.Width, s, i18n.T("Presets:"), lw, presets)
 
 	// Parameter Sliders
-	sliderLabelW := uint16(18)
+	sliderLabelW := sliderColumn(3, i18n.T("Start Zone:"), i18n.T("End / Snap:"), i18n.T("Force Strength:"), i18n.T("Pulse Freq Hz:"))
 	sliderW := inner.Width - sliderLabelW - 2
 	if sliderW < 8 {
 		sliderW = 8
@@ -157,8 +114,7 @@ func RenderTriggersPanel(f *terminal.Frame, area cell.Rect, s *state.AppState, d
 		if y >= inner.Y+inner.Height {
 			return
 		}
-		txt := fmt.Sprintf("%-13s %3d", label, val)
-		copyValue(f, cell.NewRect(inner.X, y, sliderLabelW, 1), s, txt, fmt.Sprint(val), p.LabelStyle())
+		sliderLabel(f, cell.NewRect(inner.X, y, sliderLabelW, 1), s, label, fmt.Sprint(val))
 		sl := widgets.Slider{
 			ID:           id,
 			State:        st,
@@ -191,49 +147,65 @@ func RenderTriggersPanel(f *terminal.Frame, area cell.Rect, s *state.AppState, d
 	})
 	y++
 
-	// Live Force-Curve Braille Graph
+	// Live force curve: an area chart of resistance across the trigger's travel.
 	remainH := int(inner.Y+inner.Height) - int(y)
-	if remainH >= 4 && s.CurveCanvas != nil {
-		text := i18n.Tf("Live Force Curve (%s) │ Pull: %3.0f%% │ Resistance: %3.0f%%",
-			i18n.T(string(activeTrig.Mode)), livePull*100, activeTrig.ForceAt(livePull)*100)
-		copyValue(f, cell.NewRect(inner.X, y, inner.Width, 1), s, text, text, p.SectionHeaderStyle())
-		y++
-		remainH--
-
-		graphW := inner.Width
-		graphH := uint16(min(remainH, 6))
-		s.CurveCanvas.Reset(graphW, graphH)
-		virtW := int(graphW) * 2
-		virtH := int(graphH) * 4
-
-		// Baseline grid
-		gridStyle := cell.Style{Fg: p.BgSubtle, Bg: p.BgPanel}
-		for gx := 0; gx < virtW; gx += 4 {
-			s.CurveCanvas.Set(gx, virtH-1, gridStyle)
+	if remainH >= 6 && inner.Width >= 24 {
+		title := i18n.Tf("Live force curve · %s", i18n.T(string(activeTrig.Mode)))
+		stats := i18n.Tf("Pull %.0f%% · Resistance %.0f%%", livePull*100, activeTrig.ForceAt(livePull)*100)
+		f.Buffer.SetStringWithin(inner.X, y, title, p.SectionHeaderStyle(), inner.Width)
+		tw, sw := uint16(cell.StringWidth(title)), uint16(cell.StringWidth(stats))
+		if tw+2+sw > inner.Width { // no room beside the title: its own line
+			y++
+			remainH--
+			tw = 0
 		}
-
-		// Force curve line & fill
-		curveStyle := cell.Style{Fg: p.AccentCyan, Bg: p.BgPanel}
-		fillStyle := cell.Style{Fg: p.AccentBlue, Bg: p.BgPanel}
-		for px := 0; px < virtW; px++ {
-			t := float64(px) / float64(max(1, virtW-1))
-			force := activeTrig.ForceAt(t)
-			py := virtH - 1 - int(force*float64(virtH-2))
-			s.CurveCanvas.Set(px, py, curveStyle)
-			for fy := py + 2; fy < virtH; fy += 2 {
-				s.CurveCanvas.Set(px, fy, fillStyle)
-			}
-		}
-
-		// Live trigger pull marker vertical cursor
-		pullX := int(livePull * float64(virtW-1))
-		markerStyle := cell.Style{Fg: p.AccentPink, Bg: p.BgPanel, Modifier: cell.ModifierBold}
-		for py := 0; py < virtH; py++ {
-			s.CurveCanvas.Set(pullX, py, markerStyle)
-		}
-
-		f.RenderWidget(s.CurveCanvas, cell.NewRect(inner.X, y, graphW, graphH))
+		copyValue(f, cell.NewRect(inner.X+inner.Width-min(sw, inner.Width-tw), y, min(sw, inner.Width-tw), 1), s, stats, stats, p.ValueStyle())
+		y += 2
+		remainH -= 2
+		renderForceCurve(f, cell.NewRect(inner.X, y, inner.Width, uint16(min(remainH, 10))), s, *activeTrig, livePull)
 	}
+}
+
+// renderForceCurve draws resistance (0..100%, up) against pull (0..100%,
+// right) as solid eighth-block columns: the travel already pulled in the
+// accent, the rest dimmed, with a percent axis on the left and the pull
+// axis underneath.
+func renderForceCurve(f *terminal.Frame, area cell.Rect, s *state.AppState, trig device.TriggerConfig, pull float64) {
+	p := s.Theme
+	const axisW = 5 // "100% "
+	if area.Height < 3 || area.Width <= axisW+8 {
+		return
+	}
+	graphH := area.Height - 1 // the bottom row holds the pull axis
+	graphW := area.Width - axisW
+	gx := area.X + axisW
+	blocks := []rune(" ▁▂▃▄▅▆▇█")
+	axis := p.MutedStyle()
+	f.Buffer.SetStringWithin(area.X, area.Y, "100%", axis, axisW)
+	f.Buffer.SetStringWithin(area.X+2, area.Y+graphH-1, "0%", axis, axisW)
+	for col := uint16(0); col < graphW; col++ {
+		t := float64(col) / float64(max(1, graphW-1))
+		eighths := int(math.Round(math.Min(1, math.Max(0, trig.ForceAt(t))) * float64(graphH) * 8))
+		colour := p.BgSubtle
+		if t <= pull {
+			colour = p.AccentCyan
+		}
+		for row := uint16(0); row < graphH; row++ {
+			level := min(8, max(0, eighths-int(row)*8))
+			ch := blocks[level]
+			st := cell.Style{Fg: colour, Bg: p.BgPanel}
+			if level == 0 && row == 0 {
+				ch, st = '▁', cell.Style{Fg: p.BgElevated, Bg: p.BgPanel} // a faint floor where there is no force
+			}
+			f.Buffer.SetCell(gx+col, area.Y+graphH-1-row, cell.Cell{Content: ch, Style: st})
+		}
+	}
+	// Pull axis: 0% · a marker under the live pull · 100%.
+	ay := area.Y + graphH
+	f.Buffer.SetStringWithin(gx, ay, "0%", axis, graphW)
+	f.Buffer.SetStringWithin(gx+graphW-4, ay, "100%", axis, 4)
+	mark := gx + uint16(math.Round(math.Min(1, math.Max(0, pull))*float64(graphW-1)))
+	f.Buffer.SetStringWithin(mark, ay, "▲", cell.Style{Fg: p.AccentCyan, Bg: p.BgPanel, Modifier: cell.ModifierBold}, 1)
 }
 
 func shortTriggerModeName(m device.TriggerMode) string {

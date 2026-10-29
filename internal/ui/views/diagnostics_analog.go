@@ -67,7 +67,7 @@ func renderStickDiag(c *cursor, d *diag.Session, now time.Time) {
 		if adv {
 			for _, dur := range diag.StickDurations {
 				dur := dur
-				items = append(items, choice{ID: fmt.Sprintf("stick_dur_%d", int(dur.Seconds())), Label: fmt.Sprintf("%ds", int(dur.Seconds())),
+				items = append(items, choice{Kind: kindOption, ID: fmt.Sprintf("stick_dur_%d", int(dur.Seconds())), Label: fmt.Sprintf("%ds", int(dur.Seconds())),
 					Selected: st.Duration == dur, OnSelect: func() { st.Duration = dur }})
 			}
 		}
@@ -338,7 +338,7 @@ func renderDeadzonePreview(c *cursor, st *diag.StickTest, adv bool) {
 	var items []choice
 	for _, v := range diag.DeadzonePresets {
 		v := v
-		items = append(items, choice{ID: fmt.Sprintf("dz_preview_%.0f", v), Label: fmt.Sprintf("%.0f%%", v),
+		items = append(items, choice{Kind: kindOption, ID: fmt.Sprintf("dz_preview_%.0f", v), Label: fmt.Sprintf("%.0f%%", v),
 			Selected: st.PreviewDeadzone == v, OnSelect: func() { st.PreviewDeadzone = v }})
 	}
 	if c.s.DiagnosticDeadzoneSlider == nil {
@@ -353,8 +353,8 @@ func renderDeadzonePreview(c *cursor, st *diag.StickTest, adv bool) {
 	}
 	c.pills(i18n.T("Size:"), 6, items)
 	c.pills("", 0, []choice{
-		{ID: "dz_radial", Label: "Radial", Selected: !st.AxialPreview, OnSelect: func() { st.AxialPreview = false }},
-		{ID: "dz_axial", Label: "Axial", Selected: st.AxialPreview, OnSelect: func() { st.AxialPreview = true }},
+		{Kind: kindOption, ID: "dz_radial", Label: "Radial", Selected: !st.AxialPreview, OnSelect: func() { st.AxialPreview = false }},
+		{Kind: kindOption, ID: "dz_axial", Label: "Axial", Selected: st.AxialPreview, OnSelect: func() { st.AxialPreview = true }},
 		{ID: "dz_less", Label: "−1%", OnSelect: func() { st.PreviewDeadzone = math.Max(0, st.PreviewDeadzone-1) }},
 		{ID: "dz_more", Label: "+1%", OnSelect: func() { st.PreviewDeadzone = math.Min(25, st.PreviewDeadzone+1) }},
 	})
@@ -628,11 +628,11 @@ func renderStickCategory(c *cursor, d *diag.Session, now time.Time) {
 	}
 	snap := d.StickSubTest == diag.StickSubSnapback && d.Snapback != nil
 	busy := d.Sticks.Running() || (d.Snapback != nil && d.Snapback.Running())
-	items := []choice{{ID: "stick_sub_deadzone", Label: i18n.T("Deadzone test"), Selected: !snap}}
+	items := []choice{{Kind: kindOption, ID: "stick_sub_deadzone", Label: i18n.T("Deadzone test"), Selected: !snap}}
 	if d.Snapback != nil {
-		items = append(items, choice{ID: "stick_sub_snapback", Label: i18n.T("Snapback test"), Selected: snap})
+		items = append(items, choice{Kind: kindOption, ID: "stick_sub_snapback", Label: i18n.T("Snapback test"), Selected: snap})
 	}
-	items = append(items, choice{ID: "stick_sub_circularity", Label: "Circularity", OnSelect: func() {
+	items = append(items, choice{Kind: kindOption, ID: "stick_sub_circularity", Label: "Circularity", OnSelect: func() {
 		if !busy {
 			d.StickSubTest = diag.StickSubCircularity
 		}
@@ -708,7 +708,7 @@ func renderSnapbackDiag(c *cursor, d *diag.Session) {
 		var items []choice
 		for _, v := range diag.DeadzonePresets {
 			v := v
-			items = append(items, choice{ID: fmt.Sprintf("snap_dz_%.0f", v), Label: fmt.Sprintf("%.0f%%", v),
+			items = append(items, choice{Kind: kindOption, ID: fmt.Sprintf("snap_dz_%.0f", v), Label: fmt.Sprintf("%.0f%%", v),
 				Selected: d.Sticks.PreviewDeadzone == v, OnSelect: func() { d.Sticks.PreviewDeadzone, sb.PreviewDeadzone = v, v }})
 		}
 		c.pills(i18n.T("Size:"), 6, items)

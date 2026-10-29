@@ -733,6 +733,12 @@ func (a *Application) Draw(f *terminal.Frame, ev *driver.Event) bool {
 	}
 	a.lastFrame = now
 
+	if ev != nil && ev.Type == driver.EventMouse {
+		a.State.PointerX, a.State.PointerY, a.State.PointerIn = ev.Mouse.X, ev.Mouse.Y, true
+	}
+	if ev != nil && ev.Type == driver.EventFocus && !ev.Focus.Gained {
+		a.State.PointerIn = false // the pointer left the window
+	}
 	if ev != nil && ev.Type == driver.EventKey {
 		if key, ok := a.repairKey(ev.Key, now); ok && !a.HandleKeyEvent(f, key) {
 			return false

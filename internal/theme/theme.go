@@ -167,7 +167,8 @@ func (p Palette) ButtonStyle(active bool) cell.Style {
 	if active {
 		return cell.Style{Fg: p.BgCanvas, Bg: p.AccentCyan, Modifier: cell.ModifierBold}
 	}
-	return cell.Style{Fg: p.FgPrimary, Bg: p.BgElevated}
+	// A raised surface, well above the panel, so buttons read as pressable.
+	return cell.Style{Fg: p.FgPrimary, Bg: p.BgSubtle}
 }
 
 func (p Palette) ButtonFocusedStyle() cell.Style {

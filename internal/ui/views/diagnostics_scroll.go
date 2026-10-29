@@ -46,7 +46,8 @@ func renderDiagnosticViewport(c *cursor, d *diag.Session, pc PanelContext, now t
 		for x := uint16(0); x < area.Width; x++ {
 			value := child.Buffer.CellAt(x, y+uint16(offset))
 			// Blank offscreen cells use the panel's background too.
-			if value.Content == ' ' {
+			// Spaces inside buttons keep their own background.
+			if value.Content == ' ' && value.Style.Bg.Type() == cell.ColorDefault {
 				value.Style.Bg = s.Theme.BgPanel
 			}
 			c.f.Buffer.SetCell(area.X+x, area.Y+y, value)

@@ -17,22 +17,24 @@ func renderPanelViewport(f *terminal.Frame, viewport cell.Rect, pc PanelContext,
 	}
 	area := viewport
 	area.Height--
-	height := uint16(40)
+	// Tall enough for the panels' three-row buttons.
+	height := uint16(48)
 	if s.Mode == "ez" {
-		height = 24
+		height = 36
 	}
 	offArea := cell.NewRect(0, 0, area.Width, max(area.Height, height))
 	child := terminal.NewFrame(buffer.NewBuffer(offArea), nil)
 	child.SetTheme(s.Theme.LimoniTheme())
 	render(child, offArea, pc)
-	s.PanelScrollMax = max(0, int(offArea.Height)-int(area.Height))
+	s.PanelScrollMax = max(0, usedRows(child.Buffer)-int(area.Height))
 	s.PanelScroll = min(max(0, s.PanelScroll), s.PanelScrollMax)
 	offset := s.PanelScroll
 	for y := uint16(0); y < area.Height; y++ {
 		for x := uint16(0); x < area.Width; x++ {
 			value := child.Buffer.CellAt(x, y+uint16(offset))
 			// Blank offscreen cells use the panel's background too.
-			if value.Content == ' ' {
+			// Spaces inside buttons keep their own background.
+			if value.Content == ' ' && value.Style.Bg.Type() == cell.ColorDefault {
 				value.Style.Bg = s.Theme.BgPanel
 			}
 			f.Buffer.SetCell(area.X+x, area.Y+y, value)
@@ -117,4 +119,17 @@ func renderPanelViewport(f *terminal.Frame, viewport cell.Rect, pc PanelContext,
 	if s.PanelScrollMax > 0 {
 		f.Buffer.SetStringWithin(area.X+2, area.Y+area.Height, "↑ ↓", s.Theme.MutedStyle(), area.Width-2)
 	}
+}
+
+// usedRows is the number of rows down to the last one anything was drawn on,
+// so a panel that fits never scrolls into blank space.
+func usedRows(b *buffer.Buffer) int {
+	for y := int(b.Area.Height) - 1; y >= 0; y-- {
+		for x := uint16(0); x < b.Area.Width; x++ {
+			if c := b.CellAt(x, uint16(y)); c.Content != ' ' || c.Style.Bg.Type() != cell.ColorDefault {
+				return y + 1
+			}
+		}
+	}
+	return 0
 }

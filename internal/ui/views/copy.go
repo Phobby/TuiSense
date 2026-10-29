@@ -31,12 +31,9 @@ func copyValue(f *terminal.Frame, r cell.Rect, s *state.AppState, display, value
 	copytext.CopyableText{Text: display, Value: value, Style: st}.Render(f, r, &s.Copy)
 }
 
-func renderCopyActions(c *cursor, current bool) {
-	type action struct {
-		id, label string
-		run       func()
-	}
-	items := []action{{"copy_all_diagnostics", i18n.T("Copy All Diagnostics"), func() {
+// extra are page-specific copy actions shown in the same row.
+func renderCopyActions(c *cursor, current bool, extra ...choice) {
+	items := []choice{{ID: "copy_all_diagnostics", Label: i18n.T("Copy All Diagnostics"), OnSelect: func() {
 		if c.s.Copy.OnCopy != nil {
 			if c.s.ActivePanel == state.PanelDiagnostics {
 				c.s.Copy.OnCopy(BuildHealthClipboard(c.s, false, time.Now()))
@@ -46,7 +43,7 @@ func renderCopyActions(c *cursor, current bool) {
 		}
 	}}}
 	if current {
-		items = append(items, action{"copy_test_results", i18n.T("Copy Current Test"), func() {
+		items = append(items, choice{ID: "copy_test_results", Label: i18n.T("Copy Current Test"), OnSelect: func() {
 			if c.s.Copy.OnCopy != nil {
 				if c.s.ActivePanel == state.PanelDiagnostics {
 					c.s.Copy.OnCopy(BuildHealthClipboard(c.s, true, time.Now()))
@@ -61,22 +58,9 @@ func renderCopyActions(c *cursor, current bool) {
 		label = i18n.T("Identifiers: On")
 	}
 	if c.s.ActivePanel != state.PanelDiagnostics {
-		items = append(items, action{"copy_identifiers", label, func() { c.s.IncludeCopyIdentifiers = !c.s.IncludeCopyIdentifiers }})
+		items = append(items, choice{ID: "copy_identifiers", Label: label, OnSelect: func() { c.s.IncludeCopyIdentifiers = !c.s.IncludeCopyIdentifiers }})
 	}
-	x := c.r.X
-	for _, a := range items {
-		w := min(c.r.Width, uint16(cell.StringWidth(a.label)))
-		if x+w > c.limit() {
-			c.y++
-			x = c.r.X
-		}
-		if !c.ok() {
-			return
-		}
-		copytext.CopyableText{ID: a.id, Text: a.label, Style: c.p().ButtonStyle(false), OnActivate: a.run}.Render(c.f, cell.NewRect(x, c.y, w, 1), &c.s.Copy)
-		x += w + 2
-	}
-	c.y++
+	c.pills("", 0, append(items, extra...))
 }
 
 var macPattern = regexp.MustCompile(`(?i)\b[0-9a-f]{2}(?:[:-][0-9a-f]{2}){5}\b`)
