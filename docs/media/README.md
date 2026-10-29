@@ -49,10 +49,9 @@ request, so it needs network access; without it the GIF shows *Unable to verify*
 | `controller-switching.gif` | `controller-switching` | Controller selector, simulated test devices, gallery |
 | `health-report.gif` | `health-report` | Stick test → health report → copy |
 | `firmware-check.gif` | `firmware-check` | Device Details firmware check and official update guidance |
+| `promo.gif` | — | Showcase video at the top of the README, converted from the promotional video with `ffmpeg` (6 fps, 640 px, 32 colours) |
 
 ## Not yet recorded
 
-- **Promotional video** — reserved at the top of the README between the
-  `TUISENSE_PROMO_VIDEO_START` / `END` markers; it will be produced separately.
 - **Real-hardware footage** (for example the DualSense light bar physically
   changing color) cannot be captured from the terminal and is not included.

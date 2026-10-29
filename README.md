@@ -25,9 +25,11 @@ testing, and understanding your game controllers.
 <!-- TUISENSE_PROMO_VIDEO_START -->
 ## See TuiSense in Action
 
-*Official TuiSense showcase video coming soon.*
+<div align="center">
 
-<!-- Replace this placeholder with the final promotional video link or thumbnail. -->
+<img src="docs/media/promo.gif" alt="TuiSense showcase: a tour through Home, Diagnostics, Customize, Profiles and Device settings" width="640">
+
+</div>
 <!-- TUISENSE_PROMO_VIDEO_END -->
 
 ---
