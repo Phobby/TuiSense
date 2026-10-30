@@ -1,0 +1,22 @@
+# syntax=docker/dockerfile:1
+# TuiSense website (static files) behind Caddy, which also terminates
+# HTTPS/WSS and proxies /api to the backend.
+#
+#   docker build -f website/deployment/Dockerfile.frontend -t tuisense-web-frontend .
+
+FROM node:22-alpine AS build
+WORKDIR /src/website/frontend
+COPY website/frontend/package.json website/frontend/package-lock.json ./
+RUN npm ci --no-audit --no-fund
+COPY website/frontend ./
+COPY docs/media/promo.gif /src/docs/media/promo.gif
+# Optional: serve the API from another origin (see .env.example).
+ARG VITE_API_BASE=
+ARG VITE_GITHUB_URL=https://github.com/Phobby/TuiSense
+ARG VITE_DOWNLOAD_URL=https://github.com/Phobby/TuiSense/releases/latest
+ENV VITE_API_BASE=$VITE_API_BASE VITE_GITHUB_URL=$VITE_GITHUB_URL VITE_DOWNLOAD_URL=$VITE_DOWNLOAD_URL
+RUN npm test && npm run build
+
+FROM caddy:2.10-alpine
+COPY --from=build /src/website/frontend/dist /srv
+COPY website/deployment/Caddyfile /etc/caddy/Caddyfile

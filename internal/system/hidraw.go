@@ -6,7 +6,6 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
-	"syscall"
 
 	"github.com/Phobby/TuiSense/internal/device"
 )
@@ -158,14 +157,14 @@ func parseHIDID(raw string) (bus, vid, pid uint16, ok bool) {
 }
 
 func checkDeviceAccess(devPath string) (readable, writable, permDenied bool) {
-	f, err := os.OpenFile(devPath, os.O_RDWR|syscall.O_NONBLOCK, 0)
+	f, err := os.OpenFile(devPath, os.O_RDWR|openNonblock, 0)
 	if err == nil {
 		_ = f.Close()
 		return true, true, false
 	}
 	if os.IsPermission(err) {
 		// Check if at least read-only access works
-		rf, rerr := os.OpenFile(devPath, os.O_RDONLY|syscall.O_NONBLOCK, 0)
+		rf, rerr := os.OpenFile(devPath, os.O_RDONLY|openNonblock, 0)
 		if rerr == nil {
 			_ = rf.Close()
 			return true, false, true

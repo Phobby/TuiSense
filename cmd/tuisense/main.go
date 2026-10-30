@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"runtime"
 	"syscall"
 
@@ -32,6 +33,8 @@ func usage() {
 	fmt.Fprintf(out, "Options:\n")
 	fmt.Fprintf(out, "  --mock             Launch using the interactive mock DualSense controller\n")
 	fmt.Fprintf(out, "  --test-devices     Explicitly enable simulated test controllers\n")
+	fmt.Fprintf(out, "  --web-demo         Browser demo mode: simulated controllers only, no hardware,\n")
+	fmt.Fprintf(out, "                     updates, driver installation or other host access\n")
 	fmt.Fprintf(out, "  --config-dir <p>   Custom directory for settings.json (mode, last device)\n")
 	fmt.Fprintf(out, "  --profile-dir <p>  Custom directory for saving/loading JSON profiles\n")
 	fmt.Fprintf(out, "  --fps <int>        Target animation and telemetry frame rate (default: 30)\n")
@@ -66,11 +69,16 @@ func main() {
 	profileDirFlag := flag.String("profile-dir", "", "Custom directory for controller profiles (default: $XDG_CONFIG_HOME/tuisense/profiles)")
 	printUdevFlag := flag.Bool("print-udev", false, "Print required Linux udev rules for rootless DualSense hidraw access and exit")
 	versionFlag := flag.Bool("version", false, "Display the installed TuiSense version and exit")
+	webDemoFlag := flag.Bool("web-demo", false, "Run the browser demo: simulated controllers only, no hardware or host access")
 	flag.Usage = usage
 	flag.Parse()
 
 	if *versionFlag {
-		fmt.Printf("TuiSense %s (%s/%s)\n", version.Display(), runtime.GOOS, runtime.GOARCH)
+		build := runtime.GOOS + "/" + runtime.GOARCH
+		if c := version.ShortCommit(); c != "" {
+			build += ", commit " + c
+		}
+		fmt.Printf("TuiSense %s (%s)\n", version.Display(), build)
 		return
 	}
 	if *printUdevFlag {
@@ -80,6 +88,10 @@ func main() {
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+
+	if *webDemoFlag {
+		os.Exit(runWebDemo(ctx, *configDirFlag, *profileDirFlag, *fpsFlag))
+	}
 
 	disableMockFallback := *noMockFlag || *noMockFallbackFlag
 	application := app.New(app.Options{
@@ -105,4 +117,30 @@ func main() {
 	if msg := application.ApplyStagedUpdate(); msg != "" {
 		fmt.Println(msg)
 	}
+}
+
+// runWebDemo runs the normal interface on simulated controllers for the
+// browser demo. The demo server starts it in an isolated session with a
+// private temporary home; the directories default to that home.
+func runWebDemo(ctx context.Context, configDir, profileDir string, fps int) int {
+	if configDir == "" {
+		configDir = system.ConfigDir()
+	}
+	if profileDir == "" {
+		profileDir = filepath.Join(configDir, "profiles")
+	}
+	application := app.New(app.Options{
+		WebDemo:    true,
+		ConfigDir:  configDir,
+		ProfileDir: profileDir,
+		ReportDir:  filepath.Join(system.DataDir(), "reports"),
+		TargetFPS:  fps,
+		Version:    version.String(),
+	})
+	termcolor.Apply()
+	if err := application.Run(ctx); err != nil && !errors.Is(err, context.Canceled) {
+		fmt.Fprintf(os.Stderr, "tuisense error: %v\n", err)
+		return 1
+	}
+	return 0
 }

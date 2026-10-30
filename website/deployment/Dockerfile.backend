@@ -1,0 +1,35 @@
+# syntax=docker/dockerfile:1
+# TuiSense web demo backend: tuisense-webd plus the tuisense binary it runs,
+# both built from this repository at the same commit.
+#
+#   docker build -f website/deployment/Dockerfile.backend \
+#     --build-arg GIT_COMMIT=$(git rev-parse HEAD) -t tuisense-web-backend .
+
+FROM golang:1.25-alpine AS build
+WORKDIR /src
+COPY go.mod go.sum ./
+RUN go mod download
+COPY VERSION ./
+COPY cmd ./cmd
+COPY internal ./internal
+COPY website/backend ./website/backend
+ARG GIT_COMMIT=unknown
+# Static binaries: no C library is needed at run time.
+RUN set -eu; \
+    v="$(cat VERSION)"; \
+    ld="-s -w -X github.com/Phobby/TuiSense/internal/version.Version=${v} -X github.com/Phobby/TuiSense/internal/version.Commit=${GIT_COMMIT}"; \
+    CGO_ENABLED=0 go build -trimpath -buildvcs=false -ldflags "$ld" -o /out/tuisense ./cmd/tuisense; \
+    CGO_ENABLED=0 go build -trimpath -buildvcs=false -ldflags "$ld" -o /out/tuisense-webd ./website/backend/cmd/tuisense-webd; \
+    /out/tuisense --version
+
+# No shell, no package manager, no root: distroless static, user 65532.
+FROM gcr.io/distroless/static-debian12:nonroot
+COPY --from=build /out/tuisense /usr/local/bin/tuisense
+COPY --from=build /out/tuisense-webd /usr/local/bin/tuisense-webd
+ENV TUISENSE_WEB_LISTEN=:8080 \
+    TUISENSE_WEB_BINARY=/usr/local/bin/tuisense \
+    TUISENSE_WEB_SESSION_ROOT=/tmp/tuisense-web
+USER 65532:65532
+EXPOSE 8080
+HEALTHCHECK --interval=30s --timeout=5s --start-period=5s CMD ["/usr/local/bin/tuisense-webd", "healthcheck"]
+ENTRYPOINT ["/usr/local/bin/tuisense-webd"]

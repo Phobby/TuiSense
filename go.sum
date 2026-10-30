@@ -1,5 +1,7 @@
-github.com/thebanri/limoni v0.9.4 h1:xRV6WNIEXGpn7uv3WFv8SCjYxXyAJECtoByqiuQAJR8=
-github.com/thebanri/limoni v0.9.4/go.mod h1:aHH0MYLRJrv8GBKn0HPI68H3KSTdgu6MHqBfkvXWZVA=
+github.com/coder/websocket v1.8.14 h1:9L0p0iKiNOibykf283eHkKUHHrpG7f65OE3BhhO7v9g=
+github.com/coder/websocket v1.8.14/go.mod h1:NX3SzP+inril6yawo5CQXx8+fk145lPDC6pumgx0mVg=
+github.com/creack/pty v1.1.24 h1:bJrF4RRfyJnbTJqzRLHzcGaZK1NeM5kTC9jGgovnR1s=
+github.com/creack/pty v1.1.24/go.mod h1:08sCNb52WyoAwi2QDyzUCTgcvVFhUzewun7wtTfvcwE=
 github.com/thebanri/limoni v0.16.0 h1:Tk+HjU8ODUWIg7/gjyHbeW0VmYfwXPWf6Dj9AaCgTmQ=
 github.com/thebanri/limoni v0.16.0/go.mod h1:aHH0MYLRJrv8GBKn0HPI68H3KSTdgu6MHqBfkvXWZVA=
 golang.org/x/sys v0.47.0 h1:o7XGOvZQCADBQQ4Y7VNq2dRWQR7JmOUW8Kxx4ZsNgWs=

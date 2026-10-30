@@ -37,6 +37,9 @@ const (
 	// SourcePreview is a gallery model opened to preview its settings: it has
 	// no backend and nothing it is told reaches any controller.
 	SourcePreview Source = "preview"
+	// SourceSimulated is a web-demo controller: a complete simulated model
+	// with synthetic input. It has no backend and never touches hardware.
+	SourceSimulated Source = "simulated"
 )
 
 // RGB is a plain 24-bit color (kept UI-framework agnostic).

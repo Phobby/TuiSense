@@ -1,0 +1,64 @@
+name: Web demo (GitHub Pages)
+
+# Publishes the static web demo: the website plus TuiSense compiled to
+# WebAssembly, running entirely in the visitor's browser. Enable it once in
+# the repository: Settings → Pages → Source: GitHub Actions.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    # Playwright's Chromium supports Ubuntu 24.04, not yet ubuntu-latest.
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: website/frontend/package-lock.json
+      - id: pages
+        uses: actions/configure-pages@v5
+      - name: Build TuiSense (WebAssembly) and the website
+        env:
+          VITE_BASE: ${{ steps.pages.outputs.base_path }}/
+        run: make web-pages
+      - name: End-to-end test in Chromium, served under the Pages path
+        env:
+          BASE_PATH: ${{ steps.pages.outputs.base_path }}
+        run: |
+          mkdir -p "/tmp/site${BASE_PATH}"
+          cp -r website/frontend/dist/. "/tmp/site${BASE_PATH}/"
+          (cd /tmp/site && python3 -m http.server 8091 --bind 127.0.0.1 &)
+          cd website/e2e
+          npm install --no-audit --no-fund
+          npx playwright install --with-deps chromium
+          TUISENSE_E2E_MODE=wasm TUISENSE_E2E_URL="http://127.0.0.1:8091${BASE_PATH}" node demo.e2e.cjs
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: website/frontend/dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

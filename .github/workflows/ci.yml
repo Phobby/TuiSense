@@ -28,6 +28,34 @@ jobs:
       - name: Build
         run: go build -trimpath -o dist/ ./cmd/tuisense
 
+  web-demo:
+    name: web demo (website + browser end-to-end)
+    # Playwright's Chromium supports Ubuntu 24.04, not yet ubuntu-latest.
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: website/frontend/package-lock.json
+      - name: Website tests and type check
+        working-directory: website/frontend
+        run: |
+          npm ci --no-audit --no-fund
+          npm test
+          npm run typecheck
+      - name: Browser for the end-to-end test
+        working-directory: website/e2e
+        run: |
+          npm install --no-audit --no-fund
+          npx playwright install --with-deps chromium
+      - name: End-to-end (real TuiSense behind tuisense-webd, in Chromium)
+        run: make web-e2e
+
   docs:
     runs-on: ubuntu-latest
     steps:

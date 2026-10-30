@@ -1,5 +1,6 @@
 APP_NAME    := tuisense
 VERSION     ?= $(shell cat VERSION)
+COMMIT      ?= $(shell git rev-parse HEAD 2>/dev/null)
 PREFIX      ?= $(HOME)/.local
 BINDIR      ?= $(PREFIX)/bin
 BUILD_DIR   := bin
@@ -7,9 +8,11 @@ BINARY      := $(BUILD_DIR)/$(APP_NAME)
 CMD_PKG     := ./cmd/tuisense
 GO          ?= go
 GOFLAGS     ?= -trimpath
-LDFLAGS     := -s -w -X github.com/Phobby/TuiSense/internal/version.Version=$(VERSION)
+LDFLAGS     := -s -w -X github.com/Phobby/TuiSense/internal/version.Version=$(VERSION) -X github.com/Phobby/TuiSense/internal/version.Commit=$(COMMIT)
+WEB_DIR     := website/frontend
+WEB_ADDR    ?= 127.0.0.1:8080
 
-.PHONY: all build install uninstall test run mock udev media clean help
+.PHONY: all build install uninstall test run mock udev media clean help web-build web-run web-test web-e2e web-wasm web-pages
 
 all: build
 
@@ -48,6 +51,45 @@ media:
 	$(GO) run -ldflags "-X github.com/Phobby/TuiSense/internal/version.Version=$(VERSION)" ./tools/capture -out $(BUILD_DIR)/frames
 	python3 tools/capture/render.py $(BUILD_DIR)/frames docs/media
 
+## web-build: Build the web demo: tuisense, tuisense-webd and the website (same commit)
+# Both binaries are static (no C library), as in the Docker image: the
+# session sandbox then needs no system libraries at all.
+web-build:
+	@mkdir -p $(BUILD_DIR)
+	CGO_ENABLED=0 $(GO) build $(GOFLAGS) -ldflags "$(LDFLAGS)" -o $(BINARY) $(CMD_PKG)
+	CGO_ENABLED=0 $(GO) build $(GOFLAGS) -ldflags "$(LDFLAGS)" -o $(BUILD_DIR)/tuisense-webd ./website/backend/cmd/tuisense-webd
+	cd $(WEB_DIR) && npm ci --no-audit --no-fund && npm run build
+
+## web-wasm: Compile TuiSense to WebAssembly for the static (GitHub Pages) demo
+web-wasm:
+	@mkdir -p $(WEB_DIR)/public/wasm
+	GOOS=js GOARCH=wasm $(GO) build $(GOFLAGS) -ldflags "$(LDFLAGS)" -o $(WEB_DIR)/public/wasm/tuisense.wasm $(CMD_PKG)
+	cp "$$($(GO) env GOROOT)/lib/wasm/wasm_exec.js" $(WEB_DIR)/src/wasm/wasm_exec.js
+	printf '{"version":"%s","commit":"%s","file":"tuisense.wasm"}\n' "$(VERSION)" "$(COMMIT)" > $(WEB_DIR)/public/wasm/build.json
+
+## web-pages: Build the static WebAssembly site into website/frontend/dist (VITE_BASE=/repo/ for project pages)
+web-pages: web-wasm
+	cd $(WEB_DIR) && npm ci --no-audit --no-fund && VITE_DEMO_MODE=wasm npm run build
+
+## web-run: Serve the web demo locally on http://$(WEB_ADDR) (Linux)
+web-run: web-build
+	TUISENSE_WEB_LISTEN=$(WEB_ADDR) TUISENSE_WEB_BINARY=$(CURDIR)/$(BINARY) \
+	TUISENSE_WEB_STATIC_DIR=$(CURDIR)/$(WEB_DIR)/dist ./$(BUILD_DIR)/tuisense-webd
+
+## web-test: Run the web demo's Go and frontend tests
+web-test:
+	$(GO) test ./internal/demo ./internal/app ./website/...
+	cd $(WEB_DIR) && npm test
+
+## web-e2e: Run the browser end-to-end test against a local tuisense-webd (needs Playwright)
+web-e2e: web-build
+	@set -e; \
+	TUISENSE_WEB_LISTEN=127.0.0.1:8090 TUISENSE_WEB_BINARY=$(CURDIR)/$(BINARY) \
+	TUISENSE_WEB_STATIC_DIR=$(CURDIR)/$(WEB_DIR)/dist ./$(BUILD_DIR)/tuisense-webd & pid=$$!; \
+	trap "kill $$pid" EXIT; \
+	for i in $$(seq 40); do curl -sf http://127.0.0.1:8090/healthz >/dev/null && break; sleep 0.25; done; \
+	TUISENSE_E2E_URL=http://127.0.0.1:8090 node website/e2e/demo.e2e.cjs
+
 ## clean: Remove build artifacts
 clean:
 	rm -rf $(BUILD_DIR)
@@ -63,4 +105,7 @@ help:
 	@echo "  make mock       Build and run TuiSense in interactive mock mode"
 	@echo "  make udev       Print recommended Linux udev rules"
 	@echo "  make media      Re-record the README GIFs into docs/media"
+	@echo "  make web-run    Build and serve the browser demo locally (Linux)"
+	@echo "  make web-test   Run the web demo's Go and frontend tests"
+	@echo "  make web-e2e    Run the browser end-to-end test (needs Playwright)"
 	@echo "  make clean      Remove compiled artifacts"

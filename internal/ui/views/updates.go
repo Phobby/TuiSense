@@ -86,6 +86,10 @@ func renderUpdates(f *terminal.Frame, inner cell.Rect, y uint16, s *state.AppSta
 		info += " · " + i18n.T("Last checked") + ": " + u.CheckedAt.Local().Format("2006-01-02 15:04")
 	}
 	line(info, p.ValueStyle())
+	if s.WebDemo {
+		line(i18n.T("Application updates are disabled in the web demo."), p.MutedStyle())
+		return y
+	}
 	line(updateStatusText(u), p.MutedStyle())
 	if !u.CanStage && u.Status != update.StatusDev && u.Status != update.StatusManaged {
 		line(i18n.T("This build cannot verify downloads (no pinned signing key), so it only checks for new versions."), p.MutedStyle())

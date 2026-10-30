@@ -136,6 +136,8 @@ func renderHeader(f *terminal.Frame, area cell.Rect, s *state.AppState, cb Callb
 	if s.IsPreviewDevice() {
 		pill += i18n.T(" PREVIEW ")
 		accent = p.AccentBlue
+	} else if s.IsSimulatedDevice() && s.WebDemo {
+		pill += i18n.T(" SIMULATED ")
 	} else if s.IsSimulatedDevice() {
 		pill += i18n.T(" MOCK ")
 	}
@@ -191,7 +193,16 @@ func renderHeader(f *terminal.Frame, area cell.Rect, s *state.AppState, cb Callb
 	// Clicking it opens Settings, where the update details live.
 	ver := displayVersion(s.AppVersion)
 	label := ver
-	if badge := updateBadge(s.Update); badge != "" {
+	if s.WebDemo {
+		// The browser demo says so quietly where the update state would be;
+		// a terminal too narrow for it keeps the version only, as natively.
+		for _, l := range []string{i18n.T("WEB DEMO — SIMULATED CONTROLLERS") + " · " + ver, i18n.T("WEB DEMO") + " · " + ver} {
+			if area.X+area.Width >= x+width+uint16(cell.StringWidth(l))+6 {
+				label = l
+				break
+			}
+		}
+	} else if badge := updateBadge(s.Update); badge != "" {
 		label = badge + "  " + ver
 		if area.X+area.Width < x+width+uint16(cell.StringWidth(label))+6 {
 			label = ver // too narrow: keep the mode switch visible

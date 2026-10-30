@@ -41,6 +41,9 @@ type AppState struct {
 
 	// AppVersion is the running TuiSense version ("0.8.0" or "dev").
 	AppVersion string
+	// WebDemo is set while running as the browser demo (simulated
+	// controllers only); the header shows a quiet indicator.
+	WebDemo bool
 	// Update mirrors the application updater for the Settings view.
 	Update update.Snapshot
 
