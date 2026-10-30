@@ -12,7 +12,7 @@ LDFLAGS     := -s -w -X github.com/Phobby/TuiSense/internal/version.Version=$(VE
 WEB_DIR     := website/frontend
 WEB_ADDR    ?= 127.0.0.1:8080
 
-.PHONY: all build install uninstall test run mock udev media clean help web-build web-run web-test web-e2e
+.PHONY: all build install uninstall test run mock udev media clean help web-build web-run web-test web-e2e web-wasm web-pages
 
 all: build
 
@@ -55,6 +55,17 @@ media:
 web-build: build
 	CGO_ENABLED=0 $(GO) build $(GOFLAGS) -ldflags "$(LDFLAGS)" -o $(BUILD_DIR)/tuisense-webd ./website/backend/cmd/tuisense-webd
 	cd $(WEB_DIR) && npm ci --no-audit --no-fund && npm run build
+
+## web-wasm: Compile TuiSense to WebAssembly for the static (GitHub Pages) demo
+web-wasm:
+	@mkdir -p $(WEB_DIR)/public/wasm
+	GOOS=js GOARCH=wasm $(GO) build $(GOFLAGS) -ldflags "$(LDFLAGS)" -o $(WEB_DIR)/public/wasm/tuisense.wasm $(CMD_PKG)
+	cp "$$($(GO) env GOROOT)/lib/wasm/wasm_exec.js" $(WEB_DIR)/src/wasm/wasm_exec.js
+	printf '{"version":"%s","commit":"%s","file":"tuisense.wasm"}\n' "$(VERSION)" "$(COMMIT)" > $(WEB_DIR)/public/wasm/build.json
+
+## web-pages: Build the static WebAssembly site into website/frontend/dist (VITE_BASE=/repo/ for project pages)
+web-pages: web-wasm
+	cd $(WEB_DIR) && npm ci --no-audit --no-fund && VITE_DEMO_MODE=wasm npm run build
 
 ## web-run: Serve the web demo locally on http://$(WEB_ADDR) (Linux)
 web-run: web-build

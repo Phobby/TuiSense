@@ -5,6 +5,16 @@ is not a re-implementation: every character in the browser terminal is written
 by the same `tuisense` binary that is released for Linux, built from the same
 commit, running in `--web-demo` mode with simulated controllers.
 
+The demo can run in two ways, from the same code:
+
+| | WebAssembly (static) | Server |
+|---|---|---|
+| Where TuiSense runs | In the visitor's browser, compiled to WebAssembly, in a Web Worker | On the server, one sandboxed process per visitor |
+| Hosting | Any static host — **GitHub Pages** (`.github/workflows/pages.yml`) | A Linux VPS or container host (`website/deployment`) |
+| Session data | In memory in the browser tab | Private temporary directory on the server |
+| Build | `make web-pages` | `make web-build` / Docker |
+
+- [Static WebAssembly demo (GitHub Pages)](#static-webassembly-demo-github-pages)
 - [Architecture](#architecture)
 - [Web demo mode](#web-demo-mode)
 - [Simulated controllers](#simulated-controllers)
@@ -16,6 +26,42 @@ commit, running in `--web-demo` mode with simulated controllers.
 - [Configuration](#configuration)
 - [Testing](#testing)
 - [Limitations](#limitations)
+
+## Static WebAssembly demo (GitHub Pages)
+
+Limoni, TuiSense's terminal engine, has a WebAssembly backend that renders
+into xterm.js. `make web-wasm` compiles the unchanged `cmd/tuisense` with
+`GOOS=js GOARCH=wasm` (version and commit embedded as in every build) and
+copies Go's `wasm_exec.js`; `make web-pages` builds the website with
+`VITE_DEMO_MODE=wasm`. The page then:
+
+1. starts a Web Worker (`website/frontend/src/wasm/worker.ts`) with an
+   in-memory file system for settings, profiles and reports
+   (`src/wasm/memfs.ts`);
+2. runs `tuisense --web-demo` in it — the same web demo mode, simulated
+   controllers and restrictions as on the server;
+3. connects Limoni's bridge (`__limoni_output`, `__limoni_input`,
+   `__limoni_resize`) to the page's xterm.js with messages.
+
+**Restart Demo** starts a fresh worker with a copy of the session's files;
+**Reset Session** starts one without them; quitting TuiSense ends its worker.
+Nothing is sent to any server, and closing the tab deletes everything. The
+browser itself isolates each visitor. The download is about 4 MB compressed
+(17 MB uncompressed) and cached afterwards.
+
+**Publishing on GitHub Pages:** in the repository's *Settings → Pages*, set
+*Source* to *GitHub Actions*. Every push to `main` then runs
+`.github/workflows/pages.yml`, which builds the WebAssembly module and the site
+under the Pages path (for example `https://<owner>.github.io/TuiSense/`), runs
+the browser end-to-end test against it, and deploys it.
+
+Local preview:
+
+```bash
+VITE_BASE=/TuiSense/ make web-pages
+mkdir -p /tmp/site && cp -r website/frontend/dist /tmp/site/TuiSense
+python3 -m http.server 8091 --directory /tmp/site   # http://127.0.0.1:8091/TuiSense/
+```
 
 ## Architecture
 
@@ -282,6 +328,7 @@ takes `VITE_API_BASE`, `VITE_GITHUB_URL` and `VITE_DOWNLOAD_URL` at build time.
 | Web demo mode | `go test ./internal/app ./internal/demo` | ten simulated models, real descriptors and visuals, capability visibility (e.g. no battery on the GC20 V2), EZ/Advanced and model switching through the UI, diagnostics on simulated input, simulated reports, refused host actions (updates, drivers, browser, firmware, clipboard tools) |
 | Backend | `go test ./website/backend/...` | builds the real `tuisense` and drives it over the WebSocket with a VT screen emulator: keyboard, SGR mouse, resize, OSC 52, exit without shell, restart/reset, reconnect, concurrent isolated sessions, process confinement (`/proc`), Landlock (files, TCP, signals), origins, capacity/per-IP/start/HTTP/input limits, idle/expiry/abandon cleanup, shutdown |
 | Website | `cd website/frontend && npm test` | key routing, size bounds, protocol parsing, reconnect tokens |
+| End to end (WebAssembly) | `TUISENSE_E2E_MODE=wasm TUISENSE_E2E_URL=… node website/e2e/demo.e2e.cjs` | the same browser checks against the static GitHub Pages build (run by `pages.yml` before every deployment) |
 | End to end | `make web-e2e` | Chromium + the built site + `tuisense-webd` + `tuisense`: landing page, launch, version, native keyboard and mouse, model switching, capability-aware tabs, EZ/Advanced, resize and small screens, clipboard, restart/reset/exit, fullscreen, session end |
 
 ## Limitations

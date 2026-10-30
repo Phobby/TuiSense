@@ -7,7 +7,7 @@ const DemoPage = lazy(() => import('./pages/DemoPage').then((m) => ({ default: m
 
 export function App() {
   const path = usePath();
-  if (path.replace(/\/$/, '') === '/demo') {
+  if (path === '/demo') {
     return (
       <Suspense fallback={<div className="demo" />}>
         <DemoPage />

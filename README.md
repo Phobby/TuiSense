@@ -43,11 +43,12 @@ physical hardware.
 <!-- TUISENSE_DEMO_LINK: replace docs/WEB_DEMO.md with the public demo URL once it is deployed. -->
 <p align="center"><a href="docs/WEB_DEMO.md"><b>▶ Launch Interactive Demo</b></a></p>
 
-A public instance is not deployed yet. The [web demo guide](docs/WEB_DEMO.md)
-shows how to run it locally (`make web-run`) or deploy it with Docker or
-systemd. Every visitor gets an isolated, sandboxed `tuisense --web-demo`
-process built from the same commit as the release, with all ten controller
-models simulated.
+A public instance is not deployed yet. The demo is the same
+`tuisense --web-demo` built from the same commit as the release, with all ten
+controller models simulated. It runs either as WebAssembly entirely in the
+browser, published to GitHub Pages by `.github/workflows/pages.yml`, or as an
+isolated, sandboxed process per visitor on a server. The
+[web demo guide](docs/WEB_DEMO.md) covers both.
 
 ---
 

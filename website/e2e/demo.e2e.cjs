@@ -4,13 +4,16 @@
 //
 //   TUISENSE_E2E_URL=http://127.0.0.1:8080 node website/e2e/demo.e2e.cjs [screenshot-dir]
 //
-// It needs a running tuisense-webd that serves the built frontend
-// (TUISENSE_WEB_STATIC_DIR). See docs/WEB_DEMO.md, "Testing".
+// Server mode needs a running tuisense-webd that serves the built frontend
+// (TUISENSE_WEB_STATIC_DIR). With TUISENSE_E2E_MODE=wasm it tests the static
+// WebAssembly site instead (make web-pages, served at TUISENSE_E2E_URL).
+// See docs/WEB_DEMO.md, "Testing".
 const { chromium } = require('playwright');
 const fs = require('fs');
 const path = require('path');
 
-const base = process.env.TUISENSE_E2E_URL || 'http://127.0.0.1:8080';
+const base = (process.env.TUISENSE_E2E_URL || 'http://127.0.0.1:8080').replace(/\/$/, '');
+const wasm = process.env.TUISENSE_E2E_MODE === 'wasm';
 const shots = process.argv[2];
 let failures = 0;
 
@@ -88,8 +91,8 @@ async function cellOf(page, text) {
   for (const label of ['Launch Interactive Demo', 'View on GitHub', 'Download TuiSense']) {
     check(await page.isVisible(`text=${label}`), `has "${label}"`);
   }
-  await page.waitForSelector('text=Live demo online');
-  check(true, 'reports the live demo as online');
+  await page.waitForSelector(wasm ? 'text=runs the real app in your browser' : 'text=Live demo online');
+  check(true, 'reports the live demo as available');
   await page.waitForTimeout(1200); // entrance animation and the recording
   await shot(page, '1-landing');
 
@@ -99,8 +102,10 @@ async function cellOf(page, text) {
   // Reload with the test hook (the session resumes, as after any reload).
   await page.goto(base + '/demo?e2e');
   await page.waitForFunction(() => window.__tuisenseDemo && window.__tuisenseDemo.term.element);
-  check(await waitScreen(page, 'WEB DEMO — SIMULATED CONTROLLERS'), 'the real TuiSense draws its web demo indicator');
-  const info = await (await page.request.get(base + '/api/info')).json();
+  check(await waitScreen(page, 'WEB DEMO — SIMULATED CONTROLLERS', wasm ? 40000 : 15000), 'the real TuiSense draws its web demo indicator');
+  const info = wasm
+    ? { app: await (await page.request.get(base + '/wasm/build.json')).json(), limits: { minCols: 40, minRows: 12 } }
+    : await (await page.request.get(base + '/api/info')).json();
   check(await waitScreen(page, 'v' + info.app.version), `the terminal shows TuiSense v${info.app.version}`);
   check(await page.isVisible(`text=TuiSense v${info.app.version}`), 'the demo bar shows the deployed version and commit');
   const text = await screen(page);
@@ -231,12 +236,18 @@ async function cellOf(page, text) {
     await page.waitForTimeout(400);
     check(!(await page.evaluate(() => !!document.fullscreenElement)), 'leaves fullscreen');
   }
-  const before = (await (await page.request.get(base + '/api/info')).json()).sessions.active;
-  await page.click('text=Back to Website');
-  await page.waitForURL(base + '/');
-  await page.waitForTimeout(500);
-  const after = (await (await page.request.get(base + '/api/info')).json()).sessions.active;
-  check(after === before - 1, `leaving ends the session on the server (${before} → ${after})`);
+  if (wasm) {
+    await page.click('text=Back to Website');
+    await page.waitForURL(base + '/');
+    check(await page.isVisible('text=Your Controller. Your Terminal.'), 'Back to Website returns to the landing page');
+  } else {
+    const before = (await (await page.request.get(base + '/api/info')).json()).sessions.active;
+    await page.click('text=Back to Website');
+    await page.waitForURL(base + '/');
+    await page.waitForTimeout(500);
+    const after = (await (await page.request.get(base + '/api/info')).json()).sessions.active;
+    check(after === before - 1, `leaving ends the session on the server (${before} → ${after})`);
+  }
 
   check(consoleErrors.length === 0, 'no browser console errors' + (consoleErrors.length ? ': ' + consoleErrors.join(' | ') : ''));
   await browser.close();

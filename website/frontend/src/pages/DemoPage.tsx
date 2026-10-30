@@ -1,16 +1,18 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import '@xterm/xterm/css/xterm.css';
-import { API_BASE, GITHUB_URL } from '../config';
+import { API_BASE, BASE, DEMO_MODE, GITHUB_URL } from '../config';
 import { commitURL, shortCommit, useDemoInfo } from '../info';
 import { navigate } from '../router';
 import { DEFAULT_LIMITS, endMessage } from '../terminal/protocol';
-import { TerminalSession, type Status } from '../terminal/session';
+import { TerminalSession } from '../terminal/session';
+import type { DemoSession, Status } from '../terminal/view';
+import { WasmSession } from '../wasm/session';
 import { IconBack, IconExitFullscreen, IconFullscreen, IconReset, IconRestart, Logo } from '../ui';
 
 declare global {
   interface Window {
     /** End-to-end test hook (only with ?e2e in the URL). */
-    __tuisenseDemo?: TerminalSession;
+    __tuisenseDemo?: DemoSession;
   }
 }
 
@@ -19,7 +21,7 @@ type KeyboardLock = { lock?: (keys?: string[]) => Promise<void>; unlock?: () => 
 function statusLabel(s: Status): string {
   switch (s.kind) {
     case 'connecting':
-      return 'Starting your session…';
+      return DEMO_MODE === 'wasm' ? 'Loading TuiSense…' : 'Starting your session…';
     case 'connected':
       return 'Connected';
     case 'reconnecting':
@@ -37,7 +39,7 @@ export function DemoPage() {
   const info = useDemoInfo();
   const frameRef = useRef<HTMLDivElement>(null);
   const termRef = useRef<HTMLDivElement>(null);
-  const sessionRef = useRef<TerminalSession | undefined>(undefined);
+  const sessionRef = useRef<DemoSession | undefined>(undefined);
   const [status, setStatus] = useState<Status>({ kind: 'connecting' });
   const [toast, setToast] = useState<{ text: string; id: number } | undefined>();
   const [focused, setFocused] = useState(true);
@@ -48,12 +50,17 @@ export function DemoPage() {
 
   useEffect(() => {
     if (!ready || !termRef.current) return;
-    const session = new TerminalSession(termRef.current, API_BASE, {
+    const events = {
       status: setStatus,
-      toast: (text) => setToast({ text, id: Date.now() }),
-      size: (_c, _r, small) => setTooSmall(small),
+      toast: (text: string) => setToast({ text, id: Date.now() }),
+      size: (_c: number, _r: number, small: boolean) => setTooSmall(small),
       focus: setFocused,
-    });
+    };
+    const commit = info.status === 'online' ? info.info.app.commit : '';
+    const session: DemoSession =
+      DEMO_MODE === 'wasm'
+        ? new WasmSession(termRef.current, `${BASE}wasm/tuisense.wasm?v=${encodeURIComponent(commit || 'dev')}`, events)
+        : new TerminalSession(termRef.current, API_BASE, events);
     sessionRef.current = session;
     if (new URLSearchParams(window.location.search).has('e2e')) window.__tuisenseDemo = session;
     void session.open(info.status === 'online' ? info.info.limits : undefined);
@@ -168,7 +175,13 @@ export function DemoPage() {
                 {(status.kind === 'connecting' || status.kind === 'reconnecting') && (
                   <>
                     <div className="spinner" />
-                    <p>{status.kind === 'connecting' ? 'Starting your private TuiSense session…' : 'Connection lost. Reconnecting to your session…'}</p>
+                    <p>
+                      {status.kind === 'reconnecting'
+                        ? 'Connection lost. Reconnecting to your session…'
+                        : DEMO_MODE === 'wasm'
+                          ? 'Loading TuiSense into your browser (about 4 MB, cached afterwards)…'
+                          : 'Starting your private TuiSense session…'}
+                    </p>
                   </>
                 )}
                 {status.kind === 'exited' && (

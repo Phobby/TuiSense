@@ -1,6 +1,6 @@
-import { DOWNLOAD_URL, GITHUB_URL } from '../config';
+import { BASE, DEMO_MODE, DOWNLOAD_URL, GITHUB_URL } from '../config';
 import { commitURL, shortCommit, useDemoInfo } from '../info';
-import { navigate } from '../router';
+import { href, navigate } from '../router';
 import { Logo, IconArrow, IconDownload, IconGitHub } from '../ui';
 
 const models = [
@@ -28,12 +28,12 @@ export function Landing() {
   return (
     <div className="site">
       <header className="nav">
-        <a className="brand" href="/" aria-label="TuiSense home">
+        <a className="brand" href={href('/')} aria-label="TuiSense home">
           <Logo />
           <span>TuiSense</span>
         </a>
         <nav>
-          <a href="/demo" onClick={launch}>
+          <a href={href('/demo')} onClick={launch}>
             Live demo
           </a>
           <a href={github} target="_blank" rel="noreferrer">
@@ -49,7 +49,7 @@ export function Landing() {
         <section className="hero">
           <div className={`pill pill-${info.status}`}>
             <span className="dot" />
-            {info.status === 'online' && 'Live demo online · runs the real app'}
+            {info.status === 'online' && (DEMO_MODE === 'wasm' ? 'Live demo · runs the real app in your browser' : 'Live demo online · runs the real app')}
             {info.status === 'loading' && 'Checking the live demo…'}
             {info.status === 'offline' && 'Live demo unavailable right now'}
           </div>
@@ -57,7 +57,7 @@ export function Landing() {
           <p className="tagline">Your Controller. Your Terminal.</p>
           <p className="lead">Experience TuiSense directly in your browser. No installation required.</p>
           <div className="actions">
-            <a className="btn btn-primary" href="/demo" onClick={launch}>
+            <a className="btn btn-primary" href={href('/demo')} onClick={launch}>
               Launch Interactive Demo <IconArrow />
             </a>
             <a className="btn" href={github} target="_blank" rel="noreferrer">
@@ -68,8 +68,17 @@ export function Landing() {
             </a>
           </div>
           <p className="fineprint">
-            The browser demo runs the actual TuiSense application in an isolated sandbox with <strong>simulated controllers</strong>. It never
-            asks for, reads or controls your hardware.
+            {DEMO_MODE === 'wasm' ? (
+              <>
+                The demo runs the actual TuiSense application, compiled to WebAssembly, entirely inside your browser with{' '}
+                <strong>simulated controllers</strong>. Nothing is installed, and it never asks for, reads or controls your hardware.
+              </>
+            ) : (
+              <>
+                The browser demo runs the actual TuiSense application in an isolated sandbox with <strong>simulated controllers</strong>. It
+                never asks for, reads or controls your hardware.
+              </>
+            )}
           </p>
         </section>
 
@@ -81,9 +90,9 @@ export function Landing() {
               <span />
               <em>tuisense</em>
             </div>
-            <img src="/media/promo.gif" alt="TuiSense running in a terminal: 3D controller, diagnostics and settings" loading="lazy" />
+            <img src={`${BASE}media/promo.gif`} alt="TuiSense running in a terminal: 3D controller, diagnostics and settings" loading="lazy" />
           </div>
-          <p className="caption">Recorded from the native terminal app. The live demo streams the same application.</p>
+          <p className="caption">Recorded from the native terminal app. The live demo runs the same application.</p>
         </section>
 
         <section className="features">
@@ -106,8 +115,9 @@ export function Landing() {
           <article>
             <h3>Isolated and temporary</h3>
             <p>
-              Each visitor gets a private, sandboxed TuiSense process. Profiles, settings and reports exist only in your session and are deleted
-              when it ends. No account, no tracking.
+              {DEMO_MODE === 'wasm'
+                ? 'TuiSense runs in your own browser tab, in a sandboxed worker. Profiles, settings and reports stay in memory in that tab and are gone when you close it. No account, no tracking.'
+                : 'Each visitor gets a private, sandboxed TuiSense process. Profiles, settings and reports exist only in your session and are deleted when it ends. No account, no tracking.'}
             </p>
           </article>
         </section>

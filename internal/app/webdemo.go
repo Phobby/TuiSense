@@ -3,7 +3,6 @@ package app
 import (
 	"context"
 	"errors"
-	"os"
 
 	"github.com/Phobby/TuiSense/internal/clipboard"
 	"github.com/Phobby/TuiSense/internal/demo"
@@ -57,6 +56,6 @@ func terminalClipboard() clipboard.ClipboardService {
 		},
 		LookPath: func(string) (string, error) { return "", demo.ErrDisabled },
 		Run:      func(context.Context, string, []string, string) error { return demo.ErrDisabled },
-		Terminal: os.Stdout,
+		Terminal: terminalOutput(),
 	}
 }
