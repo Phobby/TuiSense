@@ -41,7 +41,8 @@ async function waitScreen(page, text, timeout = 15000) {
     if ((await screen(page)).includes(text)) return true;
     await page.waitForTimeout(100);
   }
-  console.log((await screen(page)).split('\n').slice(0, 6).join('\n'));
+  // The whole screen: a crash (Go panic) is printed by TuiSense itself.
+  console.log((await screen(page)).replace(/\s+$/gm, ''));
   return false;
 }
 

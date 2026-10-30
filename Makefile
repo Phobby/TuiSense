@@ -52,7 +52,11 @@ media:
 	python3 tools/capture/render.py $(BUILD_DIR)/frames docs/media
 
 ## web-build: Build the web demo: tuisense, tuisense-webd and the website (same commit)
-web-build: build
+# Both binaries are static (no C library), as in the Docker image: the
+# session sandbox then needs no system libraries at all.
+web-build:
+	@mkdir -p $(BUILD_DIR)
+	CGO_ENABLED=0 $(GO) build $(GOFLAGS) -ldflags "$(LDFLAGS)" -o $(BINARY) $(CMD_PKG)
 	CGO_ENABLED=0 $(GO) build $(GOFLAGS) -ldflags "$(LDFLAGS)" -o $(BUILD_DIR)/tuisense-webd ./website/backend/cmd/tuisense-webd
 	cd $(WEB_DIR) && npm ci --no-audit --no-fund && npm run build
 
