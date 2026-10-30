@@ -1,6 +1,5 @@
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
-import { WebglAddon } from '@xterm/addon-webgl';
 import { Unicode11Addon } from '@xterm/addon-unicode11';
 import { ClipboardAddon, type IClipboardProvider, type ClipboardSelectionType } from '@xterm/addon-clipboard';
 import { DEFAULT_LIMITS, type DemoInfo, type EndReason, fontSizeFor, routeKey, terminalSize } from './protocol';
@@ -122,7 +121,7 @@ export class TerminalView {
       macOptionClickForcesSelection: true,
       drawBoldTextInBrightColors: false,
       minimumContrastRatio: 1,
-      customGlyphs: true, // pixel-exact box drawing and block elements
+      customGlyphs: true, // pixel-exact box drawing and block elements (WebGL renderer)
       theme,
     });
     this.term.loadAddon(this.fit);
@@ -148,12 +147,21 @@ export class TerminalView {
     }
     if (this.disposed) return false;
     this.term.open(this.container);
-    try {
-      const webgl = new WebglAddon();
-      webgl.onContextLoss(() => webgl.dispose());
-      this.term.loadAddon(webgl);
-    } catch {
-      // the DOM renderer still renders the same output
+    // The DOM renderer is the default: the browser draws the text itself,
+    // so it stays sharp and correctly sized at every device pixel ratio
+    // and zoom level. xterm.js 6.0's WebGL renderer can size its canvas
+    // from a device-pixel observer that disagrees with its own metrics
+    // (fractional scaling, browser zoom, HiDPI), which stretched and
+    // shifted TuiSense's screen. ?renderer=webgl opts back in.
+    if (new URLSearchParams(window.location.search).get('renderer') === 'webgl') {
+      void import('@xterm/addon-webgl')
+        .then(({ WebglAddon }) => {
+          if (this.disposed) return;
+          const webgl = new WebglAddon();
+          webgl.onContextLoss(() => webgl.dispose());
+          this.term.loadAddon(webgl);
+        })
+        .catch(() => undefined);
     }
     this.term.attachCustomKeyEventHandler((e) => this.onKey(e));
     this.term.onData((d) => this.onInput(d, false));
