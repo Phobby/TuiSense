@@ -108,7 +108,11 @@ func TestSessionProcessIsConfined(t *testing.T) {
 func runHelper(t *testing.T, plan sandboxPlan, rw, action string) (string, int) {
 	t.Helper()
 	self, _ := os.Executable()
-	h := helperArgs{Landlock: plan.Landlock, MemBytes: 1024 << 20, NoFile: 64, RW: rw, Binary: self, TuiSense: []string{"probe"}}
+	// No address-space limit here: the target is this cgo-linked test
+	// binary, whose glibc thread stacks can exceed it (pthread_create
+	// fails with EAGAIN). Limits are covered with the static tuisense in
+	// TestSessionProcessIsConfined; this test is about Landlock.
+	h := helperArgs{Landlock: plan.Landlock, NoFile: 64, RW: rw, Binary: self, TuiSense: []string{"probe"}}
 	cmd := &exec.Cmd{Path: self, Args: h.argv(self), Env: []string{"TUISENSE_WEBTEST_ACTION=" + action},
 		SysProcAttr: &syscall.SysProcAttr{Pdeathsig: syscall.SIGKILL}}
 	if plan.Namespaces {
