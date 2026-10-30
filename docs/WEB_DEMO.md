@@ -103,7 +103,11 @@ shows the change.
 Limoni draws with ANSI/VT sequences that xterm.js implements: true colour,
 the alternate screen, SGR mouse reporting with motion (DEC 1003 + 1006), focus
 events (1004), bracketed paste (2004), synchronized output (2026) and REP.
-The backend sets `TERM=xterm-256color` and `COLORTERM=truecolor`. TuiSense draws
+The backend sets `TERM=xterm-256color` and `COLORTERM=truecolor`. The site
+uses xterm.js's DOM renderer, which stays sharp and correctly sized at every
+device pixel ratio and zoom level; `?renderer=webgl` selects the WebGL renderer
+instead (its canvas can be mis-sized on HiDPI and fractionally scaled
+displays in xterm.js 6.0). TuiSense draws
 its 3D models with braille characters; few web fonts include them, so the site
 ships a 2 KB generated braille font on JetBrains Mono's cell
 (`website/frontend/scripts/make_braille_font.py`) and every dot stays on the
