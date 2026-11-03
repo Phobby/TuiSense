@@ -28,7 +28,7 @@ func usage() {
 	fmt.Fprintf(out, "  tuisense [options]               Start the terminal UI\n")
 	fmt.Fprintf(out, "  tuisense update [--check]        Update TuiSense itself (never controller firmware)\n")
 	fmt.Fprintf(out, "  tuisense update --rollback       Restore the version replaced by the last update\n")
-	fmt.Fprintf(out, "  tuisense doctor                  Check terminal, clipboard, audio, permissions and drivers\n")
+	fmt.Fprintf(out, "  tuisense doctor [--windows] [--export]\n                                   Check terminal, clipboard, audio, permissions, drivers;\n                                   --windows lists controllers, IDs and backends,\n                                   --export saves a privacy-redacted report to share\n")
 	fmt.Fprintf(out, "  tuisense debug devices|inputs|support-matrix\n\n")
 	fmt.Fprintf(out, "Options:\n")
 	fmt.Fprintf(out, "  --mock             Launch using the interactive mock DualSense controller\n")
@@ -55,7 +55,7 @@ func main() {
 		case "update":
 			os.Exit(updatecmd.Run(os.Args[2:], os.Stdout, version.String()))
 		case "doctor":
-			os.Exit(doctor.Run(os.Stdout))
+			os.Exit(doctor.RunArgs(os.Args[2:], os.Stdout))
 		}
 	}
 
@@ -110,6 +110,7 @@ func main() {
 	err := application.Run(ctx)
 	if err != nil && !errors.Is(err, context.Canceled) {
 		fmt.Fprintf(os.Stderr, "tuisense error: %v\n", err)
+		holdConsoleOnError()
 		os.Exit(1)
 	}
 	// A verified update staged during this session is installed now that the

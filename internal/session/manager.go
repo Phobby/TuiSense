@@ -454,8 +454,10 @@ func (m *Manager) checkHotplug() {
 			}
 			m.mu.Lock()
 			m.entries = append([]*entry{{key: c.Key, endpoint: c.Endpoint, source: device.SourceHardware, driver: drv, dev: dev}}, m.entries...)
-			// Real hardware takes over from "nothing" or from a fallback mock.
-			takeOver := m.activeKey == "" || (m.autoMock && m.isMockLocked(m.activeKey))
+			// Real hardware takes over from "nothing", a fallback mock or a
+			// gallery preview: a connected controller must never stay hidden
+			// behind another model's preview.
+			takeOver := m.activeKey == "" || (m.autoMock && m.isMockLocked(m.activeKey)) || m.isSourceLocked(m.activeKey, device.SourcePreview)
 			if takeOver {
 				m.activeKey = c.Key
 			}
@@ -480,9 +482,11 @@ func (m *Manager) Rescan() {
 	}
 }
 
-func (m *Manager) isMockLocked(key string) bool {
+func (m *Manager) isMockLocked(key string) bool { return m.isSourceLocked(key, device.SourceMock) }
+
+func (m *Manager) isSourceLocked(key string, src device.Source) bool {
 	e := m.findLocked(key)
-	return e != nil && e.source == device.SourceMock
+	return e != nil && e.source == src
 }
 
 // RetestMapping schedules a safe close/reopen to re-read kernel capabilities.

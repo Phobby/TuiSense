@@ -76,6 +76,8 @@ it. `internal/session/authorize_test.go` proves it.
 | --- | --- | --- | --- |
 | DualSense hidraw protocol | Linux | DualSense, DualSense Edge | `internal/drivers/dualsense` |
 | evdev gamepad (+ kernel force feedback, kernel power_supply) | Linux | Xbox Wireless, Xbox Elite Series 2, DualShock 4, Switch Pro, 8BitDo Ultimate Bluetooth, GameSir G7 SE, Razer Wolverine V3 Pro, MSI Force GC20 V2, unidentified pads | `internal/drivers/gamepad`, models in `internal/drivers/padmodels` and `internal/drivers/msigc20` |
+| XInput (`windows-xinput`) | Windows | every controller in XInput mode | `internal/drivers/xinput` |
+| HID identification (`windows-hid-identity`) | Windows | HID-only game controllers: detected and identified, no input | `internal/drivers/winpad`, `internal/system/winhid` |
 | Simulated mock / test devices | all | DualSense mock, Xbox test device | `internal/drivers/dualsense`, `internal/drivers/xboxmock` |
 
 The evdev backend reads input, plays bounded rumble pulses through Linux force
@@ -89,14 +91,36 @@ Face buttons follow the kernel's convention per driver: `hid-playstation`,
 `hid-sony` and `hid-nintendo` report positions (BTN_NORTH is the top button),
 `xpad` keeps the historical Xbox layout.
 
-### Windows and macOS
+### Windows
 
-TuiSense builds and runs on Windows and macOS (gallery, profiles, reports,
-Driver & Compatibility explains the situation), but no controller backend is
-implemented there. Candidate APIs for future backends are HID / XInput /
-Windows.Gaming.Input / GameInput on Windows and IOKit HID / GameController on
-macOS. A backend must declare its capabilities with `Requires: platform`
-elsewhere; nothing is claimed until it exists and is tested.
+Windows uses only Microsoft's built-in drivers and documented APIs; TuiSense
+installs no driver. Details, the per-controller matrix and the hardware test
+protocol are in [WINDOWS.md](WINDOWS.md).
+
+* **Input** comes from XInput (`xinput1_4.dll`, falling back to
+  `xinput9_1_0.dll`): sticks, triggers, buttons, rumble and, when reported,
+  battery.
+* **Identity** comes from Windows' HID listing (SetupAPI + `hid.dll`, opened
+  without read/write access): vendor/product/version IDs and USB strings,
+  matched by the same model matchers as on Linux. An XInput controller's HID
+  entry carries `IG_` in its path; it is used as identity evidence only when
+  it can be tied to the XInput slots unambiguously (same IDs for every slot).
+  Only an exact (or user-confirmed) match changes the name, brand and 3D
+  model; otherwise the controller is a *Generic Gamepad*. A model's other
+  physical features are declared present-but-inaccessible (`Requires:
+  platform`), never as working.
+* **HID-only controllers** (DirectInput and Android modes, DualSense,
+  DualShock 4, Switch Pro) are listed by `windows-hid-identity` with a
+  connection capability only: no panels, diagnostics or commands, and an
+  explanation on the home screen and in Driver & Compatibility.
+* `IG_` entries are skipped by the HID driver, so one physical controller is
+  not listed twice by TuiSense's own backends.
+
+### macOS
+
+TuiSense builds and runs on macOS (gallery, profiles, reports, Driver &
+Compatibility explains the situation), but no controller backend is
+implemented there. Candidate APIs are IOKit HID / GameController.
 
 ## Driver & Compatibility and safe setup
 

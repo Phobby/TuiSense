@@ -120,10 +120,7 @@ func Analyze(env Env, in Input) Report {
 	switch env.GOOS() {
 	case "linux":
 	case "windows":
-		r.Backend = in.Caps.Spec(device.CapConnection).Backend
-		r.Input = "Working"
-		r.Checks = append(r.Checks, Check{ID: "platform", Title: "Hardware backends", Level: LevelInfo,
-			Detail: "On Windows TuiSense reads XInput controllers through Microsoft's XInput API (input, rumble, battery; experimental). XInput does not identify the model. DualSense, DualShock 4 and Switch Pro backends are not implemented on Windows yet."})
+		windowsChecks(in, &r)
 		return r
 	default:
 		r.Supported = false
@@ -211,4 +208,21 @@ func Execute(env Env, run Runner, a Action, confirmed bool, verify func() bool) 
 		return ErrVerifyFailed
 	}
 	return nil
+}
+
+// windowsBackendHID is the identity-only backend of HID game controllers
+// (kept as a literal: compat must not import the driver packages).
+const windowsBackendHID = "windows-hid-identity"
+
+func windowsChecks(in Input, r *Report) {
+	r.Backend = in.Caps.Spec(device.CapConnection).Backend
+	r.Input = "Working"
+	if r.Backend == windowsBackendHID {
+		r.Input = "Not available"
+		r.Checks = append(r.Checks, Check{ID: "windows_hid_input", Title: "Controller input", Level: LevelWarning,
+			Detail:  "Controller detected, but input access is unavailable. Windows lists it as a HID (DirectInput-style) game controller, and TuiSense reads controller input on Windows only through XInput so far. If the controller has an input-mode switch or Mode button, select its XInput mode (on the MSI Force GC20 V2: Default mode, mode LEDs 1+2), then reconnect it. No driver needs to be installed.",
+			Affects: []device.Capability{device.CapSticks, device.CapDiagnostics, device.CapHaptics}})
+	}
+	r.Checks = append(r.Checks, Check{ID: "platform", Title: "Hardware backends", Level: LevelInfo,
+		Detail: "On Windows TuiSense reads XInput controllers through Microsoft's XInput API (input, rumble, battery; experimental) with Windows' built-in drivers. The model is named only when Windows' HID listing identifies it exactly; Xbox-compatible input alone never implies a specific manufacturer. DualSense, DualShock 4 and Switch Pro are recognised but have no Windows input backend yet."})
 }

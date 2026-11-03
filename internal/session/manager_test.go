@@ -319,3 +319,18 @@ func TestStableIdentityReopensChangedEndpoint(t *testing.T) {
 		t.Fatal("transport change retained stale backend or duplicated identity")
 	}
 }
+
+// A controller plugged in while a gallery preview (e.g. the DualSense) is
+// shown takes over; the preview never hides real hardware.
+func TestHotplugReplacesGalleryPreview(t *testing.T) {
+	drv := &fakeDriver{}
+	m := NewManager(newRegistry(drv), Options{}, nil, nil)
+	if err := m.AttachPreview("preview:sony.dualsense", dualsense.NewMockBackend(nil)); err != nil {
+		t.Fatal(err)
+	}
+	drv.set("hw:msi")
+	m.checkHotplug()
+	if m.ActiveKey() != "hw:msi" {
+		t.Fatalf("the connected controller must become active, got %q", m.ActiveKey())
+	}
+}

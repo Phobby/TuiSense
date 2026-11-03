@@ -14,7 +14,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
+        os: [ubuntu-latest, macos-latest, windows-2022, windows-2025, windows-11-arm]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -27,6 +27,13 @@ jobs:
         run: go test -count=1 ./...
       - name: Build
         run: go build -trimpath -o dist/ ./cmd/tuisense
+      - name: Start the Windows executable (no Go needed at run time)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          & .\dist\tuisense.exe --version
+          & .\dist\tuisense.exe doctor --windows --export
+          if ($LASTEXITCODE -ne 0) { throw 'doctor failed' }
 
   web-demo:
     name: web demo (website + browser end-to-end)

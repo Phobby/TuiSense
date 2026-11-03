@@ -71,3 +71,6 @@ func (a *winAPI) Battery(slot uint32) (uint8, uint8, error) {
 	}
 	return info[0], info[1], nil
 }
+
+// Available reports whether an XInput DLL could be loaded.
+func Available() bool { return newAPI() != nil }

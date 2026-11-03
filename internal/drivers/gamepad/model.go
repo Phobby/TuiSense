@@ -1,6 +1,7 @@
 package gamepad
 
 import (
+	"fmt"
 	"sync"
 
 	"github.com/Phobby/TuiSense/internal/device"
@@ -117,4 +118,17 @@ func Resolve(models []Model, d evdev.InputDevice) Resolution {
 		res.Candidate = &models[0]
 	}
 	return res
+}
+
+// FixedIDModel matches a controller that has its own protocol driver (the
+// DualSense family) by its descriptor's vendor/product IDs. It is used for
+// identification only, where that protocol driver is unavailable; it never
+// lends the descriptor's capabilities to another backend.
+func FixedIDModel(desc device.Descriptor) Model {
+	return Model{ID: desc.ModelID, Static: desc, Identify: func(d evdev.InputDevice) (Confidence, string) {
+		if desc.VendorID != 0 && d.Vendor == desc.VendorID && containsU16(desc.ProductIDs, d.Product) {
+			return Identified, fmt.Sprintf("Device ID %04x:%04x", d.Vendor, d.Product)
+		}
+		return NoMatch, ""
+	}}
 }

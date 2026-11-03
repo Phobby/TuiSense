@@ -74,3 +74,44 @@ func TestAppleTerminalColourDepth(t *testing.T) {
 		t.Fatalf("Terminal.app on macOS 26: %+v", f)
 	}
 }
+
+func TestRedactRemovesPersonalPaths(t *testing.T) {
+	got := Redact(`Exe C:\Users\Yağız Öztürk\AppData\Local\Programs\TuiSense\bin\tuisense.exe by Yağız Öztürk`, `C:\Users\Yağız Öztürk`, "Yağız Öztürk", "")
+	if strings.Contains(got, "Yağız") || !strings.Contains(got, `~\AppData`) {
+		t.Fatalf("not redacted: %s", got)
+	}
+}
+
+func TestInstallMethod(t *testing.T) {
+	for exe, want := range map[string]string{
+		`C:\Users\a b\AppData\Local\Programs\TuiSense\bin\tuisense.exe`: "PowerShell installer",
+		`D:\Tools\TuiSense\tuisense.exe`:                                "portable",
+		`C:\Users\a\scoop\apps\tuisense\current\tuisense.exe`:           "package manager",
+		"/home/u/.local/bin/tuisense":                                   "install script",
+	} {
+		if got := installMethod(exe); !strings.Contains(got, want) {
+			t.Errorf("%s: %s", exe, got)
+		}
+	}
+}
+
+// The detailed report lists what TuiSense would show for each controller
+// and never contains a device path.
+func TestHardwareReportIsComplete(t *testing.T) {
+	var b strings.Builder
+	WriteHardware(&b, "windows", Hardware{Backends: []string{"xinput", "windows-hid"},
+		Controllers: []Controller{{Driver: "windows-hid", Model: "MSI Force GC20 V2", ModelID: "msi.force_gc20_v2", Visual: "msi_gc20",
+			RawName: "Force GC20 V2", IDs: "0db0:0001:0001", Identity: "identified", Input: "not available"}},
+		HID: []HIDEntry{{IDs: "0db0:0001:0001", Usage: "01:05", Product: "Force GC20 V2"}}})
+	out := b.String()
+	for _, want := range []string{"Controllers found: 1", "msi_gc20", "0db0:0001:0001", "identified", "HID only (not visible to XInput)", "not available"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("missing %q in\n%s", want, out)
+		}
+	}
+	b.Reset()
+	WriteHardware(&b, "windows", Hardware{})
+	if !strings.Contains(b.String(), "No controller detected. Check the USB/Bluetooth connection and try again.") {
+		t.Fatal("an empty scan gives an actionable message")
+	}
+}

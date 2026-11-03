@@ -24,6 +24,8 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+# Windows PowerShell 5.1 downloads many times slower while drawing progress.
+$ProgressPreference = 'SilentlyContinue'
 Set-StrictMode -Version 3
 
 $Repo = 'Phobby/TuiSense'
@@ -64,13 +66,23 @@ if ($Uninstall) {
 }
 
 # --- platform ---------------------------------------------------------------
-$arch = switch ($env:PROCESSOR_ARCHITECTURE) {
+# The OS architecture, not the PowerShell process's: 32-bit (x86) PowerShell on
+# 64-bit Windows reports x86 in PROCESSOR_ARCHITECTURE.
+$osArch = $env:PROCESSOR_ARCHITECTURE
+if ($env:PROCESSOR_ARCHITEW6432) { $osArch = $env:PROCESSOR_ARCHITEW6432 }
+try { $osArch = [string][System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture } catch { }
+$arch = switch ($osArch.ToUpperInvariant()) {
     'AMD64' { 'amd64' }
+    'X64'   { 'amd64' }
     'ARM64' { 'arm64' }
-    default { Fail "unsupported CPU architecture '$($env:PROCESSOR_ARCHITECTURE)'" }
+    default { Fail "unsupported CPU architecture '$osArch'. TuiSense is published for 64-bit Windows (x64 and ARM64)." }
 }
 $keygen = Get-Command ssh-keygen -ErrorAction SilentlyContinue
-if (-not $keygen) { Fail 'ssh-keygen (OpenSSH Client) is required to verify the release signature. Enable it in Settings > System > Optional features.' }
+if (-not $keygen) {
+    Fail ("ssh-keygen (Windows' OpenSSH Client) is required to verify the release signature, and it was not found. " +
+        "Add it in Settings > System > Optional features > OpenSSH Client (or install Git for Windows, which includes it), open a new terminal and run the installer again. " +
+        "Alternatively follow the manual download and verification steps in the README.")
+}
 if ($TrustedKeys.Count -eq 0 -and -not $env:TUISENSE_TRUSTED_KEYS_FILE) {
     Fail 'this installer has no pinned release signing key yet, so it cannot verify a download. Build from source instead (see README).'
 }
@@ -96,7 +108,11 @@ try {
     $base = "$DownloadUrl/v$Version"
     Say "Installing TuiSense v$Version for windows/$arch"
     foreach ($name in @('SHA256SUMS', 'SHA256SUMS.sig', $archive)) {
-        Invoke-WebRequest -UseBasicParsing -Uri "$base/$name" -OutFile (Join-Path $tmp $name)
+        try {
+            Invoke-WebRequest -UseBasicParsing -Uri "$base/$name" -OutFile (Join-Path $tmp $name)
+        } catch {
+            Fail "could not download $name from $base ($($_.Exception.Message)). Check the internet connection, proxy or firewall, and that release v$Version has a windows/$arch build. Nothing was installed."
+        }
     }
 
     # --- verification -------------------------------------------------------
@@ -109,7 +125,12 @@ try {
         -ArgumentList @('-Y', 'verify', '-f', "`"$signers`"", '-I', $Namespace, '-n', $Namespace, '-s', "`"$(Join-Path $tmp 'SHA256SUMS.sig')`"") `
         -RedirectStandardInput (Join-Path $tmp 'SHA256SUMS') `
         -RedirectStandardOutput (Join-Path $tmp 'verify.out') -RedirectStandardError (Join-Path $tmp 'verify.err')
-    if ($proc.ExitCode -ne 0) { Fail 'the checksum list is not signed by a trusted TuiSense key; nothing was installed' }
+    if ($proc.ExitCode -ne 0) {
+        $why = (Get-Content -Raw -ErrorAction SilentlyContinue (Join-Path $tmp 'verify.err'))
+        if (-not $why) { $why = "exit code $($proc.ExitCode)" }
+        Fail ("the release signature could not be verified, so nothing was installed. ssh-keygen said: $($why.Trim()). " +
+            "If it reports an unknown option, this OpenSSH is older than 8.1; update OpenSSH Client or install Git for Windows.")
+    }
     $expected = $null
     foreach ($line in Get-Content (Join-Path $tmp 'SHA256SUMS')) {
         $parts = $line -split '\s+'
@@ -120,7 +141,11 @@ try {
     if ($actual -ne $expected) { Fail "checksum mismatch for $archive; nothing was installed" }
     Say 'Signature and checksum verified.'
 
-    Expand-Archive -Path (Join-Path $tmp $archive) -DestinationPath (Join-Path $tmp 'x')
+    try {
+        Expand-Archive -Path (Join-Path $tmp $archive) -DestinationPath (Join-Path $tmp 'x')
+    } catch {
+        Fail "the verified archive could not be extracted ($($_.Exception.Message)); nothing was installed"
+    }
     $bin = Join-Path $tmp "x\tuisense_${Version}_windows_${arch}\tuisense.exe"
     if (-not (Test-Path $bin)) { Fail 'the package does not contain tuisense.exe' }
     $out = & $bin --version
@@ -139,8 +164,10 @@ try {
         $userPath = [Environment]::GetEnvironmentVariable('Path', 'User')
         if (-not $userPath -or -not ($userPath.Split(';') -contains $InstallDir)) {
             Set-UserPath $true
-            Say "Added $InstallDir to your user PATH (open a new terminal)."
+            Say "Added $InstallDir to your user PATH."
         }
+        # Usable in this window too; other open terminals need a restart.
+        if (-not ($env:Path.Split(';') -contains $InstallDir)) { $env:Path = "$env:Path;$InstallDir" }
     }
     & $Target --version
     Say 'Run: tuisense   (help: tuisense --help, checks: tuisense doctor)'

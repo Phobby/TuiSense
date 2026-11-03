@@ -79,6 +79,22 @@ var turkishDrivers = map[string]string{
 	"Download automatically (verified, applied on restart)": "Otomatik indir (doğrulanır, yeniden başlatınca uygulanır)",
 	"Pre-releases": "Ön sürümler",
 
+	"Generic Gamepad":               "Genel Gamepad",
+	"Generic Gamepad (XInput)":      "Genel Gamepad (XInput)",
+	"HID game controller":           "HID oyun denetleyicisi",
+	"HID (DirectInput-style)":       "HID (DirectInput tarzı)",
+	"Not readable in this mode":     "Bu modda okunamıyor",
+	"Controller detected, but input access is unavailable. Open Driver & Compatibility for details.": "Kumanda algılandı, ancak girdiye erişilemiyor. Ayrıntılar için Sürücü ve Uyumluluk bölümünü açın.",
+	"Windows lists this controller as a HID (DirectInput-style) game controller. TuiSense reads controller input on Windows only through XInput so far, so this feature is not available in the controller's current mode.": "Windows bu kumandayı HID (DirectInput tarzı) oyun denetleyicisi olarak listeliyor. TuiSense Windows'ta kumanda girdisini şimdilik yalnızca XInput üzerinden okur; bu nedenle bu özellik kumandanın mevcut modunda kullanılamaz.",
+	"XInput does not expose this feature; TuiSense has no other Windows backend for it yet.": "XInput bu özelliği sunmaz; TuiSense'in bunun için henüz başka bir Windows altyapısı yok.",
+	"Windows lists no XInput-class HID entry for this controller, so its vendor and product IDs are unknown.": "Windows bu kumanda için XInput sınıfı bir HID kaydı listelemiyor; bu nedenle üretici ve ürün kimlikleri bilinmiyor.",
+	"The number of XInput slots and XInput-class HID entries differs; Windows does not link them, so the model is not inferred.": "XInput yuvalarının sayısı ile XInput sınıfı HID kayıtlarının sayısı farklı; Windows bunları eşleştirmediği için model tahmin edilmez.",
+	"Different XInput controllers are connected; Windows does not say which slot is which, so no model is inferred.": "Farklı XInput kumandaları bağlı; Windows hangi yuvanın hangisi olduğunu bildirmediği için model tahmin edilmez.",
+	"XInput does not report vendor or product IDs, and the Windows HID listing is unavailable.": "XInput üretici veya ürün kimliği bildirmez ve Windows HID listesi kullanılamıyor.",
+	"On Windows TuiSense reads XInput controllers through Microsoft's XInput API (input, rumble, battery; experimental) with Windows' built-in drivers. The model is named only when Windows' HID listing identifies it exactly; Xbox-compatible input alone never implies a specific manufacturer. DualSense, DualShock 4 and Switch Pro are recognised but have no Windows input backend yet.": "TuiSense Windows'ta XInput kumandalarını Windows'un yerleşik sürücüleriyle Microsoft'un XInput API'si üzerinden okur (girdi, titreşim, pil; deneysel). Model adı yalnızca Windows'un HID listesi onu kesin olarak tanımladığında gösterilir; Xbox uyumlu girdi tek başına belirli bir üreticiyi göstermez. DualSense, DualShock 4 ve Switch Pro tanınır ancak henüz Windows girdi altyapısı yoktur.",
+	"Controller detected, but input access is unavailable. Windows lists it as a HID (DirectInput-style) game controller, and TuiSense reads controller input on Windows only through XInput so far. If the controller has an input-mode switch or Mode button, select its XInput mode (on the MSI Force GC20 V2: Default mode, mode LEDs 1+2), then reconnect it. No driver needs to be installed.": "Kumanda algılandı, ancak girdiye erişilemiyor. Windows onu HID (DirectInput tarzı) oyun denetleyicisi olarak listeliyor ve TuiSense Windows'ta kumanda girdisini şimdilik yalnızca XInput üzerinden okuyor. Kumandada bir giriş modu anahtarı veya Mode düğmesi varsa XInput modunu seçin (MSI Force GC20 V2'de: Default modu, mod LED'leri 1+2), ardından yeniden bağlayın. Herhangi bir sürücü kurmanız gerekmez.",
+	"Controller input":    "Kumanda girdisi",
+	"Not available":       "Kullanılamıyor",
 	"XInput controller":             "XInput denetleyici",
 	"XInput":                        "XInput",
 	"Open the trigger diagnostics.": "Tetik tanılamasını açar.",
@@ -89,7 +105,6 @@ var turkishDrivers = map[string]string{
 	"XInput reports the battery in four steps (empty, low, medium, full).":                    "XInput pili dört kademede bildirir (boş, düşük, orta, dolu).",
 	"XInput does not report vendor or product IDs, so the exact model cannot be identified.":  "XInput üretici veya ürün kimliği bildirmez; bu yüzden tam model tanımlanamaz.",
 
-	"On Windows TuiSense reads XInput controllers through Microsoft's XInput API (input, rumble, battery; experimental). XInput does not identify the model. DualSense, DualShock 4 and Switch Pro backends are not implemented on Windows yet.": "Windows'ta TuiSense XInput denetleyicilerini Microsoft'un XInput API'siyle okur (girdi, titreşim, pil; deneysel). XInput modeli tanımlamaz. DualSense, DualShock 4 ve Switch Pro altyapıları Windows'ta henüz yok.",
 	"TuiSense's controller backends are implemented for Linux (and XInput on Windows). On this system the gallery, profiles and reports work, but no controller is read.":                                                                        "TuiSense'in denetleyici altyapıları Linux için (ve Windows'ta XInput için) uygulanmıştır. Bu sistemde galeri, profiller ve raporlar çalışır, ancak hiçbir denetleyici okunmaz.",
 
 	// Health report actions

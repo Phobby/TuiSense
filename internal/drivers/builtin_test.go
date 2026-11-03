@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/Phobby/TuiSense/internal/device"
+	"github.com/Phobby/TuiSense/internal/drivers/winpad"
 	"github.com/Phobby/TuiSense/internal/drivers/xinput"
 	"github.com/Phobby/TuiSense/internal/i18n"
 	"github.com/Phobby/TuiSense/internal/state"
@@ -98,7 +99,7 @@ var lowerWord = regexp.MustCompile(`[a-z]{2,}`) // codes like "L1", "X", "LB" ne
 func TestDescriptorTextIsTranslated(t *testing.T) {
 	r := NewBuiltinRegistry(RegistryOptions{Hardware: true, TestDevices: true})
 	// The XInput driver is only registered on Windows; check its text everywhere.
-	for _, d := range append(r.Models(), xinput.Descriptor(true)) {
+	for _, d := range append(r.Models(), xinput.Descriptor(true), winpad.Descriptor()) {
 		texts := []string{d.DisplayName, d.ShortName}
 		for _, reg := range d.Regions {
 			texts = append(texts, reg.Label, reg.Badge, reg.Description)

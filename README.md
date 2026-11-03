@@ -91,12 +91,6 @@ marked **MOCK**; and it never guesses a firmware version.
 
 ## Quick Install
 
-> [!IMPORTANT]
-> **The first signed release has not been published yet.** The installers below
-> are tested end to end against a local release server; they will work as soon as
-> the first release appears on the [Releases page](https://github.com/Phobby/TuiSense/releases).
-> Until then, please [build from source](#building-from-source).
-
 Installers detect your OS and CPU, download the official release from GitHub,
 verify its **signature and checksum**, and install for your user only — no
 `sudo`, no administrator rights, no Go toolchain.
@@ -129,6 +123,31 @@ notepad install-tuisense.ps1
 powershell -ExecutionPolicy Bypass -File install-tuisense.ps1
 ```
 
+The installer needs Windows' built-in **OpenSSH Client** (`ssh-keygen`) to
+verify the release signature. If it is missing, add it under *Settings → System →
+Optional features → OpenSSH Client* (or install Git for Windows), or use the
+portable ZIP below. 32-bit PowerShell windows and ARM64 PCs get the right
+64-bit build automatically.
+
+**Windows portable ZIP** (no installer, no administrator rights, no Go). From the
+[Releases page](https://github.com/Phobby/TuiSense/releases/latest) download
+`tuisense_<version>_windows_amd64.zip` (or `_arm64.zip` on ARM PCs) and
+`SHA256SUMS`, then in PowerShell, in the download folder:
+
+```powershell
+Get-FileHash .\tuisense_*_windows_amd64.zip -Algorithm SHA256   # must equal the line in SHA256SUMS
+Expand-Archive .\tuisense_*_windows_amd64.zip -DestinationPath "$env:LOCALAPPDATA\Programs\TuiSense"
+```
+
+Start `tuisense.exe` from **Windows Terminal** (`cd` into the extracted folder and
+run `.\tuisense.exe`). The executable is not code-signed yet, so when a
+browser-downloaded copy is started from Explorer, Microsoft Defender SmartScreen
+may show *"Windows protected your PC"*. Check the SHA-256 above first (and, with
+the GitHub CLI, `gh attestation verify <zip> -R Phobby/TuiSense` proves the file
+was built by this repository's release workflow); only then choose *More info →
+Run anyway* for that one file. Never turn SmartScreen or your antivirus off. The
+PowerShell installer avoids the prompt because it verifies the signature itself.
+
 Then open a new terminal and run:
 
 ```sh
@@ -142,7 +161,7 @@ tuisense doctor     # check permissions, drivers, clipboard and terminal
 
 | | Linux / macOS (`install.sh`) | Windows (`install.ps1`) |
 | --- | --- | --- |
-| Specific version | `--version 0.8.0` | `-Version 0.8.0` |
+| Specific version | `--version 0.9.0` | `-Version 0.9.0` |
 | Don't touch PATH | `--no-modify-path` | `-NoModifyPath` |
 | Uninstall (keep settings) | `--uninstall` | `-Uninstall` |
 | Uninstall everything | `--uninstall --purge` | `-Uninstall -Purge` |
@@ -275,19 +294,21 @@ by automated tests against recorded and simulated device data.
 
 | Controller | Linux | Windows | macOS |
 | --- | --- | --- | --- |
-| Sony DualSense | ✅ input, battery, lighting, adaptive triggers, haptics, audio, profiles, firmware check | — | — |
-| Sony DualSense Edge | ✅ input, battery, lighting, adaptive triggers, haptics, back buttons, profiles, firmware check | — | — |
-| Xbox Wireless Controller | ✅ input, battery, rumble | 🧪 XInput (generic) | — |
-| Xbox Elite Series 2 | ✅ input, battery, rumble, paddles¹ | 🧪 XInput (generic) | — |
-| Sony DualShock 4 | ✅ input, battery, rumble | — | — |
-| Nintendo Switch Pro | ✅ input, battery, rumble | — | — |
-| 8BitDo Ultimate Bluetooth | ✅ input, battery, rumble | 🧪 XInput (generic) | — |
-| GameSir G7 SE | ✅ input, rumble | 🧪 XInput (generic) | — |
-| Razer Wolverine V3 Pro | ✅ input, battery, rumble | 🧪 XInput (generic) | — |
-| MSI Force GC20 V2 | ✅ input, rumble | 🧪 XInput (generic) | — |
+| Sony DualSense | ✅ input, battery, lighting, adaptive triggers, haptics, audio, profiles, firmware check | 🧪 detected and identified, no input yet | — |
+| Sony DualSense Edge | ✅ input, battery, lighting, adaptive triggers, haptics, back buttons, profiles, firmware check | 🧪 detected and identified, no input yet | — |
+| Xbox Wireless Controller | ✅ input, battery, rumble | 🧪 XInput input, rumble, battery; identified by USB ID | — |
+| Xbox Elite Series 2 | ✅ input, battery, rumble, paddles¹ | 🧪 XInput input, rumble, battery; identified by USB ID; paddles not readable | — |
+| Sony DualShock 4 | ✅ input, battery, rumble | 🧪 detected and identified, no input yet | — |
+| Nintendo Switch Pro | ✅ input, battery, rumble | 🧪 detected and identified, no input yet | — |
+| 8BitDo Ultimate Bluetooth | ✅ input, battery, rumble | 🧪 XInput input, rumble² | — |
+| GameSir G7 SE | ✅ input, rumble | 🧪 XInput input, rumble² | — |
+| Razer Wolverine V3 Pro | ✅ input, battery, rumble | 🧪 XInput input, rumble; identified by USB ID | — |
+| MSI Force GC20 V2 | ✅ input, rumble | 🧪 Default mode: XInput input, rumble³; other modes: detected, no input | — |
 
-✅ implemented · 🧪 experimental, unit-tested but not yet run on Windows hardware · — not available
+✅ implemented · 🧪 experimental: covered by automated tests, **not yet run on Windows hardware** · — not available
 ¹ when the Linux kernel driver reports them.
+² shown as *Generic Gamepad* unless Windows reports a name or ID that identifies it; you can confirm the model in Diagnostics → Connection.
+³ its Default mode uses the shared Xbox 360 ID `045e:028e`, so it appears as *Generic Gamepad (XInput)* and TuiSense asks *"Is this your MSI Force GC20 V2?"* in Diagnostics → Connection. It is never shown as another brand.
 
 On Linux, everything except the DualSense family goes through the kernel's own
 drivers (`xpad`, `hid-playstation`, `hid-sony`, `hid-nintendo`, `hid-microsoft`);
@@ -310,17 +331,22 @@ types and the exact status of every capability are in the generated
 | | Linux | Windows | macOS |
 | --- | --- | --- | --- |
 | Terminal UI, 3D viewer, gallery, profiles, reports | ✅ | ✅ | ✅ |
-| Controller backend | hidraw (DualSense) + evdev (all others) | XInput (Xbox-layout controllers) — experimental | not implemented yet |
+| Controller backend | hidraw (DualSense) + evdev (all others) | XInput input + HID identification — experimental | not implemented yet |
 | Controller audio | ALSA | — | — |
 | Clipboard | `wl-copy`, `xclip`, `xsel`, OSC 52 | PowerShell `Set-Clipboard` | `pbcopy` |
 | Release builds | amd64, arm64 | amd64, arm64 | Intel, Apple Silicon |
 
 - **Linux** is the primary platform. It runs in any UTF-8 terminal under Wayland
   or X11, and no kernel modules are installed or changed.
-- **Windows:** XInput cannot tell which model is connected, so controllers appear
-  as a generic Xbox-layout controller with input, rumble and battery. DualSense,
-  DualShock 4 and Switch Pro have no Windows backend yet. Use Windows Terminal for
-  the best rendering.
+- **Windows:** input, rumble and battery come from Microsoft's XInput API with
+  Windows' built-in drivers — nothing is installed. The model name and 3D model
+  come from the vendor/product IDs in Windows' HID listing, and only when they
+  identify the controller exactly; otherwise it is a *Generic Gamepad*.
+  Xbox-compatible input never implies a Microsoft controller, and an unknown
+  controller is never shown as a DualSense. Controllers that Windows lists only
+  as HID gamepads (DirectInput/Android modes, DualSense, DualShock 4, Switch Pro)
+  are detected and named, but TuiSense cannot read their input on Windows yet.
+  Use Windows Terminal for the best rendering.
 - **macOS:** the app runs, but no controller backend is implemented yet, so it
   cannot see connected controllers.
 
@@ -442,7 +468,10 @@ releases: [docs/RELEASING.md](docs/RELEASING.md).
 
 Start with **`tuisense doctor`** — it checks your terminal, clipboard, audio,
 controller permissions and kernel drivers and prints what to do. It never changes
-your system by itself.
+your system by itself. **`tuisense doctor --windows`** adds every detected
+controller: its IDs, how it was identified, the backend and 3D model chosen and
+what is unavailable; **`--export`** saves that report, with your user folder
+redacted, to share in an issue.
 
 | Problem | Fix |
 | --- | --- |
@@ -451,6 +480,9 @@ your system by itself.
 | Copy does nothing | Install `wl-clipboard` (Wayland) or `xclip` (X11). Over SSH, start with `TUISENSE_OSC52=1` in a terminal that allows OSC 52. Otherwise TuiSense saves the text to a private file and shows its path. Details: [docs/CLIPBOARD.md](docs/CLIPBOARD.md). |
 | Boxes instead of symbols, or a broken 3D model | Use a UTF-8 terminal with a font that includes Braille characters (most do); on Windows use Windows Terminal. |
 | `tuisense: command not found` after installing | Open a new terminal; the installer added the folder to your PATH. |
+| Windows: no controller found | Run `tuisense doctor --windows`. If the controller is listed as *HID only (not visible to XInput)*, switch it to its XInput mode (MSI Force GC20 V2: *Default* mode, mode LEDs 1+2; many pads have an X/D switch) and reconnect. Steam or remapping tools that hide controllers can also be the cause. |
+| Windows: wrong controller name | Run `tuisense doctor --windows --export` and attach the saved report to a [controller report](https://github.com/Phobby/TuiSense/issues/new?template=controller_report.yml). It contains IDs, not serial numbers, Bluetooth addresses or your user name. |
+| Windows: the installer stops at the signature check | The message shows `ssh-keygen`'s reason. Enable *OpenSSH Client* (Settings → System → Optional features) or install Git for Windows, or use the portable ZIP with its SHA-256 check. |
 | An update was downloaded but something is wrong | `tuisense update --rollback` restores the previous version. |
 
 ## FAQ

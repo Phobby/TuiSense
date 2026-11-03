@@ -3,11 +3,14 @@
 // two rumble motors, and the battery level of wireless pads. It needs no
 // third-party driver.
 //
-// XInput does not expose vendor/product IDs, motion sensors, touchpads, rear
-// paddles, the Guide button or any vendor feature, so every XInput device is
-// described as a generic Xbox-layout controller, never as a specific model.
-// The backend is compiled and unit-tested with a fake API on every platform;
-// it has not been run on Windows hardware yet (Verification: experimental).
+// XInput itself does not expose vendor/product IDs, motion sensors,
+// touchpads, rear paddles, the Guide button or any vendor feature. The model
+// is taken from the XInput-class HID entry Windows lists for the controller
+// (see package winpad) only when that evidence is exact; otherwise the device
+// is a generic gamepad. Xbox-compatible input never implies a Microsoft
+// controller. The backend is compiled and unit-tested with a fake API on
+// every platform; it has not been run on Windows hardware yet
+// (Verification: experimental).
 package xinput
 
 import (
@@ -18,7 +21,10 @@ import (
 	"time"
 
 	"github.com/Phobby/TuiSense/internal/device"
+	"github.com/Phobby/TuiSense/internal/drivers/gamepad"
+	"github.com/Phobby/TuiSense/internal/drivers/winpad"
 	"github.com/Phobby/TuiSense/internal/logging"
+	"github.com/Phobby/TuiSense/internal/system/winhid"
 )
 
 // DriverID is the registry ID.
@@ -129,7 +135,7 @@ func capabilities(battery bool) device.CapabilitySet {
 // Descriptor describes a generic XInput controller.
 func Descriptor(battery bool) device.Descriptor {
 	return device.Descriptor{
-		ModelID: ModelID, Family: "xinput", Brand: "XInput", DisplayName: "XInput controller", ShortName: "XInput",
+		ModelID: ModelID, Family: "xinput", Brand: "Generic", DisplayName: "Generic Gamepad (XInput)", ShortName: "Gamepad",
 		VisualID: "generic", Accent: device.RGB{R: 140, G: 150, B: 175},
 		Regions: []device.Region{
 			{ID: device.RegionLeftTrigger, Label: "LT Trigger", Badge: "LT", Capability: device.CapDiagnostics, Description: "Open the trigger diagnostics."},
@@ -146,13 +152,28 @@ func Descriptor(battery bool) device.Descriptor {
 }
 
 // Driver enumerates the four XInput user slots.
-type Driver struct{ api API }
+type Driver struct {
+	api    API
+	models []gamepad.Model
+	hid    func() ([]winhid.Device, error)
+}
+
+// slotCandidate is the discovery payload of one slot.
+type slotCandidate struct {
+	slot uint32
+	id   winpad.Identity
+}
 
 // NewDriver returns the driver; on systems without XInput it finds nothing.
-func NewDriver() *Driver { return &Driver{api: newAPI()} }
+// models identify the controller from Windows' HID listing.
+func NewDriver(models ...gamepad.Model) *Driver {
+	return &Driver{api: newAPI(), models: models, hid: winhid.Enumerate}
+}
 
-// NewDriverWith uses an explicit API (tests).
-func NewDriverWith(api API) *Driver { return &Driver{api: api} }
+// NewDriverWith uses an explicit API (tests); hid may be nil (no identity).
+func NewDriverWith(api API, hid func() ([]winhid.Device, error), models ...gamepad.Model) *Driver {
+	return &Driver{api: api, models: models, hid: hid}
+}
 
 func (*Driver) ID() string                  { return DriverID }
 func (*Driver) Models() []device.Descriptor { return []device.Descriptor{Descriptor(false)} }
@@ -161,20 +182,35 @@ func (d *Driver) Discover() ([]device.Candidate, error) {
 	if d.api == nil {
 		return nil, nil
 	}
-	var out []device.Candidate
+	var slots []uint32
 	for slot := uint32(0); slot < 4; slot++ {
 		if _, err := d.api.GetState(slot); err == nil {
-			out = append(out, device.Candidate{Key: fmt.Sprintf("xinput:%d", slot), Label: fmt.Sprintf("XInput controller (slot %d)", slot+1), Payload: slot})
+			slots = append(slots, slot)
 		}
+	}
+	if len(slots) == 0 {
+		return nil, nil
+	}
+	id := winpad.Identity{Note: "XInput does not report vendor or product IDs, and the Windows HID listing is unavailable."}
+	if d.hid != nil {
+		if all, err := d.hid(); err == nil {
+			id = winpad.ForXInput(d.models, all, len(slots))
+		}
+	}
+	out := make([]device.Candidate, 0, len(slots))
+	for _, slot := range slots {
+		out = append(out, device.Candidate{Key: fmt.Sprintf("xinput:%d", slot), Endpoint: id.Endpoint(),
+			Label: fmt.Sprintf("XInput controller (slot %d)", slot+1), Payload: slotCandidate{slot, id}})
 	}
 	return out, nil
 }
 
 func (d *Driver) Open(c device.Candidate, logger *logging.Logger) (device.Device, error) {
-	slot, ok := c.Payload.(uint32)
+	sc, ok := c.Payload.(slotCandidate)
 	if !ok || d.api == nil {
 		return nil, fmt.Errorf("xinput: bad candidate %v", c.Key)
 	}
+	slot := sc.slot
 	b := &Backend{api: d.api, slot: slot, logger: logger, cfg: device.DefaultConfig()}
 	kind, level, err := d.api.Battery(slot)
 	b.battery = err == nil && (kind == BatteryAlkaline || kind == BatteryNiMH)
@@ -183,13 +219,16 @@ func (d *Driver) Open(c device.Candidate, logger *logging.Logger) (device.Device
 	if err == nil && kind == BatteryWired {
 		conn = device.ConnUSBWired
 	}
-	b.info = device.Info{ID: c.Key, Name: c.Label, Model: "XInput controller", Connection: conn, Connected: true, LastSeen: time.Now(),
-		InputMode: "XInput", OutputMode: "XInputSetState", IdentityState: "unidentified",
-		Identification: "XInput does not report vendor or product IDs, so the exact model cannot be identified.",
-		Details:        []device.InfoField{{Label: "XInput slot", Value: fmt.Sprint(slot + 1)}}}
+	b.info = device.Info{ID: c.Key, Name: c.Label, Connection: conn, Connected: true, LastSeen: time.Now(),
+		InputMode: "XInput", OutputMode: "XInputSetState",
+		Details: []device.InfoField{{Label: "XInput slot", Value: fmt.Sprint(slot + 1)}}}
+	sc.id.Apply(&b.desc, &b.info, device.RequiresPlatform, "XInput does not expose this feature; TuiSense has no other Windows backend for it yet.")
 	b.tel.BatteryPercent = -1
 	if b.battery {
 		b.tel.BatteryPercent = BatteryPercent(level)
+	}
+	if logger != nil {
+		logger.Info("XINPUT", "Slot %d opened as %s (%s)", slot+1, b.desc.DisplayName, b.info.IdentityState)
 	}
 	return b, nil
 }

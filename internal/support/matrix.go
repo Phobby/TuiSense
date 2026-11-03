@@ -137,11 +137,18 @@ func row(d device.Descriptor, det, conns, backend, drivers string) Row {
 	}
 }
 
+const windowsHIDOnly = "Linux; Windows: detected and identified by ID, no input backend yet"
+
 // Matrix lists the ten target controllers in gallery order.
 func Matrix() []Row {
 	byVisual := map[string]Row{}
 	byVisual["dualsense"] = row(dualsense.Descriptor(), "054c:0ce6 usb/bluetooth (hidraw)", "USB, Bluetooth", "dualsense-hidraw", "hid-playstation + hidraw")
 	byVisual["dualsense_edge"] = row(dualsense.EdgeDescriptor(), "054c:0df2 usb/bluetooth (hidraw)", "USB, Bluetooth", "dualsense-hidraw", "hid-playstation + hidraw")
+	for _, k := range []string{"dualsense", "dualsense_edge"} {
+		r := byVisual[k]
+		r.Platforms = windowsHIDOnly
+		byVisual[k] = r
+	}
 	specs := append([]gamepad.ModelSpec{msigc20.Spec}, padmodels.Specs()...)
 	for _, s := range specs {
 		det := detection(s)
@@ -153,9 +160,10 @@ func Matrix() []Row {
 			conns = "USB, wireless (per driver)"
 		}
 		r := row(typical(s), det, conns, "linux-evdev (+ ff, power_supply)", strings.Join(s.KernelDrivers, ", "))
+		r.Platforms = windowsHIDOnly
 		for _, kd := range s.KernelDrivers {
 			if kd == "xpad" { // speaks the XInput protocol
-				r.Platforms = "Linux; Windows: generic XInput (input, rumble, battery; model not identified; experimental)"
+				r.Platforms = "Linux; Windows: XInput input + rumble (+ battery if reported), model named only when Windows' HID IDs identify it; other input modes detected without input; experimental"
 			}
 		}
 		byVisual[s.VisualID] = r
@@ -184,7 +192,7 @@ func Markdown(rows []Row) string {
 		cols := []string{r.Model, r.Detection, r.Platforms, r.Connections, r.Drivers, r.Input, r.Battery, r.Vibration, r.Lighting, r.Triggers, r.Rear, r.Remapping, r.Profiles, r.Firmware, r.Verification}
 		b.WriteString("| " + strings.Join(cols, " | ") + " |\n")
 	}
-	b.WriteString("\nWindows: controllers in XInput mode are read through Microsoft's XInput API as a generic Xbox-layout controller (input, rumble, battery); XInput cannot identify the model, so model-specific features are Linux-only. This backend is unit-tested but has not been run on Windows hardware. DualSense, DualShock 4 and Switch Pro have no Windows backend yet.\n")
+	b.WriteString("\nWindows: controllers in XInput mode are read through Microsoft's XInput API (input, rumble, battery when reported) with Windows' built-in drivers. The model is named only when the vendor/product IDs of Windows' HID listing identify it exactly; a probable match (such as the shared Xbox 360 ID) stays a generic gamepad until the user confirms it. HID-only controllers (DirectInput or Android modes, DualSense, DualShock 4, Switch Pro) are detected and identified but have no Windows input backend yet. Model-specific features remain Linux-only. Nothing on Windows has been verified on physical hardware yet.\n")
 	b.WriteString("macOS: TuiSense builds and runs (gallery, profiles, reports), but no controller backend is implemented yet.\n")
 	return b.String()
 }

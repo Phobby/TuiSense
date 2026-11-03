@@ -126,7 +126,7 @@ func Check(e Env) []Finding {
 	// Controllers and permissions.
 	switch e.GOOS {
 	case "windows":
-		add(Info, "Controllers", "XInput controllers are read through Microsoft's XInput API (experimental; the model is not identified). DualSense, DualShock 4 and Switch Pro are not supported on Windows yet")
+		add(Info, "Controllers", "XInput controllers are read through Microsoft's XInput API with Windows' built-in drivers (experimental). Other HID gamepads are detected and identified but not read yet. Run `tuisense doctor --windows` for every connected controller's IDs, identity and backend")
 	case "linux":
 		add(Info, "Controllers", fmt.Sprintf("%d DualSense (hidraw), %d other gamepad(s) found", e.DualSense, e.Gamepads))
 		if e.DualSenseDenied > 0 {

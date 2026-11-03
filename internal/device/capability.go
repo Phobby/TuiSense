@@ -381,6 +381,26 @@ func (cs CapabilitySet) Clone() CapabilitySet {
 	return out
 }
 
+// WithModelHardware returns base plus, for every capability base does not
+// declare, the model's physical fact: absent stays absent, present becomes
+// inaccessible for why/note. A backend that reaches less of a known model
+// than another platform's backend thus never claims the rest, yet Driver &
+// Compatibility can still explain it.
+func (cs CapabilitySet) WithModelHardware(model CapabilitySet, why Requirement, note string) CapabilitySet {
+	out := cs.Clone()
+	for id, s := range model {
+		if _, ok := out[id]; ok {
+			continue
+		}
+		if s.Physical() == Absent {
+			out[id] = AbsentSpec(id)
+		} else {
+			out[id] = InaccessibleSpec(id, why, note)
+		}
+	}
+	return out
+}
+
 // WithoutFeature returns a copy where feat is removed from c. If c has no
 // features left and was Full, it is downgraded to Limited with note.
 func (cs CapabilitySet) WithoutFeature(c Capability, feat Feature, note string) CapabilitySet {

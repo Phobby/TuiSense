@@ -11,6 +11,7 @@ import (
 	"github.com/Phobby/TuiSense/internal/drivers/gamepad"
 	"github.com/Phobby/TuiSense/internal/drivers/msigc20"
 	"github.com/Phobby/TuiSense/internal/drivers/padmodels"
+	"github.com/Phobby/TuiSense/internal/drivers/winpad"
 	"github.com/Phobby/TuiSense/internal/system/evdev"
 )
 
@@ -167,6 +168,11 @@ func TestOtherPlatformsAndSimulatedDevices(t *testing.T) {
 	r = Analyze(fakeEnv{goos: "windows"}, Input{Desc: desc, Caps: desc.Capabilities, Info: device.Info{Connected: true}})
 	if !r.Supported || len(r.Actions) != 0 || r.OS != "Windows" {
 		t.Fatalf("Windows uses XInput and never installs drivers: %+v", r)
+	}
+	hid := winpad.Descriptor()
+	r = Analyze(fakeEnv{goos: "windows"}, Input{Desc: hid, Caps: hid.Capabilities, Info: device.Info{Connected: true}})
+	if r.Input != "Not available" || len(r.Actions) != 0 || r.Checks[0].ID != "windows_hid_input" {
+		t.Fatalf("a HID-only controller is reported without input and without driver installs: %+v", r)
 	}
 	r = Analyze(linux(), Input{Desc: desc, Caps: desc.Capabilities, Simulated: true})
 	if r.Backend != "simulated" || len(r.Actions) != 0 {

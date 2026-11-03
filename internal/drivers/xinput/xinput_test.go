@@ -38,7 +38,7 @@ func TestDiscoverAndReadInput(t *testing.T) {
 		0: {Packet: 7, Gamepad: Gamepad{Buttons: 0x1000 | 0x0001 | 0x0100, LeftTrigger: 255, ThumbLX: 32767, ThumbLY: 32767}},
 		2: {},
 	}, battery: map[uint32][2]uint8{0: {BatteryNiMH, 2}, 2: {BatteryWired, 0}}}
-	d := NewDriverWith(api)
+	d := NewDriverWith(api, nil)
 	cands, err := d.Discover()
 	if err != nil || len(cands) != 2 || cands[0].Key != "xinput:0" || cands[1].Key != "xinput:2" {
 		t.Fatalf("expected slots 1 and 3: %+v %v", cands, err)
@@ -78,7 +78,7 @@ func TestDiscoverAndReadInput(t *testing.T) {
 
 func TestRumbleIsBoundedAndStops(t *testing.T) {
 	api := &fakeAPI{states: map[uint32]State{0: {}}}
-	dev, _ := NewDriverWith(api).Open(device.Candidate{Key: "xinput:0", Payload: uint32(0)}, nil)
+	dev, _ := NewDriverWith(api, nil).Open(device.Candidate{Key: "xinput:0", Payload: slotCandidate{}}, nil)
 	if err := dev.ExecuteCommand(context.Background(), device.Command{Type: device.CmdPulseHaptics, PulseLeft: 255, PulseRight: 128, PulseDur: time.Millisecond, PulseAbsolute: true}); err != nil {
 		t.Fatal(err)
 	}
@@ -101,7 +101,7 @@ func TestRumbleIsBoundedAndStops(t *testing.T) {
 }
 
 func TestNoXInputMeansNoDevices(t *testing.T) {
-	if c, err := NewDriverWith(nil).Discover(); c != nil || err != nil {
+	if c, err := NewDriverWith(nil, nil).Discover(); c != nil || err != nil {
 		t.Fatal("without XInput nothing is discovered")
 	}
 }

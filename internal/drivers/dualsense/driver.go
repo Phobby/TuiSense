@@ -6,6 +6,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 
 	"github.com/Phobby/TuiSense/internal/device"
@@ -34,6 +35,9 @@ func (*Driver) Models() []device.Descriptor {
 }
 
 func (*Driver) Discover() ([]device.Candidate, error) {
+	if runtime.GOOS != "linux" {
+		return nil, nil // hidraw (/sys/class/hidraw) exists only on Linux
+	}
 	devs, err := system.ScanDualSenseDevices()
 	if err != nil {
 		return nil, err

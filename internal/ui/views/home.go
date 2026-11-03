@@ -53,6 +53,11 @@ func renderHome(f *terminal.Frame, area cell.Rect, pc PanelContext) {
 	pillRow(f, x, area.Y+2, area.X+area.Width, s, "", 0, items)
 	if s.RegionHint != "" && area.Height > 4 {
 		f.Buffer.SetStringWithin(area.X, area.Y+4, s.RegionHint, s.Theme.MutedStyle(), area.Width)
+	} else if s.DeviceInfo.Connected && !s.Caps.Supports(device.CapDiagnostics) && s.DeviceInfo.PermissionHint != "" && area.Height > 4 {
+		// Detected without input access: say so instead of showing a silent model.
+		hint := i18n.T(s.DeviceInfo.PermissionHint)
+		w := min(area.Width, uint16(cell.StringWidth(hint)))
+		f.Buffer.SetStringWithin(area.X+(area.Width-w)/2, area.Y+4, hint, cell.Style{Fg: s.Theme.Warning, Bg: s.Theme.BgPanel}, w)
 	}
 }
 

@@ -65,6 +65,16 @@ jobs:
       - name: Package
         shell: bash
         run: go run ./tools/release package -version "$VERSION" -os "${{ matrix.goos }}" -arch "${{ matrix.goarch }}" -bin "$BIN" -out dist
+      - name: Start the packaged Windows executable
+        if: matrix.goos == 'windows'
+        shell: pwsh
+        run: |
+          $zip = Get-ChildItem dist -Filter *.zip | Select-Object -First 1
+          Expand-Archive $zip.FullName -DestinationPath "$env:RUNNER_TEMP\pkg check"
+          $exe = Get-ChildItem "$env:RUNNER_TEMP\pkg check" -Recurse -Filter tuisense.exe | Select-Object -First 1
+          & $exe.FullName --version
+          & $exe.FullName doctor --windows
+          if ($LASTEXITCODE -ne 0) { throw 'packaged executable failed' }
       - uses: actions/upload-artifact@v4
         with:
           name: dist-${{ matrix.goos }}-${{ matrix.goarch }}
@@ -74,6 +84,8 @@ jobs:
   publish:
     needs: build
     runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.ver.outputs.version }}
     permissions:
       contents: write
       id-token: write
@@ -88,6 +100,8 @@ jobs:
           pattern: dist-*
           path: dist
           merge-multiple: true
+      - id: ver
+        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
       - name: Checksums
         run: go run ./tools/release sums -out dist
       - name: Sign checksums
@@ -115,3 +129,11 @@ jobs:
           flags=""
           case "$GITHUB_REF_NAME" in *-*) flags="--prerelease" ;; esac
           gh release create "$GITHUB_REF_NAME" dist/* --title "TuiSense $GITHUB_REF_NAME" --generate-notes $flags
+
+  # Install the release that was just published, from GitHub, on clean
+  # Windows 10/11-class runners (x64 and ARM64).
+  windows-install:
+    needs: publish
+    uses: ./.github/workflows/windows-install.yml
+    with:
+      version: ${{ needs.publish.outputs.version }}

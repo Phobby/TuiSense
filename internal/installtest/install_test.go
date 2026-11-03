@@ -42,7 +42,13 @@ func newRelease(t *testing.T) *release {
 	if testing.Short() || runtime.GOOS != "linux" {
 		t.Skip("end-to-end installer test (Linux, not -short)")
 	}
-	for _, tool := range []string{"sh", "ssh-keygen", "tar", "curl"} {
+	return newReleaseFor(t, "sh", "ssh-keygen", "tar", "curl")
+}
+
+// newReleaseFor builds and serves a signed release for the host OS.
+func newReleaseFor(t *testing.T, tools ...string) *release {
+	t.Helper()
+	for _, tool := range tools {
 		if _, err := exec.LookPath(tool); err != nil {
 			t.Skipf("%s not installed", tool)
 		}
@@ -50,12 +56,15 @@ func newRelease(t *testing.T) *release {
 	r := &release{root: repoRoot(t), dist: t.TempDir()}
 	env := os.Environ()
 	bin := filepath.Join(t.TempDir(), "tuisense")
+	if runtime.GOOS == "windows" {
+		bin += ".exe"
+	}
 	if out, err := run(t, r.root, append(env, "CGO_ENABLED=0"), "go", "build", "-trimpath",
 		"-ldflags", "-X github.com/Phobby/TuiSense/internal/version.Version="+testVersion, "-o", bin, "./cmd/tuisense"); err != nil {
 		t.Fatalf("build: %v\n%s", err, out)
 	}
 	if out, err := run(t, r.root, env, "go", "run", "./tools/release", "package", "-version", testVersion,
-		"-os", "linux", "-arch", runtime.GOARCH, "-bin", bin, "-out", r.dist, "-files", "README.md"); err != nil {
+		"-os", runtime.GOOS, "-arch", runtime.GOARCH, "-bin", bin, "-out", r.dist, "-files", "README.md"); err != nil {
 		t.Fatalf("package: %v\n%s", err, out)
 	}
 	if out, err := run(t, r.root, env, "go", "run", "./tools/release", "sums", "-out", r.dist); err != nil {
