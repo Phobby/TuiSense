@@ -18,7 +18,7 @@ func TestBuiltinRegistryContents(t *testing.T) {
 	r := NewBuiltinRegistry(RegistryOptions{Hardware: true, TestDevices: true})
 	want := []string{"dualsense", "evdev_gamepad"}
 	if runtime.GOOS == "windows" {
-		want = append(want, "xinput")
+		want = append(want, "xinput", "windows-hid")
 	}
 	var got []string
 	for _, d := range r.Drivers() {

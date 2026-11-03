@@ -137,12 +137,18 @@ try {
         if ($parts.Count -ge 2 -and $parts[1].TrimStart('*') -eq $archive) { $expected = $parts[0].ToLower() }
     }
     if (-not $expected) { Fail "$archive is not listed in the signed checksums" }
-    $actual = (Get-FileHash -Algorithm SHA256 (Join-Path $tmp $archive)).Hash.ToLower()
+    # .NET directly: Get-FileHash and Expand-Archive live in script modules that
+    # fail to load when Windows PowerShell 5.1 is started from PowerShell 7
+    # (it inherits PowerShell 7's PSModulePath).
+    $stream = [IO.File]::OpenRead((Join-Path $tmp $archive))
+    try { $hash = [Security.Cryptography.SHA256]::Create().ComputeHash($stream) } finally { $stream.Dispose() }
+    $actual = ([BitConverter]::ToString($hash) -replace '-', '').ToLower()
     if ($actual -ne $expected) { Fail "checksum mismatch for $archive; nothing was installed" }
     Say 'Signature and checksum verified.'
 
     try {
-        Expand-Archive -Path (Join-Path $tmp $archive) -DestinationPath (Join-Path $tmp 'x')
+        Add-Type -AssemblyName System.IO.Compression.FileSystem
+        [IO.Compression.ZipFile]::ExtractToDirectory((Join-Path $tmp $archive), (Join-Path $tmp 'x'))
     } catch {
         Fail "the verified archive could not be extracted ($($_.Exception.Message)); nothing was installed"
     }
