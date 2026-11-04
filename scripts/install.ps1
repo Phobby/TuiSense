@@ -1,5 +1,11 @@
 # TuiSense installer for Windows (PowerShell 5.1+ or PowerShell 7).
 #
+# From Command Prompt (cmd), PowerShell or Windows Terminal:
+#
+#   powershell -NoProfile -Command "irm https://raw.githubusercontent.com/Phobby/TuiSense/main/scripts/install.ps1 | iex"
+#
+# Inside PowerShell only:
+#
 #   irm https://raw.githubusercontent.com/Phobby/TuiSense/main/scripts/install.ps1 | iex
 #
 # Safer: download, read, then run it:

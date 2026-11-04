@@ -40,6 +40,14 @@ jobs:
           $installArgs = @{ NoModifyPath = $true }
           if ('${{ inputs.version }}') { $installArgs.Version = '${{ inputs.version }}' }
           & .\scripts\install.ps1 @installArgs
+      - name: README one-liner from Command Prompt (cmd.exe)
+        shell: cmd
+        env:
+          TUISENSE_INSTALL_DIR: ${{ runner.temp }}\cmd-install\bin
+        run: |
+          powershell -NoProfile -Command "irm https://raw.githubusercontent.com/Phobby/TuiSense/main/scripts/install.ps1 | iex"
+          if errorlevel 1 exit /b 1
+          "%RUNNER_TEMP%\cmd-install\bin\tuisense.exe" --version || exit /b 1
       - name: Start the installed executable
         shell: pwsh
         run: |

@@ -109,13 +109,23 @@ less install-tuisense.sh
 sh install-tuisense.sh
 ```
 
-**Windows** — PowerShell 5.1 or 7 (installs to `%LOCALAPPDATA%\Programs\TuiSense\bin`)
+**Windows** (installs to `%LOCALAPPDATA%\Programs\TuiSense\bin`, no administrator rights)
+
+Paste this into **any** terminal — Command Prompt (`cmd`), PowerShell or
+Windows Terminal:
+
+```bat
+powershell -NoProfile -Command "irm https://raw.githubusercontent.com/Phobby/TuiSense/main/scripts/install.ps1 | iex"
+```
+
+Already in PowerShell? The short form works there (and only there — Command
+Prompt answers *"'irm' is not recognized"*):
 
 ```powershell
 irm https://raw.githubusercontent.com/Phobby/TuiSense/main/scripts/install.ps1 | iex
 ```
 
-Or download, inspect, then run:
+Or download, inspect, then run (in PowerShell):
 
 ```powershell
 irm https://raw.githubusercontent.com/Phobby/TuiSense/main/scripts/install.ps1 -OutFile install-tuisense.ps1
@@ -482,6 +492,7 @@ redacted, to share in an issue.
 | `tuisense: command not found` after installing | Open a new terminal; the installer added the folder to your PATH. |
 | Windows: no controller found | Run `tuisense doctor --windows`. If the controller is listed as *HID only (not visible to XInput)*, switch it to its XInput mode (MSI Force GC20 V2: *Default* mode, mode LEDs 1+2; many pads have an X/D switch) and reconnect. Steam or remapping tools that hide controllers can also be the cause. |
 | Windows: wrong controller name | Run `tuisense doctor --windows --export` and attach the saved report to a [controller report](https://github.com/Phobby/TuiSense/issues/new?template=controller_report.yml). It contains IDs, not serial numbers, Bluetooth addresses or your user name. |
+| Windows: `'irm' is not recognized as an internal or external command` | The PowerShell command was pasted into Command Prompt. Use the `powershell -NoProfile -Command "…"` line from [Quick Install](#quick-install), or open PowerShell first. |
 | Windows: the installer stops at the signature check | The message shows `ssh-keygen`'s reason. Enable *OpenSSH Client* (Settings → System → Optional features) or install Git for Windows, or use the portable ZIP with its SHA-256 check. |
 | An update was downloaded but something is wrong | `tuisense update --rollback` restores the previous version. |
 
