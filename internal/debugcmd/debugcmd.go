@@ -13,11 +13,11 @@ import (
 	"time"
 
 	"github.com/Phobby/TuiSense/internal/device"
+	"github.com/Phobby/TuiSense/internal/drivers/dualsense"
 	"github.com/Phobby/TuiSense/internal/drivers/gamepad"
 	"github.com/Phobby/TuiSense/internal/drivers/msigc20"
 	"github.com/Phobby/TuiSense/internal/drivers/padmodels"
 	"github.com/Phobby/TuiSense/internal/support"
-	"github.com/Phobby/TuiSense/internal/system"
 	"github.com/Phobby/TuiSense/internal/system/evdev"
 )
 
@@ -79,8 +79,8 @@ func confidence(r gamepad.Resolution) string {
 func devices(out io.Writer) int {
 	fmt.Fprintln(out, "TuiSense controller discovery")
 	fmt.Fprintln(out, "=============================")
-	ds, err := system.ScanDualSenseDevices()
-	fmt.Fprintf(out, "\nSony DualSense (hidraw driver): %d found\n", len(ds))
+	ds, err := dualsense.Scan()
+	fmt.Fprintf(out, "\nSony DualSense (hidraw / IOKit HID): %d found\n", len(ds))
 	if err != nil {
 		fmt.Fprintf(out, "  scan warning: %v\n", err)
 	}

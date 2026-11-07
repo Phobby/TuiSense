@@ -45,13 +45,18 @@ func TestOtherPlatformsAreHonest(t *testing.T) {
 		e := env(goos, map[string]string{"LANG": "en_US.UTF-8", "WT_SESSION": "1"})
 		e.Clipboard = []string{"pbcopy"}
 		fs := Check(e)
-		want := map[string]string{"windows": "XInput", "darwin": "No controller backend"}[goos]
+		want := map[string]string{"windows": "XInput", "darwin": "without cgo"}[goos]
 		if f := find(fs, "Controllers"); len(f) != 1 || !strings.Contains(f[0].Detail, want) {
 			t.Fatalf("%s: controller support must not be overstated: %+v", goos, f)
 		}
 		if len(find(fs, "Permissions")) != 0 {
 			t.Fatalf("%s: no Linux permission advice", goos)
 		}
+	}
+	mac := env("darwin", nil)
+	mac.MacHID, mac.DualSense = true, 1
+	if f := find(Check(mac), "Controllers"); len(f) != 1 || !strings.Contains(f[0].Detail, "1 DualSense found (IOKit HID") {
+		t.Fatalf("macOS lists the DualSense it reads: %+v", f)
 	}
 	e := env("linux", map[string]string{"LANG": "en_US.UTF-8"})
 	e.Exe = "/usr/bin/tuisense"

@@ -211,7 +211,7 @@ func TestReadmeSupportClaimsMatchDrivers(t *testing.T) {
 		if strings.Contains(r.Platforms, "Windows") && strings.Contains(r.Platforms, "experimental") && !strings.Contains(windows, "🧪") {
 			t.Errorf("%s: Windows support is experimental and must be marked so", name)
 		}
-		if macos != "—" || strings.Contains(r.Platforms, "macOS") {
+		if got, want := strings.Contains(macos, "🧪"), strings.Contains(r.Platforms, "macOS"); got != want || (!want && macos != "—") {
 			t.Errorf("%s: README and drivers disagree about macOS (%q vs %q)", name, macos, r.Platforms)
 		}
 		claims := map[string]string{"battery": r.Battery, "lighting": r.Lighting, "adaptive triggers": r.Triggers, "rumble": r.Vibration, "haptics": r.Vibration}

@@ -51,7 +51,10 @@ jobs:
       - name: Build
         shell: bash
         env:
-          CGO_ENABLED: "0"
+          # macOS reads the DualSense through IOKit, which needs cgo; the
+          # Linux and Windows builds stay static and C-free.
+          CGO_ENABLED: ${{ matrix.goos == 'darwin' && '1' || '0' }}
+          MACOSX_DEPLOYMENT_TARGET: "12.0"
           GOOS: ${{ matrix.goos }}
           GOARCH: ${{ matrix.goarch }}
         run: |
@@ -134,7 +137,8 @@ jobs:
           mnt="$RUNNER_TEMP/mnt"
           hdiutil attach -nobrowse -readonly -mountpoint "$mnt" "dist/tuisense_${VERSION}_darwin_${{ matrix.goarch }}.dmg"
           "$mnt/tuisense" --version | grep -F "v$VERSION"
-          "$mnt/tuisense" doctor
+          "$mnt/tuisense" doctor | tee "$RUNNER_TEMP/doctor.txt"
+          grep -F "IOKit HID" "$RUNNER_TEMP/doctor.txt"   # the controller backend is built in
           test -f "$mnt/README.md"
           hdiutil detach "$mnt"
       - name: Windows executable (.exe)

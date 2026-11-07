@@ -6,7 +6,6 @@ import (
 	"net"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 
 	"github.com/Phobby/TuiSense/internal/device"
@@ -21,9 +20,17 @@ const MockKey = "mock:dualsense"
 const TestKey = "test:dualsense"
 
 // Driver discovers and opens physical DualSense / DualSense Edge controllers
-// through Linux hidraw. On other platforms Discover returns no candidates until
-// a platform adapter is added (see docs/ARCHITECTURE.md, "Platform adapters").
+// through Linux hidraw or macOS IOKit HID. On other platforms Discover returns
+// no candidates (see docs/ARCHITECTURE.md, "Platform adapters").
 type Driver struct{}
+
+// HardwareSupported reports whether this build can read a DualSense on this
+// OS (Linux, or macOS built with cgo).
+func HardwareSupported() bool { return rawHID }
+
+// Scan lists the connected DualSense controllers this build can reach
+// (Linux hidraw nodes, macOS IOKit HID devices) without opening them.
+func Scan() ([]system.DiscoveredDevice, error) { return scanDevices() }
 
 // NewDriver creates the DualSense hardware driver.
 func NewDriver() *Driver { return &Driver{} }
@@ -35,10 +42,7 @@ func (*Driver) Models() []device.Descriptor {
 }
 
 func (*Driver) Discover() ([]device.Candidate, error) {
-	if runtime.GOOS != "linux" {
-		return nil, nil // hidraw (/sys/class/hidraw) exists only on Linux
-	}
-	devs, err := system.ScanDualSenseDevices()
+	devs, err := scanDevices()
 	if err != nil {
 		return nil, err
 	}
@@ -59,7 +63,7 @@ func (*Driver) Open(c device.Candidate, logger *logging.Logger) (device.Device, 
 	if !ok {
 		return nil, fmt.Errorf("dualsense: unexpected candidate payload %T", c.Payload)
 	}
-	return OpenLinuxBackend(dev, logger)
+	return openBackend(dev, logger)
 }
 
 // MockVirtual describes the simulated DualSense for the registry.

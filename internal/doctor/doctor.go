@@ -13,6 +13,7 @@ import (
 
 	"github.com/Phobby/TuiSense/internal/clipboard"
 	"github.com/Phobby/TuiSense/internal/compat"
+	"github.com/Phobby/TuiSense/internal/drivers/dualsense"
 	"github.com/Phobby/TuiSense/internal/system"
 	"github.com/Phobby/TuiSense/internal/system/evdev"
 	"github.com/Phobby/TuiSense/internal/termcolor"
@@ -51,6 +52,8 @@ type Env struct {
 	// Controllers counts DualSense hidraw nodes and evdev gamepads, with
 	// how many are not accessible.
 	DualSense, DualSenseDenied, Gamepads, GamepadsDenied int
+	// MacHID: this macOS build reads the DualSense through IOKit (cgo build).
+	MacHID bool
 }
 
 // System inspects the real machine.
@@ -60,6 +63,12 @@ func System() Env {
 		MacOSMajor: termcolor.MacOSMajor()}
 	if exe, err := os.Executable(); err == nil {
 		e.Exe = exe
+	}
+	if runtime.GOOS == "darwin" && dualsense.HardwareSupported() {
+		e.MacHID = true
+		if c, err := dualsense.NewDriver().Discover(); err == nil {
+			e.DualSense = len(c)
+		}
 	}
 	if runtime.GOOS == "linux" {
 		if devs, err := system.ScanDualSenseDevices(); err == nil {
@@ -132,7 +141,7 @@ func Check(e Env) []Finding {
 		if e.DualSenseDenied > 0 {
 			l := Warn
 			detail := "A DualSense is not accessible; install TuiSense's udev rule (tuisense --print-udev) or use Device Details → Driver & Compatibility"
-			if e.Stat(compat.UdevRulePath) == nil {
+			if e.Stat(compat.UdevRulePath) == nil || e.Stat(compat.PackagedUdevRulePath) == nil {
 				detail = "The udev rule is installed; reconnect the controller"
 			}
 			add(l, "Permissions", detail)
@@ -147,6 +156,12 @@ func Check(e Env) []Finding {
 		}
 		if e.Writable("/dev/uinput") {
 			add(Info, "uinput", "/dev/uinput is writable (not used by TuiSense)")
+		}
+	case "darwin":
+		if e.MacHID {
+			add(Info, "Controllers", fmt.Sprintf("%d DualSense found (IOKit HID, experimental). Other controllers are not read on macOS yet", e.DualSense))
+		} else {
+			add(Warn, "Controllers", "This build cannot read controllers on macOS (it was built without cgo). Install a release build, or build from source with Xcode's command line tools installed")
 		}
 	default:
 		add(Info, "Controllers", "No controller backend is implemented on this system yet; the gallery, profiles and reports work")

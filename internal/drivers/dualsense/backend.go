@@ -1,4 +1,4 @@
-//go:build linux
+//go:build linux || (darwin && cgo)
 
 package dualsense
 
@@ -10,22 +10,22 @@ import (
 	"sync"
 	"syscall"
 	"time"
-	"unsafe"
 
 	"github.com/Phobby/TuiSense/internal/device"
 	"github.com/Phobby/TuiSense/internal/logging"
 	"github.com/Phobby/TuiSense/internal/system"
 )
 
-// LinuxBackend implements device.Device for a physical Sony DualSense or
-// DualSense Edge attached via Linux /dev/hidraw*.
-type LinuxBackend struct {
+// HIDBackend implements device.Device for a physical Sony DualSense or
+// DualSense Edge over a raw HID report port: Linux /dev/hidraw* or macOS IOKit.
+// Everything above the port (parsing, output reports, pulses) is shared.
+type HIDBackend struct {
 	mu      sync.RWMutex
 	desc    device.Descriptor
 	info    device.Info
 	cfg     device.Config
 	tel     device.Telemetry
-	file    *os.File
+	port    reportPort // nil when the device could not be opened
 	btSeq   uint8
 	logger  *logging.Logger
 	readBuf [128]byte
@@ -40,9 +40,21 @@ type LinuxBackend struct {
 	details    []device.Detail
 }
 
-// OpenLinuxBackend opens a discovered DualSense hidraw node, queries firmware/pairing
-// feature reports when permitted, and prepares non-blocking I/O.
-func OpenLinuxBackend(dev system.DiscoveredDevice, logger *logging.Logger) (*LinuxBackend, error) {
+// reportPort is the OS-specific raw HID access. Reports and feature buffers
+// start with their report ID, as on Linux hidraw.
+type reportPort interface {
+	// Read returns one queued input report without waiting, or
+	// syscall.EAGAIN when none is queued.
+	Read(buf []byte) (int, error)
+	Write(report []byte) error
+	// GetFeature reads the feature report whose ID is buf[0] into buf.
+	GetFeature(buf []byte) error
+	Close() error
+}
+
+// newHIDBackend prepares a backend for an opened (or, with port nil, an
+// unopenable) controller and reads its firmware and pairing feature reports.
+func newHIDBackend(dev system.DiscoveredDevice, port reportPort, readOnly bool, unopenedMsg string, logger *logging.Logger) *HIDBackend {
 	desc := Descriptor()
 	if dev.ProductID == system.DualSenseEdgePID {
 		desc = EdgeDescriptor()
@@ -55,49 +67,30 @@ func OpenLinuxBackend(dev system.DiscoveredDevice, logger *logging.Logger) (*Lin
 		outMode = "HID Report 0x31 (BT 78B + CRC32)"
 	}
 
-	info := device.Info{
-		ID:               dev.HIDRawName,
-		Name:             dev.Name,
-		Model:            dev.Model,
-		VendorID:         dev.VendorID,
-		ProductID:        dev.ProductID,
-		MACAddress:       dev.MACAddress,
-		HIDRawPath:       dev.HIDRawPath,
-		InputDevicePath:  dev.InputDevicePath,
-		SysfsPath:        dev.SysfsPath,
-		Connection:       dev.Connection,
-		InputMode:        inMode,
-		OutputMode:       outMode,
-		Connected:        true,
-		PermissionDenied: dev.PermissionDenied,
-		PermissionHint:   dev.PermissionHint,
-		LastSeen:         time.Now(),
-	}
-
-	var f *os.File
-	var err error
-	f, err = os.OpenFile(dev.HIDRawPath, os.O_RDWR|syscall.O_NONBLOCK, 0)
-	if err != nil {
-		if os.IsPermission(err) {
-			info.PermissionDenied = true
-			info.ReadOnly = true
-			info.PermissionHint = system.PermissionExplanation(dev.HIDRawPath)
-			if logger != nil {
-				logger.Warn("HIDRAW", "%s", info.PermissionHint)
-			}
-			// Attempt read-only open so telemetry still works if read access is permitted
-			f, _ = os.OpenFile(dev.HIDRawPath, os.O_RDONLY|syscall.O_NONBLOCK, 0)
-		} else {
-			return nil, fmt.Errorf("open %s: %w", dev.HIDRawPath, err)
-		}
-	}
-
-	b := &LinuxBackend{
-		desc:           desc,
-		info:           info,
+	b := &HIDBackend{
+		desc: desc,
+		info: device.Info{
+			ID:               dev.HIDRawName,
+			Name:             dev.Name,
+			Model:            dev.Model,
+			VendorID:         dev.VendorID,
+			ProductID:        dev.ProductID,
+			MACAddress:       dev.MACAddress,
+			HIDRawPath:       dev.HIDRawPath,
+			InputDevicePath:  dev.InputDevicePath,
+			SysfsPath:        dev.SysfsPath,
+			Connection:       dev.Connection,
+			InputMode:        inMode,
+			OutputMode:       outMode,
+			Connected:        true,
+			ReadOnly:         readOnly,
+			PermissionDenied: dev.PermissionDenied,
+			PermissionHint:   dev.PermissionHint,
+			LastSeen:         time.Now(),
+		},
 		powerSupplyDir: dev.PowerSupplyDir,
 		cfg:            device.DefaultConfig(),
-		file:           f,
+		port:           port,
 		logger:         logger,
 		tel: device.Telemetry{
 			BatteryPercent: -1, // unknown until a real HID report or sysfs sample arrives
@@ -110,8 +103,8 @@ func OpenLinuxBackend(dev system.DiscoveredDevice, logger *logging.Logger) (*Lin
 	}
 
 	var fi *FirmwareInfo
-	fwErr := "the hidraw node could not be opened"
-	if f != nil {
+	fwErr := unopenedMsg
+	if port != nil {
 		fi, fwErr = b.queryFeatureReports()
 	}
 	if fi != nil {
@@ -123,35 +116,38 @@ func OpenLinuxBackend(dev system.DiscoveredDevice, logger *logging.Logger) (*Lin
 		}
 	}
 
-	// The kernel's own copy of the firmware words is available in sysfs even
-	// when the hidraw node is not readable.
+	// On Linux the kernel's own copy of the firmware words is available in
+	// sysfs even when the hidraw node is not readable.
 	sys := system.ReadHIDSysfs(dev.SysfsPath, SysfsFirmwareVersion, SysfsHardwareVersion)
 	b.info.KernelDriver = sys.Driver
 	b.applyVersions(fi, sys)
 	b.details = BuildDetails(DetailsInput{Info: b.info, Sysfs: sys, Firmware: fi, FirmwareErr: fwErr})
-
-	return b, nil
+	return b
 }
 
-// queryFeatureReports issues HIDIOCGFEATURE (GET_FEATURE) for Firmware Info
-// (0x20) and, when the MAC is unknown, Pairing Info (0x09). These are the
-// same reads the kernel driver performs when the controller connects; they
-// change nothing on the controller. No feature report is ever sent.
-func (b *LinuxBackend) queryFeatureReports() (*FirmwareInfo, string) {
-	// Use the raw fd via SyscallConn: calling File.Fd() would switch the file
-	// to blocking mode and break the non-blocking report drain in Poll.
-	rc, err := b.file.SyscallConn()
-	if err != nil {
-		return nil, fmt.Sprintf("the hidraw node is not usable: %v", err)
-	}
-	var fd uintptr
-	_ = rc.Control(func(raw uintptr) { fd = raw })
+// featureCalibration is read over Bluetooth only for its side effect: the
+// controller then switches from its short report to the full 0x31 report, as
+// the Linux kernel driver does when it connects. Nothing is written.
+const (
+	featureCalibration     byte = 0x05
+	featureCalibrationSize      = 41
+)
 
+// queryFeatureReports issues GET_FEATURE for Firmware Info (0x20) and, when
+// the MAC is unknown, Pairing Info (0x09). These are the same reads the
+// kernel driver performs when the controller connects; they change nothing on
+// the controller. No feature report is ever sent.
+func (b *HIDBackend) queryFeatureReports() (*FirmwareInfo, string) {
+	if b.info.Connection == device.ConnBluetooth {
+		var cal [featureCalibrationSize]byte
+		cal[0] = featureCalibration
+		_ = b.port.GetFeature(cal[:])
+	}
 	var fi *FirmwareInfo
 	fwErr := ""
 	var fwBuf [FeatureFirmwareSize]byte
 	fwBuf[0] = FeatureFirmwareReport
-	if err := hidGetFeature(fd, fwBuf[:]); err != nil {
+	if err := b.port.GetFeature(fwBuf[:]); err != nil {
 		fwErr = fmt.Sprintf("feature report 0x20 could not be read: %v", err)
 	} else if parsed, err := ParseFirmwareInfo(fwBuf[:], b.info.Connection == device.ConnBluetooth); err != nil {
 		fwErr = err.Error()
@@ -162,7 +158,7 @@ func (b *LinuxBackend) queryFeatureReports() (*FirmwareInfo, string) {
 	if b.info.MACAddress == "" {
 		var macBuf [FeaturePairingSize]byte
 		macBuf[0] = FeaturePairingReport
-		if err := hidGetFeature(fd, macBuf[:]); err == nil {
+		if err := b.port.GetFeature(macBuf[:]); err == nil {
 			b.info.MACAddress = fmt.Sprintf("%02X:%02X:%02X:%02X:%02X:%02X",
 				macBuf[6], macBuf[5], macBuf[4], macBuf[3], macBuf[2], macBuf[1])
 		}
@@ -171,66 +167,55 @@ func (b *LinuxBackend) queryFeatureReports() (*FirmwareInfo, string) {
 }
 
 // applyVersions fills the summary version fields from what was read.
-func (b *LinuxBackend) applyVersions(fi *FirmwareInfo, sys system.HIDSysfsInfo) {
+func (b *HIDBackend) applyVersions(fi *FirmwareInfo, sys system.HIDSysfsInfo) {
 	b.info.FirmwareVersion, b.info.FirmwareBuild, b.info.HardwareVersion = versionStrings(fi, sys)
 }
 
-// hidGetFeature issues a Linux HIDIOCGFEATURE(len) ioctl on a hidraw file descriptor.
-func hidGetFeature(fd uintptr, buf []byte) error {
-	// _IOC(_IOC_READ|_IOC_WRITE, 'H', 0x07, len)
-	ioc := uintptr((3 << 30) | (uintptr('H') << 8) | 0x07 | (uintptr(len(buf)) << 16))
-	_, _, errno := syscall.Syscall(syscall.SYS_IOCTL, fd, ioc, uintptr(unsafe.Pointer(&buf[0])))
-	if errno != 0 {
-		return errno
-	}
-	return nil
-}
-
-func (b *LinuxBackend) Descriptor() device.Descriptor { return b.desc }
+func (b *HIDBackend) Descriptor() device.Descriptor { return b.desc }
 
 // FirmwareIdentity returns the firmware data read when the device was opened.
-func (b *LinuxBackend) FirmwareIdentity() device.FirmwareIdentity {
+func (b *HIDBackend) FirmwareIdentity() device.FirmwareIdentity {
 	b.mu.RLock()
 	defer b.mu.RUnlock()
 	return b.fwIdentity
 }
 
 // Details returns the identification data read when the device was opened.
-func (b *LinuxBackend) Details() []device.Detail {
+func (b *HIDBackend) Details() []device.Detail {
 	b.mu.RLock()
 	defer b.mu.RUnlock()
 	return b.details
 }
 
-func (b *LinuxBackend) Capabilities() device.CapabilitySet {
+func (b *HIDBackend) Capabilities() device.CapabilitySet {
 	b.mu.RLock()
 	defer b.mu.RUnlock()
 	return runtimeCapabilities(b.desc.Capabilities, b.info.Connection)
 }
 
-func (b *LinuxBackend) Info() device.Info {
+func (b *HIDBackend) Info() device.Info {
 	b.mu.RLock()
 	defer b.mu.RUnlock()
 	return b.info
 }
 
-func (b *LinuxBackend) Telemetry() device.Telemetry {
+func (b *HIDBackend) Telemetry() device.Telemetry {
 	b.mu.RLock()
 	defer b.mu.RUnlock()
 	return b.tel
 }
 
-func (b *LinuxBackend) CurrentConfig() device.Config {
+func (b *HIDBackend) CurrentConfig() device.Config {
 	b.mu.RLock()
 	defer b.mu.RUnlock()
 	return b.cfg
 }
 
-func (b *LinuxBackend) Poll(_ context.Context) (device.Telemetry, error) {
+func (b *HIDBackend) Poll(_ context.Context) (device.Telemetry, error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
-	if b.file == nil {
+	if b.port == nil {
 		return b.tel, nil
 	}
 
@@ -242,7 +227,7 @@ func (b *LinuxBackend) Poll(_ context.Context) (device.Telemetry, error) {
 	var samples []device.RawSample
 	got := false
 	for i := 0; i < maxDrain; i++ {
-		n, err := b.readNonBlocking(b.readBuf[:])
+		n, err := b.port.Read(b.readBuf[:])
 		if err != nil {
 			if errors.Is(err, syscall.EAGAIN) || errors.Is(err, syscall.EWOULDBLOCK) {
 				break
@@ -297,31 +282,9 @@ func (b *LinuxBackend) Poll(_ context.Context) (device.Telemetry, error) {
 // maxDrain bounds the reports read per poll (≈0.5 s of USB input at 250 Hz).
 const maxDrain = 128
 
-// readNonBlocking performs one raw read that returns EAGAIN immediately when
-// no report is queued. (File.Read on a pollable fd would park in Go's poller
-// and wait for the next report instead.)
-func (b *LinuxBackend) readNonBlocking(buf []byte) (int, error) {
-	rc, err := b.file.SyscallConn()
-	if err != nil {
-		return 0, err
-	}
-	var n int
-	var rerr error
-	if err := rc.Read(func(fd uintptr) bool {
-		n, rerr = syscall.Read(int(fd), buf)
-		return true // never wait for readiness
-	}); err != nil {
-		return 0, err
-	}
-	if n < 0 {
-		n = 0
-	}
-	return n, rerr
-}
-
 // BatteryDetails returns the battery attributes the kernel exposes for this
 // controller (hid-playstation typically provides only capacity and status).
-func (b *LinuxBackend) BatteryDetails() []device.BatteryAttribute {
+func (b *HIDBackend) BatteryDetails() []device.BatteryAttribute {
 	var out []device.BatteryAttribute
 	for _, a := range system.ReadPowerSupplyAttrs(b.powerSupplyDir) {
 		out = append(out, device.BatteryAttribute{Name: a.Name, Value: a.Value, Source: "sysfs power_supply"})
@@ -329,14 +292,14 @@ func (b *LinuxBackend) BatteryDetails() []device.BatteryAttribute {
 	return out
 }
 
-func (b *LinuxBackend) ApplyConfig(_ context.Context, cfg device.Config) error {
+func (b *HIDBackend) ApplyConfig(_ context.Context, cfg device.Config) error {
 	b.mu.Lock()
 	b.cfg = cfg
 	b.mu.Unlock()
 	return b.sendCurrentConfig()
 }
 
-func (b *LinuxBackend) ExecuteCommand(ctx context.Context, cmd device.Command) error {
+func (b *HIDBackend) ExecuteCommand(ctx context.Context, cmd device.Command) error {
 	b.mu.Lock()
 	switch cmd.Type {
 	case device.CmdApplyFullConfig:
@@ -379,14 +342,14 @@ func (b *LinuxBackend) ExecuteCommand(ctx context.Context, cmd device.Command) e
 	return b.sendCurrentConfig()
 }
 
-func (b *LinuxBackend) TriggerPulse(ctx context.Context, left, right uint8, duration time.Duration) error {
+func (b *HIDBackend) TriggerPulse(ctx context.Context, left, right uint8, duration time.Duration) error {
 	return b.pulse(ctx, left, right, duration, false)
 }
 
 // maxPulse bounds any single pulse, whatever the caller asks for.
 const maxPulse = 1500 * time.Millisecond
 
-func (b *LinuxBackend) pulse(ctx context.Context, left, right uint8, duration time.Duration, absolute bool) error {
+func (b *HIDBackend) pulse(ctx context.Context, left, right uint8, duration time.Duration, absolute bool) error {
 	if duration <= 0 {
 		duration = 280 * time.Millisecond
 	}
@@ -424,7 +387,7 @@ func (b *LinuxBackend) pulse(ctx context.Context, left, right uint8, duration ti
 	return nil
 }
 
-func (b *LinuxBackend) sendCurrentConfig() error {
+func (b *HIDBackend) sendCurrentConfig() error {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
@@ -432,36 +395,36 @@ func (b *LinuxBackend) sendCurrentConfig() error {
 	b.btSeq = (b.btSeq + 1) & 0x0F
 	b.tel.LastOutputHex = FormatHexPreview(pkt)
 
-	if b.info.PermissionDenied || b.file == nil || b.info.ReadOnly {
+	if b.info.PermissionDenied || b.port == nil || b.info.ReadOnly {
 		return fmt.Errorf("cannot write HID report: %s", b.info.PermissionHint)
 	}
 
-	if _, err := b.file.Write(pkt); err != nil {
+	if err := b.port.Write(pkt); err != nil {
 		if os.IsPermission(err) {
 			b.info.PermissionDenied = true
 			b.info.PermissionHint = system.PermissionExplanation(b.info.HIDRawPath)
 		}
-		return fmt.Errorf("hidraw write %s: %w", b.info.HIDRawPath, err)
+		return fmt.Errorf("HID write %s: %w", b.info.HIDRawPath, err)
 	}
 	b.tel.PacketsTx++
 	b.info.LastSeen = time.Now()
 	return nil
 }
 
-func (b *LinuxBackend) Close() error {
+func (b *HIDBackend) Close() error {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	if b.file != nil {
-		err := b.file.Close()
-		b.file = nil
+	if b.port != nil {
+		err := b.port.Close()
+		b.port = nil
 		return err
 	}
 	return nil
 }
 
 var (
-	_ device.Device                   = (*LinuxBackend)(nil)
-	_ device.BatteryDetailsProvider   = (*LinuxBackend)(nil)
-	_ device.FirmwareIdentityProvider = (*LinuxBackend)(nil)
-	_ device.DetailsProvider          = (*LinuxBackend)(nil)
+	_ device.Device                   = (*HIDBackend)(nil)
+	_ device.BatteryDetailsProvider   = (*HIDBackend)(nil)
+	_ device.FirmwareIdentityProvider = (*HIDBackend)(nil)
+	_ device.DetailsProvider          = (*HIDBackend)(nil)
 )

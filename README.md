@@ -14,7 +14,7 @@ testing, and understanding your game controllers.
 
 [![Linux](https://img.shields.io/badge/Linux-supported-2ea44f?logo=linux&logoColor=white)](#platform-compatibility)
 [![Windows](https://img.shields.io/badge/Windows-experimental-d29922?logo=windows&logoColor=white)](#platform-compatibility)
-[![macOS](https://img.shields.io/badge/macOS-UI%20only-6e7781?logo=apple&logoColor=white)](#platform-compatibility)
+[![macOS](https://img.shields.io/badge/macOS-DualSense%20experimental-d29922?logo=apple&logoColor=white)](#platform-compatibility)
 
 <img src="docs/media/dashboard.gif" alt="TuiSense home screen: a rotating 3D DualSense in the terminal with status and quick actions" width="820">
 
@@ -314,8 +314,8 @@ by automated tests against recorded and simulated device data.
 
 | Controller | Linux | Windows | macOS |
 | --- | --- | --- | --- |
-| Sony DualSense | ✅ input, battery, lighting, adaptive triggers, haptics, audio, profiles, firmware check | 🧪 detected and identified, no input yet | — |
-| Sony DualSense Edge | ✅ input, battery, lighting, adaptive triggers, haptics, back buttons, profiles, firmware check | 🧪 detected and identified, no input yet | — |
+| Sony DualSense | ✅ input, battery, lighting, adaptive triggers, haptics, audio, profiles, firmware check | 🧪 detected and identified, no input yet | 🧪 input, battery, lighting, adaptive triggers, haptics, profiles (USB, Bluetooth) |
+| Sony DualSense Edge | ✅ input, battery, lighting, adaptive triggers, haptics, back buttons, profiles, firmware check | 🧪 detected and identified, no input yet | 🧪 input, battery, lighting, adaptive triggers, haptics, back buttons, profiles |
 | Xbox Wireless Controller | ✅ input, battery, rumble | 🧪 XInput input, rumble, battery; identified by USB ID | — |
 | Xbox Elite Series 2 | ✅ input, battery, rumble, paddles¹ | 🧪 XInput input, rumble, battery; identified by USB ID; paddles not readable | — |
 | Sony DualShock 4 | ✅ input, battery, rumble | 🧪 detected and identified, no input yet | — |
@@ -325,7 +325,7 @@ by automated tests against recorded and simulated device data.
 | Razer Wolverine V3 Pro | ✅ input, battery, rumble | 🧪 XInput input, rumble; identified by USB ID | — |
 | MSI Force GC20 V2 | ✅ input, rumble | 🧪 Default mode: XInput input, rumble³; other modes: detected, no input | — |
 
-✅ implemented · 🧪 experimental: covered by automated tests, **not yet run on Windows hardware** · — not available
+✅ implemented · 🧪 experimental: covered by automated tests, **not yet verified on that platform's hardware** (on macOS a DualSense's input, battery and firmware info were read once over Bluetooth) · — not available
 ¹ when the Linux kernel driver reports them.
 ² shown as *Generic Gamepad* unless Windows reports a name or ID that identifies it; you can confirm the model in Diagnostics → Connection.
 ³ its Default mode uses the shared Xbox 360 ID `045e:028e`, so it appears as *Generic Gamepad (XInput)* and TuiSense asks *"Is this your MSI Force GC20 V2?"* in Diagnostics → Connection. It is never shown as another brand.
@@ -351,7 +351,7 @@ types and the exact status of every capability are in the generated
 | | Linux | Windows | macOS |
 | --- | --- | --- | --- |
 | Terminal UI, 3D viewer, gallery, profiles, reports | ✅ | ✅ | ✅ |
-| Controller backend | hidraw (DualSense) + evdev (all others) | XInput input + HID identification — experimental | not implemented yet |
+| Controller backend | hidraw (DualSense) + evdev (all others) | XInput input + HID identification — experimental | IOKit HID (DualSense, DualSense Edge) — experimental |
 | Controller audio | ALSA | — | — |
 | Clipboard | `wl-copy`, `xclip`, `xsel`, OSC 52 | PowerShell `Set-Clipboard` | `pbcopy` |
 | Release builds | amd64, arm64 | amd64, arm64 | Intel, Apple Silicon |
@@ -367,8 +367,12 @@ types and the exact status of every capability are in the generated
   as HID gamepads (DirectInput/Android modes, DualSense, DualShock 4, Switch Pro)
   are detected and named, but TuiSense cannot read their input on Windows yet.
   Use Windows Terminal for the best rendering.
-- **macOS:** the app runs, but no controller backend is implemented yet, so it
-  cannot see connected controllers.
+- **macOS:** the DualSense and DualSense Edge are read and configured through
+  Apple's IOKit HID interface, over USB or Bluetooth, with macOS' built-in
+  support — no driver to install. If macOS asks, allow your terminal app under
+  *System Settings → Privacy & Security → Input Monitoring*. Controller audio
+  and other controller models are not available on macOS yet. Release builds
+  include the backend; a source build needs Xcode's command line tools (cgo).
 
 ## Diagnostics
 

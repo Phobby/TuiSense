@@ -1,4 +1,4 @@
-//go:build !linux
+//go:build !linux && !(darwin && cgo)
 
 package dualsense
 
@@ -11,8 +11,12 @@ import (
 	"github.com/Phobby/TuiSense/internal/system"
 )
 
-// OpenLinuxBackend is unavailable until a platform adapter exists for this OS
-// (see docs/ARCHITECTURE.md, "Platform adapters"); discovery finds no devices.
-func OpenLinuxBackend(system.DiscoveredDevice, *logging.Logger) (device.Device, error) {
-	return nil, fmt.Errorf("dualsense: hidraw backend is not available on %s", runtime.GOOS)
+// No raw HID adapter on this OS (Windows identifies the DualSense through its
+// HID listing instead; macOS needs a cgo build): discovery finds nothing.
+const rawHID = false
+
+func scanDevices() ([]system.DiscoveredDevice, error) { return nil, nil }
+
+func openBackend(system.DiscoveredDevice, *logging.Logger) (device.Device, error) {
+	return nil, fmt.Errorf("dualsense: no raw HID backend on %s in this build", runtime.GOOS)
 }

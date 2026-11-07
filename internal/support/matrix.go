@@ -146,7 +146,7 @@ func Matrix() []Row {
 	byVisual["dualsense_edge"] = row(dualsense.EdgeDescriptor(), "054c:0df2 usb/bluetooth (hidraw)", "USB, Bluetooth", "dualsense-hidraw", "hid-playstation + hidraw")
 	for _, k := range []string{"dualsense", "dualsense_edge"} {
 		r := byVisual[k]
-		r.Platforms = windowsHIDOnly
+		r.Platforms = windowsHIDOnly + "; macOS: IOKit HID (input, lighting, haptics, adaptive triggers over USB and Bluetooth; experimental)"
 		byVisual[k] = r
 	}
 	specs := append([]gamepad.ModelSpec{msigc20.Spec}, padmodels.Specs()...)
@@ -193,7 +193,7 @@ func Markdown(rows []Row) string {
 		b.WriteString("| " + strings.Join(cols, " | ") + " |\n")
 	}
 	b.WriteString("\nWindows: controllers in XInput mode are read through Microsoft's XInput API (input, rumble, battery when reported) with Windows' built-in drivers. The model is named only when the vendor/product IDs of Windows' HID listing identify it exactly; a probable match (such as the shared Xbox 360 ID) stays a generic gamepad until the user confirms it. HID-only controllers (DirectInput or Android modes, DualSense, DualShock 4, Switch Pro) are detected and identified but have no Windows input backend yet. Model-specific features remain Linux-only. Nothing on Windows has been verified on physical hardware yet.\n")
-	b.WriteString("macOS: TuiSense builds and runs (gallery, profiles, reports), but no controller backend is implemented yet.\n")
+	b.WriteString("macOS: the DualSense and DualSense Edge are read and configured through Apple's IOKit HID interface with macOS' built-in support (release builds; a source build needs cgo, i.e. Xcode's command line tools). Input reports, battery and firmware info were read once from a DualSense over Bluetooth (an output report was accepted, its effect not observed); everything else is unverified on hardware. Other controllers are not read on macOS yet.\n")
 	return b.String()
 }
 

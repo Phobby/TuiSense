@@ -80,7 +80,7 @@ func TestPollDrainsQueueLatchesButtonsAndCountsGaps(t *testing.T) {
 	r, w := packetPipe(t)
 	defer r.Close()
 	defer w.Close()
-	b := &LinuxBackend{desc: Descriptor(), file: r, info: device.Info{Connected: true, Connection: device.ConnUSB}}
+	b := &LinuxBackend{desc: Descriptor(), port: hidrawPort{r}, info: device.Info{Connected: true, Connection: device.ConnUSB}}
 
 	// 10 queued reports: a quick Cross press in report 3 only, a sequence gap
 	// after report 6 (two reports lost), newest stick value 200.

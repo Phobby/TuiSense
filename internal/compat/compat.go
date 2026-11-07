@@ -122,6 +122,9 @@ func Analyze(env Env, in Input) Report {
 	case "windows":
 		windowsChecks(in, &r)
 		return r
+	case "darwin":
+		macChecks(in, &r)
+		return r
 	default:
 		r.Supported = false
 		r.Checks = append(r.Checks, Check{ID: "platform", Title: "Hardware backends", Level: LevelInfo,
@@ -213,6 +216,19 @@ func Execute(env Env, run Runner, a Action, confirmed bool, verify func() bool) 
 // windowsBackendHID is the identity-only backend of HID game controllers
 // (kept as a literal: compat must not import the driver packages).
 const windowsBackendHID = "windows-hid-identity"
+
+func macChecks(in Input, r *Report) {
+	r.Backend = "iokit-hid"
+	r.Input = "Working"
+	if in.Info.PermissionDenied {
+		r.Input = "Not available"
+		r.Checks = append(r.Checks, Check{ID: "mac_input_monitoring", Title: "Controller access", Level: LevelWarning,
+			Detail:  in.Info.PermissionHint,
+			Affects: []device.Capability{device.CapSticks, device.CapDiagnostics, device.CapHaptics}})
+	}
+	r.Checks = append(r.Checks, Check{ID: "platform", Title: "Hardware backends", Level: LevelInfo,
+		Detail: "On macOS TuiSense reads the DualSense and DualSense Edge through Apple's IOKit HID interface (USB and Bluetooth; experimental), with macOS' built-in support and no extra driver. Other controllers are not read on macOS yet."})
+}
 
 func windowsChecks(in Input, r *Report) {
 	r.Backend = in.Caps.Spec(device.CapConnection).Backend

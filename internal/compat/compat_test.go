@@ -162,8 +162,12 @@ func TestEliteRearPaddlesExplainTheDriverRequirement(t *testing.T) {
 func TestOtherPlatformsAndSimulatedDevices(t *testing.T) {
 	desc := dualsense.Descriptor()
 	r := Analyze(fakeEnv{goos: "darwin"}, Input{Desc: desc, Caps: desc.Capabilities, Info: device.Info{Connected: true}})
-	if r.Supported || len(r.Actions) != 0 || r.OS != "macOS" {
-		t.Fatalf("macOS has no backend and no actions: %+v", r)
+	if !r.Supported || len(r.Actions) != 0 || r.OS != "macOS" || r.Backend != "iokit-hid" || r.Input != "Working" {
+		t.Fatalf("macOS reads the DualSense through IOKit and installs nothing: %+v", r)
+	}
+	r = Analyze(fakeEnv{goos: "darwin"}, Input{Desc: desc, Caps: desc.Capabilities, Info: device.Info{Connected: true, PermissionDenied: true, PermissionHint: "Input Monitoring"}})
+	if r.Input != "Not available" || r.Checks[0].ID != "mac_input_monitoring" || len(r.Actions) != 0 {
+		t.Fatalf("a refused macOS permission is explained, never changed: %+v", r)
 	}
 	r = Analyze(fakeEnv{goos: "windows"}, Input{Desc: desc, Caps: desc.Capabilities, Info: device.Info{Connected: true}})
 	if !r.Supported || len(r.Actions) != 0 || r.OS != "Windows" {

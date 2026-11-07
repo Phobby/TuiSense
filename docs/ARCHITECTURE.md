@@ -295,11 +295,14 @@ for its family → `Descriptor.DefaultProfile` → `Descriptor.DefaultConfig()`.
 
 ## 9. Platform adapters
 
-Drivers own platform access. The DualSense driver uses Linux hidraw via
-`internal/system`; on macOS/Windows its `Discover` returns no candidates, and
-the mock + test devices keep the UI fully usable. A future adapter (IOHIDManager,
-Windows HID/SetupAPI, or hidapi) only needs to produce `Candidate`s and an
-`io.ReadWriter`-like transport for the existing protocol encoder.
+Drivers own platform access. The DualSense driver's `HIDBackend` (parsing,
+output reports, pulses) sits on a small `reportPort` (read a report without
+waiting, write a report, read a feature report): Linux hidraw in
+`backend_linux.go`, macOS IOKit HID in `backend_darwin.go` (cgo; an
+IOHIDDevice scheduled on a run loop on its own OS thread queues input reports
+for `Poll`). On Windows, and on macOS builds without cgo, `Discover` returns no
+candidates and the mock + test devices keep the UI fully usable. Another OS
+only needs a scan function and a `reportPort`.
 
 ---
 
@@ -639,7 +642,7 @@ capability notes) is translated where it is displayed, so drivers stay plain dat
 3. **More evdev models** — the generic gamepad driver accepts additional
    `gamepad.Model` matchers; confirm the MSI GC20 V2 DirectInput/Android
    layouts on hardware and add their observed IDs.
-4. **Cross-platform adapters** — hidapi-based transport for macOS/Windows.
+4. **Cross-platform adapters** — a DualSense `reportPort` for Windows HID; macOS input for the other models.
 5. **Advanced capabilities** — remapping editor, stick calibration, DualSense
    Edge slots. (Firmware *installation* is intentionally out of scope; see §11b.)
 6. **Plugins** — out-of-process drivers speaking a small JSON-RPC protocol,
