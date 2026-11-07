@@ -244,7 +244,11 @@ try {
     }
     $bin = Join-Path $tmp "x\tuisense_${Version}_windows_${arch}\tuisense.exe"
     if (-not (Test-Path $bin)) { Fail 'the package does not contain tuisense.exe' }
-    $out = & $bin --version
+    try { $out = & $bin --version } catch {
+        Fail ("Windows did not allow tuisense.exe to run ($($_.Exception.Message)). This is Windows App Control: Smart App Control " +
+            "(Windows Security > App & browser control) or an organization policy blocks programs without a code-signing certificate, " +
+            "and TuiSense releases are not code-signed yet. Nothing was installed. See 'Windows blocks tuisense.exe' in the README.")
+    }
     if ($out -notmatch [regex]::Escape("v$Version")) { Fail 'the downloaded executable did not start correctly; nothing was installed' }
 
     # --- install (a running tuisense.exe can be renamed, not overwritten) -----

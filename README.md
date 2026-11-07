@@ -492,6 +492,7 @@ redacted, to share in an issue.
 | Windows: wrong controller name | Run `tuisense doctor --windows --export` and attach the saved report to a [controller report](https://github.com/Phobby/TuiSense/issues/new?template=controller_report.yml). It contains IDs, not serial numbers, Bluetooth addresses or your user name. |
 | Windows: `'irm' is not recognized as an internal or external command` | The PowerShell command was pasted into Command Prompt. Use the `powershell -NoProfile -Command "…"` line from [Quick Install](#quick-install), or open PowerShell first. |
 | Windows: the installer stops at the signature check | Installers from before November 2026 needed OpenSSH 8.1+ (Windows 10 ships 7.7) and said "older than 8.1"; run the Quick Install line again to get the current installer, which verifies on its own. If it still refuses, the download was altered or incomplete: do not install it, and open an issue with the full message. |
+| Windows blocks tuisense.exe ("An Application Control policy has blocked this file") | Smart App Control (Windows 11) or an organization's App Control policy only runs code-signed programs, and TuiSense releases are not code-signed yet, so there is no *Run anyway*. The release signature check above still proves the download is genuine. Turning Smart App Control off cannot be undone without resetting Windows and is not recommended; on a managed PC ask your IT department. |
 | An update was downloaded but something is wrong | `tuisense update --rollback` restores the previous version. |
 
 ## FAQ
