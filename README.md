@@ -133,10 +133,8 @@ notepad install-tuisense.ps1
 powershell -ExecutionPolicy Bypass -File install-tuisense.ps1
 ```
 
-The installer needs Windows' built-in **OpenSSH Client** (`ssh-keygen`) to
-verify the release signature. If it is missing, add it under *Settings → System →
-Optional features → OpenSSH Client* (or install Git for Windows), or use the
-portable ZIP below. 32-bit PowerShell windows and ARM64 PCs get the right
+The installer verifies the release signature itself (no OpenSSH or other tools
+needed, so it also works on Windows 10's older built-in OpenSSH). 32-bit PowerShell windows and ARM64 PCs get the right
 64-bit build automatically.
 
 **Windows portable ZIP** (no installer, no administrator rights, no Go). From the
@@ -493,7 +491,7 @@ redacted, to share in an issue.
 | Windows: no controller found | Run `tuisense doctor --windows`. If the controller is listed as *HID only (not visible to XInput)*, switch it to its XInput mode (MSI Force GC20 V2: *Default* mode, mode LEDs 1+2; many pads have an X/D switch) and reconnect. Steam or remapping tools that hide controllers can also be the cause. |
 | Windows: wrong controller name | Run `tuisense doctor --windows --export` and attach the saved report to a [controller report](https://github.com/Phobby/TuiSense/issues/new?template=controller_report.yml). It contains IDs, not serial numbers, Bluetooth addresses or your user name. |
 | Windows: `'irm' is not recognized as an internal or external command` | The PowerShell command was pasted into Command Prompt. Use the `powershell -NoProfile -Command "…"` line from [Quick Install](#quick-install), or open PowerShell first. |
-| Windows: the installer stops at the signature check | The message shows `ssh-keygen`'s reason. Enable *OpenSSH Client* (Settings → System → Optional features) or install Git for Windows, or use the portable ZIP with its SHA-256 check. |
+| Windows: the installer stops at the signature check | Installers from before November 2026 needed OpenSSH 8.1+ (Windows 10 ships 7.7) and said "older than 8.1"; run the Quick Install line again to get the current installer, which verifies on its own. If it still refuses, the download was altered or incomplete: do not install it, and open an issue with the full message. |
 | An update was downloaded but something is wrong | `tuisense update --rollback` restores the previous version. |
 
 ## FAQ

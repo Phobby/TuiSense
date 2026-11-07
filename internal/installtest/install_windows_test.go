@@ -103,6 +103,15 @@ func TestPowerShellInstallerRefusesBadReleases(t *testing.T) {
 	if out, err := r.installPS(t, h); err == nil || !strings.Contains(out, "signature could not be verified") {
 		t.Fatalf("expected a signature refusal: %v\n%s", err, out)
 	}
+	// A pinned signature over a checksum list that was altered afterwards.
+	sums := filepath.Join(r.dist, "SHA256SUMS")
+	orig, _ := os.ReadFile(sums)
+	_ = os.WriteFile(sums, append(append([]byte{}, orig...), []byte("0000  extra.zip\n")...), 0o644)
+	h = r.winHome(t, true)
+	if out, err := r.installPS(t, h); err == nil || !strings.Contains(out, "signature could not be verified") {
+		t.Fatalf("expected a refusal for altered checksums: %v\n%s", err, out)
+	}
+	_ = os.WriteFile(sums, orig, 0o644)
 	// A version that was never published (missing artifact).
 	h = r.winHome(t, true)
 	if out, err := r.installPS(t, h, "-Version", "9.9.0"); err == nil || !strings.Contains(out, "could not download") {

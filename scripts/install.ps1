@@ -15,8 +15,8 @@
 #   powershell -ExecutionPolicy Bypass -File install-tuisense.ps1
 #
 # It downloads the official release zip from GitHub, verifies the signed
-# checksum list with OpenSSH's ssh-keygen (included in Windows 10 1809+ and
-# Windows 11) against the key pinned below, checks the zip's SHA-256, and
+# checksum list (OpenSSH SSHSIG, Ed25519; checked in this script, no extra
+# tools needed) against the key pinned below, checks the zip's SHA-256, and
 # installs tuisense.exe into %LOCALAPPDATA%\Programs\TuiSense\bin for the
 # current user (no administrator rights). Settings and profiles are kept.
 #
@@ -56,6 +56,102 @@ function Set-UserPath([bool]$Add) {
     [Environment]::SetEnvironmentVariable('Path', ($parts -join ';'), 'User')
 }
 
+# --- signature verification ----------------------------------------------------
+# Verifies an OpenSSH "SSHSIG" ssh-ed25519 signature (what `ssh-keygen -Y sign`
+# writes) in plain .NET, because Windows 10's bundled OpenSSH (7.7) cannot run
+# `ssh-keygen -Y verify`. Ed25519 per RFC 8032 section 5.1.7.
+Add-Type -AssemblyName System.Numerics
+$script:P = [Numerics.BigInteger]::Pow(2, 255) - 19
+$script:L = [Numerics.BigInteger]::Pow(2, 252) + [Numerics.BigInteger]::Parse('27742317777372353535851937790883648493')
+function ModP([Numerics.BigInteger]$x) { $r = $x % $script:P; if ($r.Sign -lt 0) { $r += $script:P }; $r }
+function InvP([Numerics.BigInteger]$x) { [Numerics.BigInteger]::ModPow($x, $script:P - 2, $script:P) }
+$script:D = ModP (-121665 * (InvP 121666))
+$script:SqrtM1 = [Numerics.BigInteger]::ModPow(2, ($script:P - 1) / 4, $script:P)
+function LeInt([byte[]]$b) { [Numerics.BigInteger]::new([byte[]]($b + [byte]0)) }
+function EdAdd($p1, $p2) {
+    $a = ModP (($p1[1] - $p1[0]) * ($p2[1] - $p2[0])); $b = ModP (($p1[1] + $p1[0]) * ($p2[1] + $p2[0]))
+    $c = ModP (2 * $p1[3] * $p2[3] * $script:D); $dd = ModP (2 * $p1[2] * $p2[2])
+    $e = $b - $a; $f = $dd - $c; $g = $dd + $c; $h = $b + $a
+    @((ModP ($e * $f)), (ModP ($g * $h)), (ModP ($f * $g)), (ModP ($e * $h)))
+}
+function EdMul([Numerics.BigInteger]$s, $pt) {
+    $q = @([Numerics.BigInteger]::Zero, [Numerics.BigInteger]::One, [Numerics.BigInteger]::One, [Numerics.BigInteger]::Zero)
+    while ($s.Sign -gt 0) {
+        if (-not $s.IsEven) { $q = EdAdd $q $pt }
+        $pt = EdAdd $pt $pt
+        $s = $s / 2
+    }
+    $q
+}
+function EdDecode([byte[]]$b) {
+    if ($b.Length -ne 32) { return $null }
+    $c = [byte[]]$b.Clone(); $sign = $c[31] -shr 7; $c[31] = $c[31] -band 0x7f
+    $y = LeInt $c
+    if ($y -ge $script:P) { return $null }
+    $y2 = ModP ($y * $y)
+    $x2 = ModP (($y2 - 1) * (InvP (ModP ($script:D * $y2 + 1))))
+    $x = [Numerics.BigInteger]::ModPow($x2, ($script:P + 3) / 8, $script:P)
+    if ((ModP ($x * $x - $x2)) -ne 0) { $x = ModP ($x * $script:SqrtM1) }
+    if ((ModP ($x * $x - $x2)) -ne 0) { return $null }
+    if ($x.IsZero -and $sign -eq 1) { return $null }
+    if ([int]($x % 2) -ne $sign) { $x = $script:P - $x }
+    @($x, $y, [Numerics.BigInteger]::One, (ModP ($x * $y)))
+}
+function EdVerify([byte[]]$pub, [byte[]]$msg, [byte[]]$sig) {
+    if ($pub.Length -ne 32 -or $sig.Length -ne 64) { return $false }
+    $pubPt = EdDecode $pub; $rPt = EdDecode ([byte[]]$sig[0..31])
+    if ($null -eq $pubPt -or $null -eq $rPt) { return $false }
+    $S = LeInt ([byte[]]$sig[32..63])
+    if ($S -ge $script:L) { return $false }
+    $h = [Security.Cryptography.SHA512]::Create().ComputeHash([byte[]]($sig[0..31] + $pub + $msg))
+    $k = (LeInt $h) % $script:L
+    $base = EdDecode ([byte[]](0x58, 0x66, 0x66, 0x66, 0x66, 0x66, 0x66, 0x66, 0x66, 0x66, 0x66, 0x66, 0x66, 0x66, 0x66, 0x66, 0x66, 0x66, 0x66, 0x66, 0x66, 0x66, 0x66, 0x66, 0x66, 0x66, 0x66, 0x66, 0x66, 0x66, 0x66, 0x66))
+    $lhs = EdMul $S $base; $rhs = EdAdd $rPt (EdMul $k $pubPt)
+    ((ModP ($lhs[0] * $rhs[2] - $rhs[0] * $lhs[2])) -eq 0) -and ((ModP ($lhs[1] * $rhs[2] - $rhs[1] * $lhs[2])) -eq 0)
+}
+# SSH wire format: uint32 big-endian length, then the bytes.
+function SshStrings([byte[]]$b, [int]$at, [int]$count) {
+    $out = @()
+    for ($i = 0; $i -lt $count; $i++) {
+        if ($at + 4 -gt $b.Length) { throw 'truncated signature' }
+        $n = ([int]$b[$at] -shl 24) -bor ([int]$b[$at + 1] -shl 16) -bor ([int]$b[$at + 2] -shl 8) -bor [int]$b[$at + 3]
+        $at += 4
+        if ($n -lt 0 -or $at + $n -gt $b.Length) { throw 'truncated signature' }
+        $out += , ([byte[]]$(if ($n) { $b[$at..($at + $n - 1)] } else { @() }))
+        $at += $n
+    }
+    , $out
+}
+function SshString([byte[]]$b) { [byte[]]([BitConverter]::GetBytes([uint32]$b.Length)[3..0] + $b) }
+function Test-SshSig([string]$Armored, [byte[]]$Data, [string[]]$Keys, [string]$Ns) {
+    $m = [regex]::Match($Armored, '-----BEGIN SSH SIGNATURE-----(.*?)-----END SSH SIGNATURE-----', 'Singleline')
+    if (-not $m.Success) { throw 'not an SSH signature file' }
+    $blob = [Convert]::FromBase64String(($m.Groups[1].Value -replace '\s', ''))
+    $ascii = [Text.Encoding]::ASCII
+    if ($blob.Length -lt 10 -or $ascii.GetString($blob, 0, 6) -ne 'SSHSIG' -or $blob[9] -ne 1) { throw 'unsupported signature format' }
+    $f = SshStrings $blob 10 5   # public key, namespace, reserved, hash algorithm, signature
+    if ($ascii.GetString($f[1]) -ne $Ns) { throw "wrong signature namespace '$($ascii.GetString($f[1]))'" }
+    $hashAlg = $ascii.GetString($f[3])
+    $digest = switch ($hashAlg) {
+        'sha512' { [Security.Cryptography.SHA512]::Create().ComputeHash($Data) }
+        'sha256' { [Security.Cryptography.SHA256]::Create().ComputeHash($Data) }
+        default { throw "unsupported hash '$hashAlg'" }
+    }
+    $sig = SshStrings $f[4] 0 2
+    if ($ascii.GetString($sig[0]) -ne 'ssh-ed25519') { throw 'not an ssh-ed25519 signature' }
+    $pubKey = $f[0]
+    $trusted = $false
+    foreach ($k in $Keys) {
+        if ($k -match 'ssh-ed25519 ([A-Za-z0-9+/=]+)') {
+            if ([Convert]::ToBase64String([Convert]::FromBase64String($Matches[1])) -eq [Convert]::ToBase64String($pubKey)) { $trusted = $true }
+        }
+    }
+    if (-not $trusted) { throw 'signed by a key that is not a pinned TuiSense release key' }
+    $pk = SshStrings $pubKey 0 2
+    $signed = [byte[]]($ascii.GetBytes('SSHSIG') + (SshString $ascii.GetBytes($Ns)) + (SshString @()) + (SshString $ascii.GetBytes($hashAlg)) + (SshString $digest))
+    EdVerify $pk[1] $signed $sig[1]
+}
+
 if ($Uninstall) {
     foreach ($f in @($Target, "$Target.old", "$Target.new")) { if (Test-Path $f) { Remove-Item -Force $f } }
     if (-not $NoModifyPath) { Set-UserPath $false }
@@ -82,12 +178,6 @@ $arch = switch ($osArch.ToUpperInvariant()) {
     'X64'   { 'amd64' }
     'ARM64' { 'arm64' }
     default { Fail "unsupported CPU architecture '$osArch'. TuiSense is published for 64-bit Windows (x64 and ARM64)." }
-}
-$keygen = Get-Command ssh-keygen -ErrorAction SilentlyContinue
-if (-not $keygen) {
-    Fail ("ssh-keygen (Windows' OpenSSH Client) is required to verify the release signature, and it was not found. " +
-        "Add it in Settings > System > Optional features > OpenSSH Client (or install Git for Windows, which includes it), open a new terminal and run the installer again. " +
-        "Alternatively follow the manual download and verification steps in the README.")
 }
 if ($TrustedKeys.Count -eq 0 -and -not $env:TUISENSE_TRUSTED_KEYS_FILE) {
     Fail 'this installer has no pinned release signing key yet, so it cannot verify a download. Build from source instead (see README).'
@@ -122,20 +212,13 @@ try {
     }
 
     # --- verification -------------------------------------------------------
-    $signers = Join-Path $tmp 'allowed_signers'
-    $lines = foreach ($k in $keys) {
-        if ($k -match '(ssh-ed25519 [A-Za-z0-9+/=]+)') { "$Namespace $($Matches[1])" }
-    }
-    [IO.File]::WriteAllLines($signers, [string[]]$lines)
-    $proc = Start-Process -FilePath $keygen.Source -NoNewWindow -Wait -PassThru `
-        -ArgumentList @('-Y', 'verify', '-f', "`"$signers`"", '-I', $Namespace, '-n', $Namespace, '-s', "`"$(Join-Path $tmp 'SHA256SUMS.sig')`"") `
-        -RedirectStandardInput (Join-Path $tmp 'SHA256SUMS') `
-        -RedirectStandardOutput (Join-Path $tmp 'verify.out') -RedirectStandardError (Join-Path $tmp 'verify.err')
-    if ($proc.ExitCode -ne 0) {
-        $why = (Get-Content -Raw -ErrorAction SilentlyContinue (Join-Path $tmp 'verify.err'))
-        if (-not $why) { $why = "exit code $($proc.ExitCode)" }
-        Fail ("the release signature could not be verified, so nothing was installed. ssh-keygen said: $($why.Trim()). " +
-            "If it reports an unknown option, this OpenSSH is older than 8.1; update OpenSSH Client or install Git for Windows.")
+    $sigText = [IO.File]::ReadAllText((Join-Path $tmp 'SHA256SUMS.sig'))
+    $data = [IO.File]::ReadAllBytes((Join-Path $tmp 'SHA256SUMS'))
+    $why = $null
+    try { $ok = Test-SshSig $sigText $data $keys $Namespace } catch { $ok = $false; $why = $_.Exception.Message }
+    if (-not $ok) {
+        if (-not $why) { $why = 'the signature does not match a pinned release key' }
+        Fail "the release signature could not be verified ($why), so nothing was installed."
     }
     $expected = $null
     foreach ($line in Get-Content (Join-Path $tmp 'SHA256SUMS')) {
