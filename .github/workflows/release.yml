@@ -148,7 +148,7 @@ jobs:
           if ($v -notmatch [regex]::Escape("v$($env:VERSION)")) { throw 'the .exe did not start' }
           & $exe doctor --windows
           if ($LASTEXITCODE -ne 0) { throw 'doctor failed' }
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: dist-${{ matrix.goos }}-${{ matrix.goarch }}
           path: dist/*
