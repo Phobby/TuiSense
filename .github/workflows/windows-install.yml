@@ -31,7 +31,7 @@ jobs:
         runner: [windows-2022, windows-2025, windows-11-arm]
     runs-on: ${{ matrix.runner }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Install with install.ps1 (Windows PowerShell 5.1)
         shell: powershell
         env:
