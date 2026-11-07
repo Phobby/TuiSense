@@ -177,6 +177,18 @@ tuisense doctor     # check permissions, drivers, clipboard and terminal
 Pass options to the piped Linux/macOS installer with `sh -s --`, e.g.
 `curl -fsSL …/install.sh | sh -s -- --uninstall`.
 
+**Direct downloads** (click, no terminal installer). Every
+[release](https://github.com/Phobby/TuiSense/releases/latest) also has:
+
+| System | File | How to use it |
+| --- | --- | --- |
+| Debian, Ubuntu, Mint, Pop!_OS | `tuisense_<version>_linux_amd64.deb` (or `_arm64`) | Open it with the software installer, or `sudo apt install ./tuisense_<version>_linux_amd64.deb`. Installs `/usr/bin/tuisense` and the DualSense udev rule; remove with `sudo apt remove tuisense`. Updates come from new `.deb` files (`tuisense update` leaves package-managed installs alone). |
+| macOS | `tuisense_<version>_darwin_arm64.dmg` (Apple silicon) or `_amd64` (Intel) | Open the disk image and double-click `tuisense` (it opens in Terminal), or copy it to a folder on your `PATH`. Not notarized yet: the first launch needs **System Settings → Privacy & Security → Open Anyway**. |
+| Windows | `tuisense_<version>_windows_amd64.exe` (or `_arm64`) | The program itself, nothing to install: double-click it or run it from a terminal. Not code-signed yet: SmartScreen may ask once (*More info → Run anyway*); with Smart App Control on, Windows blocks it (see [Troubleshooting](#troubleshooting)). |
+
+All of them are listed in the signed `SHA256SUMS`, so they can be verified like
+the archives below.
+
 **Manual download.** From the [Releases page](https://github.com/Phobby/TuiSense/releases)
 download your archive (`tuisense_<version>_<os>_<arch>.tar.gz` or `.zip`),
 `SHA256SUMS` and `SHA256SUMS.sig`, then verify:

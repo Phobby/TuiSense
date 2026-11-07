@@ -12,6 +12,9 @@ import (
 // UdevRulePath is where TuiSense's own DualSense hidraw rule is installed.
 const UdevRulePath = "/etc/udev/rules.d/70-tuisense-dualsense.rules"
 
+// PackagedUdevRulePath is where the .deb release package installs the same rule.
+const PackagedUdevRulePath = "/usr/lib/udev/rules.d/70-tuisense-dualsense.rules"
+
 // ActionUdevDualSense installs TuiSense's DualSense hidraw access rule.
 const ActionUdevDualSense = "install_dualsense_udev"
 
@@ -157,7 +160,7 @@ func udevActionID(env Env) string {
 // udevActions offers TuiSense's own, reviewed udev rule: executable through
 // polkit when pkexec exists, otherwise as manual commands.
 func udevActions(env Env) []Action {
-	if env.Exists(UdevRulePath) {
+	if env.Exists(UdevRulePath) || env.Exists(PackagedUdevRulePath) {
 		return []Action{{ID: ActionUdevManual, Title: "Reconnect the controller", Manual: true,
 			Explanation:  "TuiSense's udev rule is already installed.",
 			Instructions: []string{"Unplug and reconnect the controller (or re-pair it over Bluetooth) so udev applies the rule."}}}

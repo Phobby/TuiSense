@@ -179,3 +179,13 @@ func TestOtherPlatformsAndSimulatedDevices(t *testing.T) {
 		t.Fatalf("simulated devices need no drivers: %+v", r)
 	}
 }
+
+// The .deb package installs the rule under /usr/lib; it must count as installed.
+func TestPackagedUdevRuleCountsAsInstalled(t *testing.T) {
+	env := linux()
+	env.files = map[string]bool{PackagedUdevRulePath: true}
+	a := udevActions(env)
+	if len(a) != 1 || a[0].Title != "Reconnect the controller" {
+		t.Fatalf("expected only a reconnect hint, got %+v", a)
+	}
+}

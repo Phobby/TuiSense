@@ -5,10 +5,13 @@ name: Release
 # list is signed with the release key (OpenSSH SSHSIG, namespace
 # "tuisense-release") and verified against the key pinned in the repository
 # before anything is published. Without the signing secret the release fails.
+# Run it by hand (workflow_dispatch) for a dry run: everything is built,
+# packaged and tested from VERSION, nothing is signed or published.
 
 on:
   push:
     tags: ["v*"]
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -22,6 +25,7 @@ jobs:
         with:
           go-version-file: go.mod
       - name: Tag matches VERSION
+        if: github.ref_type == 'tag'
         run: test "v$(cat VERSION)" = "${GITHUB_REF_NAME%%-*}" || test "v$(cat VERSION)" = "$GITHUB_REF_NAME"
       - run: go vet ./...
       - run: go test -count=1 ./...
@@ -51,7 +55,7 @@ jobs:
           GOOS: ${{ matrix.goos }}
           GOARCH: ${{ matrix.goarch }}
         run: |
-          VERSION="${GITHUB_REF_NAME#v}"
+          if [ "$GITHUB_REF_TYPE" = tag ]; then VERSION="${GITHUB_REF_NAME#v}"; else VERSION="$(cat VERSION)"; fi
           EXT=""; [ "$GOOS" = windows ] && EXT=".exe"
           go build -trimpath -ldflags "-s -w -X github.com/Phobby/TuiSense/internal/version.Version=${VERSION} -X github.com/Phobby/TuiSense/internal/version.Commit=${GITHUB_SHA}" -o "build/tuisense${EXT}" ./cmd/tuisense
           echo "VERSION=$VERSION" >> "$GITHUB_ENV"
@@ -75,6 +79,75 @@ jobs:
           & $exe.FullName --version
           & $exe.FullName doctor --windows
           if ($LASTEXITCODE -ne 0) { throw 'packaged executable failed' }
+      # Direct downloads next to the archives: a .deb for Debian/Ubuntu, a .dmg
+      # for macOS and the bare .exe for Windows. Each is installed or opened
+      # and started below, on the runner that built it.
+      - name: Debian package (.deb)
+        if: matrix.goos == 'linux'
+        run: |
+          root="$RUNNER_TEMP/deb"
+          debver="$(printf %s "$VERSION" | tr - '~')"   # Debian sorts 0.9.0~rc.1 before 0.9.0
+          install -Dm755 "$BIN" "$root/usr/bin/tuisense"
+          install -Dm644 contrib/70-tuisense-dualsense.rules "$root/usr/lib/udev/rules.d/70-tuisense-dualsense.rules"
+          install -Dm644 LICENSE "$root/usr/share/doc/tuisense/copyright"
+          mkdir -p "$root/DEBIAN"
+          cat > "$root/DEBIAN/control" <<CONTROL
+          Package: tuisense
+          Version: $debver
+          Architecture: ${{ matrix.goarch }}
+          Maintainer: TuiSense <https://github.com/Phobby/TuiSense/issues>
+          Installed-Size: $(du -sk "$root/usr" | cut -f1)
+          Section: utils
+          Priority: optional
+          Homepage: https://github.com/Phobby/TuiSense
+          Description: Terminal app for game controllers
+           Inspect, test and configure game controllers (DualSense, Xbox-class
+           and generic gamepads) from the terminal.
+          CONTROL
+          printf '#!/bin/sh\nset -e\nif command -v udevadm >/dev/null 2>&1; then udevadm control --reload-rules || true; udevadm trigger --subsystem-match=hidraw || true; fi\n' > "$root/DEBIAN/postinst"
+          cp "$root/DEBIAN/postinst" "$root/DEBIAN/postrm"
+          chmod 755 "$root/DEBIAN/postinst" "$root/DEBIAN/postrm"
+          dpkg-deb --root-owner-group --build "$root" "dist/tuisense_${VERSION}_linux_${{ matrix.goarch }}.deb"
+      - name: Install, start and remove the .deb
+        if: matrix.goos == 'linux'
+        run: |
+          deb="dist/tuisense_${VERSION}_linux_${{ matrix.goarch }}.deb"
+          dpkg-deb --info "$deb"
+          sudo apt-get install -y "./$deb"
+          test "$(command -v tuisense)" = /usr/bin/tuisense
+          tuisense --version | grep -F "v$VERSION"
+          tuisense doctor
+          test -f /usr/lib/udev/rules.d/70-tuisense-dualsense.rules
+          sudo apt-get remove -y tuisense
+          test ! -e /usr/bin/tuisense
+      - name: macOS disk image (.dmg)
+        if: matrix.goos == 'darwin'
+        run: |
+          stage="$RUNNER_TEMP/dmg/TuiSense"
+          mkdir -p "$stage"
+          cp "$BIN" "$stage/tuisense"
+          cp README.md LICENSE "$stage/"
+          hdiutil create -volname "TuiSense $VERSION" -srcfolder "$stage" -format UDZO -ov "dist/tuisense_${VERSION}_darwin_${{ matrix.goarch }}.dmg"
+      - name: Open the .dmg and start TuiSense from it
+        if: matrix.goos == 'darwin'
+        run: |
+          mnt="$RUNNER_TEMP/mnt"
+          hdiutil attach -nobrowse -readonly -mountpoint "$mnt" "dist/tuisense_${VERSION}_darwin_${{ matrix.goarch }}.dmg"
+          "$mnt/tuisense" --version | grep -F "v$VERSION"
+          "$mnt/tuisense" doctor
+          test -f "$mnt/README.md"
+          hdiutil detach "$mnt"
+      - name: Windows executable (.exe)
+        if: matrix.goos == 'windows'
+        shell: pwsh
+        run: |
+          $exe = "dist\tuisense_$($env:VERSION)_windows_${{ matrix.goarch }}.exe"
+          Copy-Item $env:BIN $exe
+          $v = & $exe --version
+          Write-Output $v
+          if ($v -notmatch [regex]::Escape("v$($env:VERSION)")) { throw 'the .exe did not start' }
+          & $exe doctor --windows
+          if ($LASTEXITCODE -ne 0) { throw 'doctor failed' }
       - uses: actions/upload-artifact@v4
         with:
           name: dist-${{ matrix.goos }}-${{ matrix.goarch }}
@@ -83,6 +156,7 @@ jobs:
 
   publish:
     needs: build
+    if: github.ref_type == 'tag'
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.ver.outputs.version }}
