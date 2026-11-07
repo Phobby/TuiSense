@@ -142,7 +142,8 @@ function Test-SshSig([string]$Armored, [byte[]]$Data, [string[]]$Keys, [string]$
     $pubKey = $f[0]
     $trusted = $false
     foreach ($k in $Keys) {
-        if ($k -match 'ssh-ed25519 ([A-Za-z0-9+/=]+)') {
+        # -cmatch: case-insensitive [A-Za-z] skips 'I' under the Turkish culture.
+        if ($k -cmatch 'ssh-ed25519 ([A-Za-z0-9+/=]+)') {
             if ([Convert]::ToBase64String([Convert]::FromBase64String($Matches[1])) -eq [Convert]::ToBase64String($pubKey)) { $trusted = $true }
         }
     }
@@ -199,7 +200,7 @@ try {
         $Version = $meta.tag_name
     }
     $Version = $Version.TrimStart('v')
-    if ($Version -notmatch '^[0-9A-Za-z.\-]+$') { Fail "invalid version '$Version'" }
+    if ($Version -cnotmatch '^[0-9A-Za-z.\-]+$') { Fail "invalid version '$Version'" }
     $archive = "tuisense_${Version}_windows_${arch}.zip"
     $base = "$DownloadUrl/v$Version"
     Say "Installing TuiSense v$Version for windows/$arch"

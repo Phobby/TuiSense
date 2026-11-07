@@ -94,6 +94,19 @@ func TestPowerShellInstallReinstallAndUninstall(t *testing.T) {
 	}
 }
 
+// Turkish Windows lowercases 'I' to dotless 'ı', which once broke the pinned
+// key match (case-insensitive [A-Za-z]) and refused every release there.
+func TestPowerShellInstallUnderTurkishCulture(t *testing.T) {
+	r := newWindowsRelease(t)
+	h := r.winHome(t, true)
+	script := "[Threading.Thread]::CurrentThread.CurrentCulture = 'tr-TR'; [Threading.Thread]::CurrentThread.CurrentUICulture = 'tr-TR'; " +
+		"& '" + filepath.Join(r.root, "scripts", "install.ps1") + "' -NoModifyPath"
+	out, err := run(t, h.dir, h.env, "powershell.exe", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", script)
+	if err != nil || !strings.Contains(out, "Signature and checksum verified") {
+		t.Fatalf("install under tr-TR failed: %v\n%s", err, out)
+	}
+}
+
 func TestPowerShellInstallerRefusesBadReleases(t *testing.T) {
 	r := newWindowsRelease(t)
 	exe := func(h winHome) string { return filepath.Join(h.installDir, "tuisense.exe") }
