@@ -138,7 +138,7 @@ function Test-SshSig([string]$Armored, [byte[]]$Data, [string[]]$Keys, [string]$
         default { throw "unsupported hash '$hashAlg'" }
     }
     $sig = SshStrings $f[4] 0 2
-    if ($ascii.GetString($sig[0]) -ne 'ssh-ed25519') { throw 'not an ssh-ed25519 signature' }
+    if ($ascii.GetString($sig[0]) -ne 'ssh-ed25519') { throw 'not an Ed25519 signature' }
     $pubKey = $f[0]
     $trusted = $false
     foreach ($k in $Keys) {
